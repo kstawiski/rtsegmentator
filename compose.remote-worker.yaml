@@ -1,0 +1,23 @@
+services:
+  worker:
+    image: rtsegmentator/offline-worker:latest
+    environment:
+      RTSEG_ROLE: worker
+    ports:
+      - "2222:22"
+    volumes:
+      - ./secrets/authorized_keys:/run/secrets/authorized_keys:ro
+      - worker-jobs:/var/lib/rtsegmentator/jobs
+      - totalsegmentator-config:/home/konrad/.totalsegmentator
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  worker-jobs:
+  totalsegmentator-config:

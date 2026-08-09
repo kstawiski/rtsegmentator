@@ -1,0 +1,12 @@
+{
+  "labels": {"0": "background", "1": "CTV"},
+  "modality": {"image": "PET", "image1": "CT", "image0": "CT"},
+  "testing": [
+    {
+      "image": "pet1-suv1000-on-ct.nii.gz",
+      "image1": "planning-ct.nii.gz",
+      "image0": "planning-ct.nii.gz"
+    }
+  ],
+  "training": []
+}

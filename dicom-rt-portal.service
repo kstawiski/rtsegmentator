@@ -1,0 +1,18 @@
+[Unit]
+Description=DICOM RT GPU Segmentation Portal
+After=network-online.target
+
+[Service]
+Type=simple
+User=konrad
+WorkingDirectory=/home/konrad/dicom-rt-portal
+Environment=SEGMENTATION_WORKER=konrad@cpd-konrad-worker
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/konrad/dicom-rt-portal/.venv/bin/uvicorn app:app --host 0.0.0.0 --port 8080 --workers 1
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,26 @@
+services:
+  portal:
+    image: rtsegmentator/portal:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.portal
+    environment:
+      WORKER_MODE: ssh
+      SEGMENTATION_WORKER: ${SEGMENTATION_WORKER:-konrad@worker}
+      WORKER_SSH_PORT: ${WORKER_SSH_PORT:-22}
+      REMOTE_JOB_ROOT: /var/lib/rtsegmentator/jobs
+      REMOTE_PYTHON: /home/konrad/dicom-rt-seg/.venv/bin/python
+      REMOTE_RUNNER: /home/konrad/dicom-rt-seg/run_task.py
+      RTSEG_API_KEY: ${RTSEG_API_KEY:-}
+      RETENTION_HOURS: ${RETENTION_HOURS:-24}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-8589934592}
+    ports:
+      - "8080:8080"
+    volumes:
+      - portal-jobs:/var/lib/rtsegmentator/jobs
+      - ./secrets/id_ed25519:/root/.ssh/id_ed25519:ro
+      - ./secrets/known_hosts:/root/.ssh/known_hosts:ro
+    restart: unless-stopped
+
+volumes:
+  portal-jobs:

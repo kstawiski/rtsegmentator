@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv*/
+.pytest_cache/
+.mypy_cache/
+
+# Runtime and uploaded medical data
+data/
+*.dcm
+*.dicom
+*.nii
+*.nii.gz
+*.nrrd
+*.mha
+*.mhd
+*.raw
+*.npz
+*.npy
+*.zip
+
+# Model artifacts and credentials
+weights/
+models/*
+!models/manifest.json
+checkpoints/
+*.pth
+*.pt
+*.ckpt
+*.model
+.env
+.env.*
+!.env.example
+*license*.txt
+*token*.txt
+*secret*.txt
+offline/payload/
+offline/*.tar
+offline/*.tar.zst
+offline/*.sha256
+private/
+secrets/
+
+# Local tooling
+.DS_Store
+.idea/
+.vscode/

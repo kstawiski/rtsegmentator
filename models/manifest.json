@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "notice": "Weights are not part of the public source repository. Build an offline payload only from model files you are authorized to possess and redistribute internally.",
+  "components": [
+    {"id": "totalsegmentator", "reference": "https://github.com/wasserth/TotalSegmentator", "redistribution": "software only; commercial tasks require a separate license"},
+    {"id": "hnlnl", "path": "weights/hnlnl", "reference": "https://github.com/putzfn/HNLNL_autosegmentation_trained_models", "redistribution": "CC0-1.0"},
+    {"id": "choi-tmli", "path": "weights/tmlI-choi", "reference": "https://zenodo.org/records/7839889", "redistribution": "CC BY 4.0; numeric ontology incomplete"},
+    {"id": "isrt", "path": "weights/isrt", "reference": "https://github.com/xtie97/ISRT-CTV-AutoSeg", "redistribution": "upstream license not clearly stated; verify before sharing"},
+    {"id": "ln-seg-fm", "path": "weights/ln-seg-fm", "reference": "https://github.com/HiLab-git/LN-Seg-FM", "redistribution": "verify upstream terms"},
+    {"id": "lnq-segmenter", "reference": "https://github.com/pieper/lnq-segmenter", "redistribution": "model-dependent CC BY or CC BY-NC"},
+    {"id": "compai-model7", "path": "weights/compai-model7", "reference": "https://gitlab.lrz.de/compai/MediastinalLymphNodeSegmentation", "redistribution": "Apache-2.0"},
+    {"id": "dbdmp-lnq", "path": "weights/dbdmp-lnq", "reference": "https://github.com/WltyBY/LNQ2023_training_code", "redistribution": "verify checkpoint terms"},
+    {"id": "raidionics", "path": "weights/raidionics", "reference": "https://github.com/raidionics/Raidionics-models", "redistribution": "model-dependent; verify upstream terms"},
+    {"id": "pediatric-lymphoma", "path": "weights/lymphoma", "reference": "https://github.com/fast-radiology/lymphoma", "redistribution": "MIT code; verify model/data terms"},
+    {"id": "uwlair-hntsmrg", "path": "weights/hntsmrg-uwlair", "reference": "https://github.com/xtie97/HNTS-MRG24-UWLAIR", "redistribution": "verify upstream terms"},
+    {"id": "pam", "path": "weights/pam", "reference": "https://github.com/czifan/PAM", "redistribution": "verify upstream terms"},
+    {"id": "sat3d", "path": "weights/sat3d", "reference": "https://github.com/himashi92/SAT3D", "redistribution": "Apache-2.0 code; verify checkpoint terms"},
+    {"id": "sam-med2d", "path": "weights/sam-med2d", "reference": "https://github.com/OpenGVLab/SAM-Med2D", "redistribution": "Apache-2.0 code; verify checkpoint terms"},
+    {"id": "biomedparse", "path": "weights/biomedparse", "reference": "https://huggingface.co/microsoft/BiomedParse", "redistribution": "approval-gated; never export without accepted terms"}
+  ]
+}

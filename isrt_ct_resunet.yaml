@@ -1,0 +1,46 @@
+_meta_: {}
+name: ISRT_CT_Segmentation
+modality: CT
+input_channels: 1
+dataroot: __DATAROOT__
+datalist: __DATAROOT__/datalist.json
+data_file_base_dir: $@dataroot
+data_list_file_path: $@datalist
+bundle_root: __BUNDLE_ROOT__
+fold: 0
+ckpt_path: $@bundle_root + "/ckpt_f1"
+finetune: {enabled: false, ckpt_name: $@ckpt_path + '/model.pt'}
+num_samples: 1
+batch_size: 1
+crop_ratios: [1, 2]
+roi_size: [192, 192, 96]
+num_workers: 1
+num_epochs: 1
+learning_rate: 0.0001
+optimizer: {_target_: torch.optim.AdamW, lr: '@learning_rate', weight_decay: 1.0e-05}
+nnunet_scheduler: false
+network: {_target_: ResUNet, use_nnunet_filters: true, norm: INSTANCE, dsdepth: 3}
+sigmoid: false
+output_classes: 2
+class_names: [CTV]
+validate: {enabled: false, ckpt_name: $@ckpt_path + '/model.pt'}
+infer: {enabled: true, ckpt_name: $@ckpt_path + '/model.pt', output_path: $@bundle_root + '/prediction_f1', data_list_key: testing}
+loss_fun: DiceCELoss
+loss: {_target_: $@loss_fun, include_background: false, squared_pred: false, smooth_nr: 1.0e-05, smooth_dr: 1.0e-05, softmax: $not @sigmoid, sigmoid: $@sigmoid, to_onehot_y: $not @sigmoid, batch: true}
+resample: false
+resample_resolution: [1.0, 1.0, 2.5]
+crop_mode: ratio
+num_epochs_per_validation: 2
+num_epochs_per_saving: 2
+quick: false
+amp: true
+ckpt_save: false
+cache_rate: null
+is_cache: false
+determ: true
+rng_seed: 716
+normalize_mode: range
+multigpu: false
+image_size: [245, 179, 222]
+class_index: null
+intensity_bounds: [-1000, 1000]

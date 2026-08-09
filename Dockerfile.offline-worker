@@ -1,0 +1,33 @@
+# Build only after scripts/export_offline_payload.sh has created offline/payload.
+# The resulting image contains the authorized software environments and model
+# assets and can be transferred with `docker save` to a network-isolated host.
+FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    RTSEG_MODEL_ROOT=/home/konrad/lymph-models \
+    RTSEG_RUNTIME_ROOT=/home/konrad/dicom-rt-seg \
+    PORTAL_DATA=/var/lib/rtsegmentator/jobs \
+    REMOTE_JOB_ROOT=/var/lib/rtsegmentator/jobs \
+    LOCAL_PYTHON=/home/konrad/dicom-rt-seg/.venv/bin/python \
+    LOCAL_RUNNER=/home/konrad/dicom-rt-seg/run_task.py
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates openssh-server rsync tini util-linux python3 python3-venv \
+      libgl1 libglib2.0-0 libgomp1 libsm6 libxext6 libxrender1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --uid 1000 --create-home --shell /bin/bash konrad \
+    && mkdir -p /run/sshd /var/lib/rtsegmentator/jobs \
+    && chown -R konrad:konrad /var/lib/rtsegmentator
+
+COPY offline/payload/model-root/ /home/konrad/lymph-models/
+COPY offline/payload/runtime/ /home/konrad/dicom-rt-seg/
+COPY *.py *.json *.yaml *.ini requirements.txt /home/konrad/dicom-rt-seg/
+COPY labels/ /home/konrad/dicom-rt-seg/labels/
+COPY docker/ /home/konrad/dicom-rt-seg/docker/
+RUN chmod +x /home/konrad/dicom-rt-seg/docker/entrypoint.sh \
+    && chown -R konrad:konrad /home/konrad/dicom-rt-seg /home/konrad/lymph-models
+
+EXPOSE 22 8080
+ENTRYPOINT ["/usr/bin/tini", "--", "/home/konrad/dicom-rt-seg/docker/entrypoint.sh"]

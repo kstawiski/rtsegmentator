@@ -1,0 +1,29 @@
+services:
+  rtsegmentator:
+    image: rtsegmentator/offline-worker:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.offline-worker
+    environment:
+      RTSEG_ROLE: combined
+      WORKER_MODE: local
+      RTSEG_API_KEY: ${RTSEG_API_KEY:-}
+      RETENTION_HOURS: ${RETENTION_HOURS:-24}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-8589934592}
+    ports:
+      - "8080:8080"
+    volumes:
+      - rtsegmentator-jobs:/var/lib/rtsegmentator/jobs
+      - totalsegmentator-config:/home/konrad/.totalsegmentator
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  rtsegmentator-jobs:
+  totalsegmentator-config:
