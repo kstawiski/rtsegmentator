@@ -58,7 +58,8 @@ occurs before any transfer or inference.
 
 `POST /api/v1/jobs` accepts an already isolated, single DICOM series through
 repeated `files` parts plus repeated `models` fields. Mixed uploads are rejected.
-The two-stage API is safer for arbitrary archives.
+Prompted and paired PET/CT models require the two-stage API, which is safer for
+all arbitrary archives.
 
 `GET /api/v1/health` is a liveness endpoint. A successful response does not
 prove that every model weight or GPU path is healthy; use a locally validated

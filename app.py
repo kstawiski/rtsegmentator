@@ -487,6 +487,10 @@ async def create_job(files: list[UploadFile]=File(...), models: list[str]=Form(.
     available={x["name"] for x in tasks()["tasks"] if x.get("enabled",True)}
     if any(not re.fullmatch(r"[A-Za-z0-9_]+",m) or m not in available for m in models): raise HTTPException(400,"Invalid model selection")
     if "total" in models and "total_mr" in models: raise HTTPException(400,"Select either total (CT) or total_mr (MR), not both")
+    if any((EXTERNAL_TASKS.get(m) or INFORMATIONAL_MODELS.get(m, {})).get("prompt") for m in models):
+        raise HTTPException(400, "Prompted models require the two-stage /api/v1/uploads workflow")
+    if any(EXTERNAL_TASKS.get(m, {}).get("requires_ct") for m in models):
+        raise HTTPException(400, "Paired PET/CT models require the two-stage /api/v1/uploads workflow")
     jid=time.strftime("%Y%m%d-%H%M%S-")+secrets.token_hex(4); job=BASE/jid; inp=job/"input"; out=job/"output"; inp.mkdir(parents=True); out.mkdir()
     total=0
     try:
