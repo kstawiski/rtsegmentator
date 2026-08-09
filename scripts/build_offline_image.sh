@@ -4,8 +4,8 @@ set -euo pipefail
 tag=${1:-rtsegmentator/offline-worker:latest}
 archive=${2:-offline/rtsegmentator-offline-worker.tar}
 
-test -f offline/payload/payload-manifest.json || {
-  echo "Run scripts/export_offline_payload.sh first" >&2
+test -f offline/payload.tar || {
+  echo "Run scripts/export_offline_archive.sh first" >&2
   exit 2
 }
 command -v docker >/dev/null || {

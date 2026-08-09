@@ -1,4 +1,4 @@
-# Build only after scripts/export_offline_payload.sh has created offline/payload.
+# Build only after scripts/export_offline_archive.sh has created offline/payload.tar.
 # The resulting image contains the authorized software environments and model
 # assets and can be transferred with `docker save` to a network-isolated host.
 FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
@@ -21,8 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && mkdir -p /run/sshd /var/lib/rtsegmentator/jobs \
     && chown -R konrad:konrad /var/lib/rtsegmentator
 
-COPY offline/payload/model-root/ /home/konrad/lymph-models/
-COPY offline/payload/runtime/ /home/konrad/dicom-rt-seg/
+ADD offline/payload.tar /
 COPY *.py *.json *.yaml *.ini requirements.txt /home/konrad/dicom-rt-seg/
 COPY labels/ /home/konrad/dicom-rt-seg/labels/
 COPY docker/ /home/konrad/dicom-rt-seg/docker/

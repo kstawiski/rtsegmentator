@@ -35,6 +35,8 @@ checkpoints/
 *token*.txt
 *secret*.txt
 offline/payload/
+offline/payload.tar
+offline/payload.tar.sha256
 offline/*.tar
 offline/*.tar.zst
 offline/*.sha256

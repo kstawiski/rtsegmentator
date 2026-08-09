@@ -19,14 +19,16 @@ private unless every included asset permits redistribution.
 On the prepared GPU worker:
 
 ```bash
-./scripts/export_offline_payload.sh \
-  /path/to/model-root /path/to/runtime-root offline/payload
+./scripts/export_offline_archive.sh \
+  /path/to/model-root /path/to/runtime-root offline/payload.tar
+sha256sum -c offline/payload.tar.sha256
 ```
 
-The exporter dereferences symlinks and creates SHA-256 inventory
-`offline/payload/payload-manifest.json`. It excludes DICOM, test fixtures,
-previous results, jobs, Git metadata, caches and credentials. Review both the
-manifest and `models/manifest.json` before building.
+The exporter dereferences symlinks and creates `offline/payload.tar.sha256`.
+It excludes DICOM, test fixtures, previous results, jobs, Git metadata and
+caches. Review the archive listing and `models/manifest.json` before building.
+The expanded-directory exporter remains available for detailed inspection, but
+the single archive is much faster and more portable on shared filesystems.
 
 ## Build and transfer
 
