@@ -1,0 +1,44 @@
+{
+  "family": "Packaged nnU-Net v2 Zenodo checkpoints",
+  "runtime": "nnU-Net v2 in segmentation-modern",
+  "verified_at": "2026-08-10",
+  "models": {
+    "bamf_liver_lesions_ct": {
+      "record": "https://zenodo.org/records/11582728",
+      "file": "Dataset006_Liver.zip",
+      "bytes": 1166251076,
+      "md5": "efbcf11ed43bc86a115f0f07ec7b669f",
+      "sha256": "3d8b3f038a1b0a4054e6359bc4f45d0836ef791696b8375239f138588401d4b6",
+      "checkpoint_tree_sha256": "a7daf7dcd5a714670d3203cf1005033673c4a2d9523b7ac1678993cc4645a86a",
+      "folds": [0, 1, 2, 3, 4],
+      "upstream_labels": ["spleen", "kidneys", "pancreas", "stomach", "heart", "duodenum", "tumsomething", "liver", "tumor"]
+    },
+    "cervix_cbct": {
+      "record": "https://zenodo.org/records/19889617",
+      "file": "Dataset_001_Baseline.zip",
+      "bytes": 2290718706,
+      "md5": "1c48a65f15bf131ce23979c3694cfad1",
+      "sha256": "123f9ef0d97c861760169f62690e94d1f406e874473619053c55c732d35098fd",
+      "checkpoint_tree_sha256": "99343dbf5dfe88ddd2d2d1169daef4725fe379a4c462dbe9aefd04655da00aa1",
+      "folds": [0, 1, 2, 3, 4],
+      "upstream_labels": ["CTVT ", "CP", "RECTUM", "VESSIE"]
+    }
+  },
+  "acceptance": {
+    "bamf_liver_lesions_ct": {
+      "input": "167-slice abdominal contrast CT subseries",
+      "nonempty_rois": 7,
+      "referenced_images": 167,
+      "rtstruct_bytes": 3453702,
+      "result": "passed"
+    },
+    "cervix_cbct": {
+      "input": "200-slice pelvic CT subseries (technical execution test outside the CBCT training domain)",
+      "nonempty_rois": 4,
+      "referenced_images": 71,
+      "rtstruct_bytes": 295150,
+      "result": "technical pass; CBCT-domain validation still required before clinical use"
+    },
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

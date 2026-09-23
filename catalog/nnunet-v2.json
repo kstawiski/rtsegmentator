@@ -1,0 +1,139 @@
+{
+  "matto_gbm_enhancing_t1ce_mr": {
+    "modality": "MR",
+    "description": "MATTO-GBM five-fold nnU-Net v2 model for enhancing glioblastoma on brain-extracted, percentile-normalized T1wCE MRI",
+    "structures": "MR enhancing tumor",
+    "reference": "https://zenodo.org/records/21453119",
+    "model_folder": "weights/matto-gbm/Dataset901_All_T1wCE-Enhancing/nnUNetTrainer__nnUNetPlans_80G__3d_fullres",
+    "channels": 1,
+    "checkpoint": "checkpoint_best.pth",
+    "preprocessing": "hd_bet_percentile"
+  },
+  "bamf_liver_lesions_ct": {
+    "modality": "CT",
+    "description": "BAMF nnU-Net v2 model trained on LiTS 2017 contrast-enhanced CT",
+    "structures": "Upstream 9-class map: spleen, kidneys, pancreas, stomach, heart, duodenum, tumsomething, liver and tumor",
+    "reference": "https://zenodo.org/records/11582728",
+    "model_folder": "weights/nnunet-v2/bamf_liver_lesions_ct/model",
+    "checkpoint": "checkpoint_final.pth",
+    "channels": 1
+  },
+  "cervix_cbct": {
+    "modality": "CT",
+    "description": "Single-centre adaptive cervix radiotherapy nnU-Net v2 model for daily CBCT",
+    "structures": "Upstream 4-class map: CTVT, CP, rectum and bladder",
+    "reference": "https://zenodo.org/records/19889617",
+    "model_folder": "weights/nnunet-v2/cervix_cbct/model",
+    "checkpoint": "checkpoint_final.pth",
+    "channels": 1
+  },
+  "bamf_breast_fgt_mr": {
+    "modality": "MR",
+    "description": "BAMF nnU-Net v2 five-fold breast and fibroglandular-tissue MRI model",
+    "structures": "Breast and fibroglandular tissue",
+    "reference": "https://zenodo.org/records/11998679",
+    "model_folder": "weights/nnunet-v2/bamf_breast_fgt/model",
+    "checkpoint": "checkpoint_final.pth", "channels": 1
+  },
+  "bamf_breast_tumor_mr": {
+    "modality": "MR",
+    "description": "BAMF nnU-Net v2 five-fold breast-tumor MRI model trained on Duke and I-SPY1",
+    "structures": "Breast tumor",
+    "reference": "https://zenodo.org/records/11504675",
+    "model_folder": "weights/nnunet-v2/bamf_breast_tumor/model",
+    "checkpoint": "checkpoint_final.pth", "channels": 1
+  },
+  "adaptive_male_pelvis_t2_mr": {
+    "modality": "MR",
+    "description": "Open five-fold nnU-Net v2 model for adaptive male-pelvis radiotherapy on T2 MRI",
+    "structures": "Anal canal, bladder, bowel, bilateral femoral heads, penile bulb, prostate, rectum, seminal vesicles and sigmoid",
+    "reference": "https://zenodo.org/records/15746134",
+    "model_folder": "weights/nnunet-v2/adaptive_male_pelvis/Dataset509_Prostate_MRL/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres",
+    "checkpoint": "checkpoint_best.pth", "channels": 1
+  },
+  "thoracolumbar_rib_ct": {
+    "modality": "CT",
+    "description": "Three-fold nnU-Net v2 model released for thoracolumbar stump-rib detection and analysis",
+    "structures": "Ribs (single binary class)",
+    "reference": "https://zenodo.org/records/14864106",
+    "model_folder": "weights/nnunet-v2/ribseg/ribseg_model_weights",
+    "checkpoint": "checkpoint_final.pth", "channels": 1
+  },
+  "myeloma_spine_verse20_early_ct": {
+    "modality": "CT",
+    "description": "Early VerSe20 conventional-CT spine model released with Spinal-Multiple-Myeloma-SEG",
+    "structures": "28 released numeric vertebral/spine instance classes; upstream dataset.json does not name the numeric ontology",
+    "reference": "https://zenodo.org/records/18598645",
+    "model_folder": "weights/myeloma-spine/Spinal-Multiple-Myeloma-SEG_nnUNet_models/Dataset800_Spine_segmentation_trained_on_VerSe20/nnUNetTrainer__nnUNetPlans__3d_fullres",
+    "checkpoint": "checkpoint_final.pth", "channels": 1
+  },
+  "myeloma_spine_verse20_stable_ct": {
+    "modality": "CT",
+    "description": "Updated VerSe20 conventional-CT spine baseline released with Spinal-Multiple-Myeloma-SEG",
+    "structures": "28 released numeric vertebral/spine instance classes; upstream dataset.json does not name the numeric ontology",
+    "reference": "https://zenodo.org/records/18598645",
+    "model_folder": "weights/myeloma-spine/Spinal-Multiple-Myeloma-SEG_nnUNet_models/Dataset801_Spine_segmentation_trained_on_VerSe20/nnUNetTrainer__nnUNetPlans__3d_fullres",
+    "checkpoint": "checkpoint_final.pth", "channels": 1
+  },
+  "myeloma_spine_verse20_mm_ct": {
+    "modality": "CT",
+    "description": "Final conventional-CT spine model trained on combined VerSe20 and multiple-myeloma data",
+    "structures": "28 released numeric vertebral/spine instance classes; upstream dataset.json does not name the numeric ontology",
+    "reference": "https://zenodo.org/records/18598645",
+    "model_folder": "weights/myeloma-spine/Spinal-Multiple-Myeloma-SEG_nnUNet_models/Dataset802_Spine_segmentation_trained_on_VerSe20_and_MM_dataset_together/nnUNetTrainer__nnUNetPlans__3d_fullres",
+    "checkpoint": "checkpoint_final.pth", "channels": 1
+  },
+  "pdac_tumor_organs_ct": {
+    "modality": "CT",
+    "description": "Five-fold two-stage PDAC student model for contrast-enhanced pancreatic CT",
+    "structures": "Bilateral kidneys and adrenal glands, spleen, liver, gallbladder, pancreas, duodenum and pancreatic ductal adenocarcinoma",
+    "reference": "https://zenodo.org/records/14782552",
+    "model_folder": "weights/pdac/tumor/Task102_PDACStudent/nnUNetTrainer__nnUNetPlans__3d_cascade_fullres",
+    "lowres_model_folder": "weights/pdac/tumor/Task102_PDACStudent/nnUNetTrainer__nnUNetPlans__3d_lowres",
+    "checkpoint": "checkpoint_final.pth", "channels": 1
+  },
+  "pdac_vessels_ct": {
+    "modality": "CT",
+    "description": "Five-fold two-stage PDAC teacher model for pancreatic-region vasculature on contrast-enhanced CT",
+    "structures": "Aorta, celiac trunk, hepatic artery, splenic artery, superior mesenteric artery, inferior vena cava, portal vein, splenic vein and superior mesenteric vein",
+    "reference": "https://zenodo.org/records/14782552",
+    "model_folder": "weights/pdac/vessels/Task103_PDACvessels/nnUNetTrainer__nnUNetPlans__3d_cascade_fullres",
+    "lowres_model_folder": "weights/pdac/vessels/Task103_PDACvessels/nnUNetTrainer__nnUNetPlans__3d_lowres",
+    "checkpoint": "checkpoint_final.pth", "channels": 1
+  },
+  "coala_crlm_ct": {
+    "modality": "CT",
+    "description": "COALA two-stage nnU-Net v2 model for colorectal liver metastases on contrast-enhanced CT",
+    "structures": "Duodenum, pancreas, bilateral adrenal glands, spleen, gallbladder, bilateral kidneys, colon, stomach, small bowel, liver and colorectal liver metastases",
+    "reference": "https://zenodo.org/records/12795094",
+    "model_folder": "weights/coala/Task001_CRLM/nnUNetTrainer__nnUNetPlans__3d_cascade_fullres",
+    "lowres_model_folder": "weights/coala/Task001_CRLM/nnUNetTrainer__nnUNetPlans__3d_lowres",
+    "checkpoint": "checkpoint_final.pth", "channels": 1
+  },
+  "lion_fdg_pet_lesions": {
+    "modality": "PT",
+    "description": "LION FDG PET tumor model trained on 5,209 patients",
+    "structures": "FDG-avid tumor lesions; normal physiologic-uptake classes are suppressed from RTSTRUCT export",
+    "reference": "https://github.com/ENHANCE-PET/LION",
+    "model_folder": "weights/lion/Dataset789_Tumors/nnUNetTrainerDA5__nnUNetPlans__3d_fullres",
+    "checkpoint": "checkpoint_final.pth", "channels": 1,
+    "keep_label": 11, "keep_name": "FDG_Avid_Tumor"
+  },
+  "lion_psma_pet_lesions": {
+    "modality": "PT",
+    "description": "LION PSMA PET tumor model trained on 2,046 patients",
+    "structures": "PSMA-avid tumor lesions; normal physiologic-uptake classes are suppressed from RTSTRUCT export",
+    "reference": "https://github.com/ENHANCE-PET/LION",
+    "model_folder": "weights/lion/Dataset711_PSMA/nnUNetTrainer__nnUNetPlans__3d_fullres",
+    "checkpoint": "checkpoint_final.pth", "channels": 1,
+    "keep_label": 6, "keep_name": "PSMA_Avid_Tumor"
+  },
+  "upper_airway_dynamic_mr": {
+    "modality": "MR",
+    "description": "Single-fold nnU-Net v2 model released for upper-airway morphology analysis on four-dimensional dynamic MRI",
+    "structures": "Airway below the epiglottis and the remaining whole-airway class",
+    "reference": "https://zenodo.org/records/19021077",
+    "model_folder": "weights/nnunet-v2/upper_airway/Dataset010_AirwaySegmentation/nnUNetTrainer__nnUNetPlans__3d_fullres",
+    "checkpoint": "checkpoint_final.pth", "channels": 1
+  }
+}

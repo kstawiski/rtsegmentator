@@ -1,0 +1,23 @@
+{
+  "family": "nnU-Net v1 pretrained model zoo",
+  "task": "Task055_SegTHOR",
+  "record": "https://zenodo.org/records/4003545",
+  "archive": "Task055_SegTHOR.zip",
+  "archive_bytes": 5019434005,
+  "archive_md5": "ae464374487596ab54f9d24bfd14b767",
+  "archive_sha256": "398026e335f7a5b9e81906b9566e2ec67c4b7aa495c13c376b724d8b42913f54",
+  "checkpoint_tree_sha256": "82d2d1ced2b1305d31d3bcedab724ac1b480346ed5e12fbeac39955d793e0a0a",
+  "configuration": "3d_fullres",
+  "folds": [0, 1, 2, 3, 4],
+  "verified_at": "2026-08-10",
+  "acceptance": {
+    "input": "179-slice thoracic CT acceptance fixture",
+    "nonempty_rois": 4,
+    "nonempty_labels": ["Esophagus", "Heart", "Trachea", "Aorta"],
+    "referenced_images": 179,
+    "rtstruct_bytes": 1037898,
+    "rtstruct_sha256": "466adf6234d16c0cd69845c18da85465ed0cc790917a82ce4c9fa0476a106da8",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

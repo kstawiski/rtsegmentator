@@ -1,0 +1,23 @@
+{
+  "family": "MONAI Model Zoo",
+  "bundle": "prostate_mri_anatomy",
+  "bundle_version": "0.3.6",
+  "source": "https://huggingface.co/MONAI/prostate_mri_anatomy",
+  "bundle_tree_sha256_excluding_cache": "d3c6d1ffaf51808db1463dbb324984917d1ebbb0ce356b304b5590c34413a49d",
+  "model_pt_sha256": "3c18e4c658bb088f551b1d63219ef8340fe6256d016c75fc140d3da49dda696d",
+  "model_ts_sha256": "0e94ea2e06465470827bd8167234feedccb0d4eb716e2bb423e5223e774c1d96",
+  "runtime": {"monai": "1.6.0", "pytorch_ignite": "0.4.11"},
+  "verified_at": "2026-08-11",
+  "acceptance": {
+    "input": "208-slice whole-torso MRI technical fixture",
+    "fixture_limitation": "The fixture covers the prostate but is not the model's Prostate158 3T T2 domain; this proves execution and geometry only.",
+    "nonempty_rois": 2,
+    "nonempty_labels": ["central gland", "peripheral zone"],
+    "referenced_images_with_contours": 158,
+    "source_images_in_referenced_series": 208,
+    "rtstruct_bytes": 2000172,
+    "rtstruct_sha256": "71cd83f90e156292e0fd77413244b5e11d9177b57d6993b96a21c374168ade52",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

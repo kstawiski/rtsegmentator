@@ -1,0 +1,1 @@
+{"task":"pycad_skull_ct","result":"passed","verified_at":"2026-08-11","fixture":"287173 CT head DICOM","nonempty_rois":1,"referenced_images_with_contours":124,"rtstruct_bytes":1666546,"rtstruct_sha256":"1a142bfc46baa0558e2a8375ba279c5c1ac8fc399cc0fa1f0bce3c384bc4233a","validator":"convert_validate_rtstruct.py"}

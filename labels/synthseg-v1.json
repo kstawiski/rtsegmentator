@@ -1,0 +1,15 @@
+{
+  "2": "CerebralWhiteMatter_L", "3": "CerebralCortex_L",
+  "4": "LateralVentricle_L", "5": "InferiorLateralVentricle_L",
+  "7": "CerebellumWhiteMatter_L", "8": "CerebellumCortex_L",
+  "10": "Thalamus_L", "11": "Caudate_L", "12": "Putamen_L",
+  "13": "Pallidum_L", "14": "ThirdVentricle", "15": "FourthVentricle",
+  "16": "Brainstem", "17": "Hippocampus_L", "18": "Amygdala_L",
+  "26": "AccumbensArea_L", "28": "VentralDC_L",
+  "41": "CerebralWhiteMatter_R", "42": "CerebralCortex_R",
+  "43": "LateralVentricle_R", "44": "InferiorLateralVentricle_R",
+  "46": "CerebellumWhiteMatter_R", "47": "CerebellumCortex_R",
+  "49": "Thalamus_R", "50": "Caudate_R", "51": "Putamen_R",
+  "52": "Pallidum_R", "53": "Hippocampus_R", "54": "Amygdala_R",
+  "58": "AccumbensArea_R", "60": "VentralDC_R"
+}

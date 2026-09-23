@@ -1,0 +1,24 @@
+{
+  "family": "nnU-Net v1 pretrained model zoo",
+  "task": "Task003_Liver",
+  "record": "https://zenodo.org/records/4003545",
+  "archive": "Task003_Liver.zip",
+  "archive_bytes": 5049539577,
+  "archive_md5": "552e1ee740ef47fa8d8025246c84b5da",
+  "archive_sha256": "32a27141a328059dd570ecff3fbddbf61edd2b582527310f26f417496ae11419",
+  "checkpoint_tree_sha256": "bb63ed36d924bec3c4fd9e8a3f03c5bad721e535032305d6e125d7f863c061ed",
+  "configuration": "3d_fullres",
+  "folds": [0, 1, 2, 3, 4],
+  "verified_at": "2026-08-10",
+  "acceptance": {
+    "input": "167-slice abdominal CT acceptance fixture",
+    "nonempty_rois": 1,
+    "nonempty_labels": ["Liver"],
+    "empty_labels": ["Liver_Tumor"],
+    "referenced_images": 110,
+    "rtstruct_bytes": 872904,
+    "rtstruct_sha256": "20595f3facab6cedd7511a09e86f8e5a8a0085639ecae2c655816301dd5f3599",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

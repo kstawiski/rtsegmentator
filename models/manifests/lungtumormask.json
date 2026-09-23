@@ -1,0 +1,22 @@
+{
+  "family": "LungTumorMask",
+  "repository": "https://github.com/VemundFredriksen/LungTumorMask",
+  "source_commit": "d1bca4b8dec8f3fe623b58d35be78055b954428c",
+  "license": "MIT",
+  "checkpoint": {
+    "name": "dc_student.pth",
+    "url": "https://github.com/VemundFredriksen/LungTumorMask/releases/download/0.0/dc_student.pth",
+    "bytes": 177899618,
+    "sha256": "89225944ac49d81bb136ddd06b6fa9274ab9ff9e356dbe23377481f7431804bf"
+  },
+  "compatibility": "The local runner preserves the released 49,117,073-parameter architecture and matches all 52 checkpoint tensors while replacing removed MONAI APIs.",
+  "acceptance": {
+    "input": "179-slice thoracic CT DICOM fixture",
+    "rois": 1,
+    "referenced_images": 45,
+    "rtstruct_bytes": 84664,
+    "rtstruct_sha256": "2edea3e07380140a2147cebe1de3baa8d48205b83e43262cce588277cc55ebcb",
+    "validator": "convert_validate_rtstruct.py",
+    "result": "passed"
+  }
+}

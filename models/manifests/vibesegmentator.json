@@ -1,0 +1,20 @@
+{
+  "family": "VIBESegmentator",
+  "dataset_id": 100,
+  "repository": "https://github.com/robert-graf/VIBESegmentator",
+  "source_commit": "01e85382139b4101c5d020d455dcf917c7baa69d",
+  "weights_release": "https://github.com/robert-graf/VibeSegmentator/releases/tag/v1.0.0",
+  "checkpoint_tree_sha256": "1927d70a16884a9b36478820f5dba2d9dbca7c687a25a2128a9b10fa51671aca",
+  "folds": [0, 1, 2],
+  "labels": 72,
+  "verified_at": "2026-08-10",
+  "acceptance": {
+    "input": "208-slice synthetic DICOM derived from TotalSegmentator MRI s0052",
+    "nonempty_rois": 33,
+    "referenced_images": 208,
+    "rtstruct_bytes": 37750432,
+    "rtstruct_sha256": "cbe62512382b39dc27c059a4da5cd649c493f0213344b74cd0fb60c7665bf6af",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

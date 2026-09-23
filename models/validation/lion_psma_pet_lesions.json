@@ -1,0 +1,12 @@
+{
+  "artifact_bytes": 96772,
+  "artifact_sha256": "6ccd4de3689e70daeec9c35ed9dac1518363ba6eb6f986ca0820d695aee5754f",
+  "contour_sets": 1,
+  "fixture": "miednice-489871-pt-dicom",
+  "fixture_limitation": "Pipeline/geometry acceptance used the available PET fixture; tracer-specific clinical validation still requires a PSMA cohort.",
+  "model": "Dataset711_PSMA/nnUNetTrainer__nnUNetPlans__3d_fullres",
+  "referenced_images": 47,
+  "rois": 1,
+  "task": "lion_psma_pet_lesions",
+  "validated_at": "2026-08-11T04:14:52Z"
+}

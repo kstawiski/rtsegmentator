@@ -1,0 +1,1 @@
+{"task":"cads_open_554_bones_muscles","result":"passed","verified_at":"2026-08-11","fixture":"287173-ct-abdomen-dicom","nonempty_rois":6,"referenced_images_with_contours":167,"rtstruct_bytes":1367284,"rtstruct_sha256":"859d42eb5c8d173d909c6692f614e8d6b35b3ad5c3da841c840956b9e2085710","validator":"convert_validate_rtstruct.py"}

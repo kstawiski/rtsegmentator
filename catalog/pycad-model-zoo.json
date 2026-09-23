@@ -1,0 +1,29 @@
+{
+  "pycad_vertebrae_ct": {
+    "model_folder": "weights/pycad-model-zoo/spine/spine",
+    "modality": "CT", "description": "PYCAD Model Zoo vertebral-level CT segmentation",
+    "structures": "C1–C7, T1–T12, L1–L5 and S1 vertebrae",
+    "reference": "https://github.com/pycadd/pycad-model-zoo",
+    "labels": {"1":"Vertebra_C1","2":"Vertebra_C2","3":"Vertebra_C3","4":"Vertebra_C4","5":"Vertebra_C5","6":"Vertebra_C6","7":"Vertebra_C7","8":"Vertebra_T1","9":"Vertebra_T2","10":"Vertebra_T3","11":"Vertebra_T4","12":"Vertebra_T5","13":"Vertebra_T6","14":"Vertebra_T7","15":"Vertebra_T8","16":"Vertebra_T9","17":"Vertebra_T10","18":"Vertebra_T11","19":"Vertebra_T12","20":"Vertebra_L1","21":"Vertebra_L2","22":"Vertebra_L3","23":"Vertebra_L4","24":"Vertebra_L5","25":"Vertebra_S1"}
+  },
+  "pycad_skull_ct": {
+    "model_folder": "weights/pycad-model-zoo/skull/skull",
+    "modality": "CT", "description": "PYCAD Model Zoo skull CT segmentation",
+    "structures": "Skull", "reference": "https://github.com/pycadd/pycad-model-zoo",
+    "labels": {"1":"Skull"}
+  },
+  "pycad_cardiac_mr": {
+    "model_folder": "weights/pycad-model-zoo/heart/nnUNetTrainer_250epochs__nnUNetPlans__3d_fullres",
+    "modality": "MR", "description": "PYCAD Model Zoo cardiac MRI segmentation; upstream publishes only opaque h1/h2/h3 label names",
+    "structures": "Three released cardiac classes (h1, h2 and h3; anatomical mapping not documented upstream)",
+    "status": "validated_opaque_ontology", "reference": "https://github.com/pycadd/pycad-model-zoo",
+    "labels": {"1":"PYCAD_h1","2":"PYCAD_h2","3":"PYCAD_h3"}
+  },
+  "pycad_knee_joints_mr": {
+    "model_folder": "weights/pycad-model-zoo/knee/Dataset224_KNEE/nnUNetTrainer_250epochs__nnUNetPlans__3d_fullres",
+    "modality": "MR", "description": "PYCAD Model Zoo knee-joint MRI segmentation",
+    "structures": "Meniscus, ACL, PCL, femoral cartilage, patellar cartilage and tibial cartilage",
+    "reference": "https://github.com/pycadd/pycad-model-zoo",
+    "labels": {"1":"Meniscus","2":"ACL","3":"PCL","4":"FemoralCartilage","5":"PatellarCartilage","6":"TibialCartilage"}
+  }
+}

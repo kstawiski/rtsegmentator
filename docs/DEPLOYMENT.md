@@ -1,72 +1,100 @@
 # Deployment
 
-RTsegmentator supports a local GPU worker and a remote SSH worker.
+## Hosts
 
-## Same-host GPU
+The application uses two systems:
 
-Prepare the offline payload and image per [OFFLINE.md](OFFLINE.md), then run:
+1. **Portal host** — serves the WebUI on TCP port 8080 and temporarily stages uploads.
+2. **GPU worker** — runs inference and RTSTRUCT conversion through SSH.
 
-```bash
-cp .env.example .env
-docker compose up -d
-```
+The default worker and paths are defined in `app.py`:
 
-The portal listens on host port 8080 and runs inference inside the same
-container with `WORKER_MODE=local`.
+| Setting | Default |
+|---|---|
+| `WORKER_MODE` | `ssh` (`local` runs inference in the portal environment) |
+| `SEGMENTATION_WORKER` | `worker@rtsegmentator-worker` |
+| `REMOTE_JOB_ROOT` | `/home/worker/jobs` |
+| `REMOTE_PYTHON` | `/opt/rtsegmentator/venv/bin/python` |
+| `REMOTE_RUNNER` | `/app/run_task.py` |
+| `PORTAL_DATA` | repository-local `data/` |
+| `MAX_UPLOAD_BYTES` | 8 GiB |
+| `RETENTION_HOURS` | 24 hours |
 
-## Separate WebUI and GPU worker
+Override them with environment variables when the deployment differs.
 
-On the GPU server, install Docker, Compose and NVIDIA Container Toolkit, load
-the offline image, and create `secrets/authorized_keys` containing only the
-portal's public SSH key:
-
-```bash
-docker compose -f compose.remote-worker.yaml up -d
-```
-
-On the portal server, place the private key at `secrets/id_ed25519`, pin the
-worker host key in `secrets/known_hosts`, set `SEGMENTATION_WORKER` and
-`WORKER_SSH_PORT` in `.env`, then:
+## Portal host
 
 ```bash
-docker compose -f compose.portal.yaml up -d --build
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 ```
 
-Port 8080 is exposed on the portal server—the GPU worker need not expose it.
-The portal sends only the selected series and retrieves only resulting DICOM
-RTSTRUCT files.
+Install the systemd unit after adjusting its paths and account if necessary:
 
-## Source configuration
+```bash
+sudo install -m 0644 dicom-rt-portal.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now dicom-rt-portal.service
+sudo systemctl status dicom-rt-portal.service
+```
 
-| Variable | Meaning | Default |
-| --- | --- | --- |
-| `WORKER_MODE` | `local` or `ssh` | `ssh` |
-| `PORTAL_DATA` | staged uploads/jobs | `./data` |
-| `SEGMENTATION_WORKER` | SSH `user@host` | `konrad@cpd-konrad-worker` |
-| `WORKER_SSH_PORT` | optional SSH port | `22`/SSH default |
-| `REMOTE_JOB_ROOT` | remote transient jobs | `/home/konrad/dicom-rt-jobs` |
-| `REMOTE_PYTHON` | remote runtime Python | `/home/konrad/dicom-rt-seg/.venv/bin/python` |
-| `REMOTE_RUNNER` | remote dispatcher | `/home/konrad/dicom-rt-seg/run_task.py` |
-| `LOCAL_PYTHON` | same-host runtime Python | value of `REMOTE_PYTHON` |
-| `LOCAL_RUNNER` | same-host dispatcher | value of `REMOTE_RUNNER` |
-| `RTSEG_MODEL_ROOT` | worker model tree | `/home/konrad/lymph-models` |
-| `RTSEG_RUNTIME_ROOT` | worker scripts/environments | `/home/konrad/dicom-rt-seg` |
-| `RTSEG_API_KEY` | optional `/api/v1` key | unset |
-| `MAX_UPLOAD_BYTES` | aggregate upload limit | 8 GiB |
-| `RETENTION_HOURS` | job/upload retention | 24 |
+Verify:
 
-Use one Uvicorn worker. The in-process queue lock is intentionally responsible
-for serializing GPU inference; multiple Uvicorn workers would create competing
-queues.
+```bash
+curl -fsS http://127.0.0.1:8080/api/v1/health
+```
 
-## Network and data safeguards
+## SSH worker access
 
-- Terminate TLS at a trusted reverse proxy and restrict access by network or
-  identity-aware proxy.
-- The optional API key protects versioned automation endpoints; it is not a
-  replacement for WebUI authentication or TLS.
-- Use dedicated SSH keys, pinned host keys and a worker account limited to the
-  container.
-- Keep job volumes encrypted and backed up only if your data policy allows it.
-- Never publish patient DICOM, RTSTRUCT output, credentials, licenses or the
-  private offline payload.
+Configure non-interactive key-based SSH from the portal account:
+
+```bash
+ssh worker@rtsegmentator-worker true
+```
+
+The portal copies only the selected DICOM series, job metadata and prompt data. Unselected uploaded series are not transferred.
+
+## Worker installation
+
+Create these directories on the worker:
+
+```text
+/home/worker/dicom-rt-seg/
+/home/worker/dicom-rt-seg/.venv/
+/home/worker/dicom-rt-jobs/
+/models/
+```
+
+Copy the worker runtime code:
+
+```bash
+scp run_task.py run_*.py *.json worker@rtsegmentator-worker:/home/worker/dicom-rt-seg/
+```
+
+The worker uses isolated environments for incompatible historical releases, including nnU-Net v1, current nnU-Net v2, PAM/SAT3D/SAM-Med2D, Bouget and Raidionics. Exact release-specific repairs and validation results are recorded in `EXTERNAL_MODELS.md`.
+
+Model weights are intentionally not stored in this repository. Download them from the upstream references displayed in the WebUI and place them at the paths used by `run_task.py`.
+
+## TotalSegmentator
+
+Install the current supported TotalSegmentator release in the worker runtime. The portal queries the installed package for its complete task and structure catalog.
+
+Store the TotalSegmentator license on the worker using its CLI or another protected runtime mechanism. Never commit the key to Git or place it in the systemd unit.
+
+Confirm the installation:
+
+```bash
+/opt/rtsegmentator/venv/bin/TotalSegmentator --version
+/opt/rtsegmentator/venv/bin/totalseg_set_license --help
+```
+
+## Updating application code
+
+After changing portal code:
+
+```bash
+python3 -m py_compile app.py run_task.py run_*.py
+scp run_task.py run_*.py *.json worker@rtsegmentator-worker:/home/worker/dicom-rt-seg/
+sudo systemctl restart dicom-rt-portal.service
+systemctl is-active dicom-rt-portal.service
+```

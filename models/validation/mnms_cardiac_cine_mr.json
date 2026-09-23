@@ -1,0 +1,11 @@
+{
+  "artifact_bytes": 521782,
+  "artifact_sha256": "e1c765180870107762de0fe4b776f1ca5978b4f1e8433296a71a403942b0a141",
+  "contour_sets": 3,
+  "fixture": "msd-heart/dicom",
+  "model": "Task114_heart_MNMs/nnUNetTrainerV2_MMS__nnUNetPlansv2.1",
+  "referenced_images": 57,
+  "rois": 3,
+  "task": "mnms_cardiac_cine_mr",
+  "validated_at": "2026-08-11T04:18:43Z"
+}

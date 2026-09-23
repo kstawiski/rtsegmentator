@@ -1,0 +1,23 @@
+{
+  "name": "MIAC MARS brainstem and WMH nnU-Net releases",
+  "records": {
+    "brainstem": {
+      "source": "https://github.com/miac-research/dl-brainstem",
+      "source_commit": "ef51c7b4cc655dde5b75fb82fed2634c0608708e",
+      "zenodo": "https://zenodo.org/records/13323293",
+      "archive_sha256": "d29d239ed62b51eb86dc818448bdcf3b0735dae46e44c2442e69d4e83945016c",
+      "archive_md5_verified": "0b13a0ea732d7a53f7fc1c3d0e0a63ff",
+      "license": "CC BY-NC-ND 4.0",
+      "status": "enabled; five-fold T1 model passed strict RTSTRUCT acceptance"
+    },
+    "wmh": {
+      "source": "https://github.com/miac-research/MARS-WMH",
+      "source_commit": "40e7cae546568e2e20be1deb722e0ad14f5c561b",
+      "zenodo": "https://zenodo.org/records/15173303",
+      "archive_sha256": "bb7851437be155742d526b215d3a7a26d61aa182c55ddb3801f192974d8ea506",
+      "archive_md5_verified": "b89558cb0e06b9b3b8d0a2a81a0adf53",
+      "license": "CC BY 4.0",
+      "status": "installed but disabled: requires FLAIR and T1 series plus explicit registration into FLAIR space"
+    }
+  }
+}

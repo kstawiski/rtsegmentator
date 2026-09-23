@@ -1,0 +1,12 @@
+{
+  "1": "Spleen", "2": "Kidney_R", "3": "Kidney_L", "4": "Gallbladder",
+  "5": "Esophagus", "6": "Liver", "7": "Stomach", "8": "Aorta",
+  "9": "Postcava", "10": "PortalSplenicVein", "11": "Pancreas",
+  "12": "Adrenal_R", "13": "Adrenal_L", "14": "Duodenum",
+  "15": "HepaticVessel", "16": "Lung_R", "17": "Lung_L", "18": "Colon",
+  "19": "Intestine", "20": "Rectum", "21": "Bladder", "22": "Prostate",
+  "23": "FemoralHead_L", "24": "FemoralHead_R", "25": "CeliacTrunk",
+  "26": "KidneyTumor", "27": "LiverTumor", "28": "PancreasTumor",
+  "29": "HepaticVesselTumor", "30": "LungTumor", "31": "ColonTumor",
+  "32": "KidneyCyst"
+}

@@ -1,0 +1,23 @@
+{
+  "family": "nnU-Net v1 pretrained model zoo",
+  "task": "Task024_Promise",
+  "record": "https://zenodo.org/records/4003545",
+  "archive": "Task024_Promise.zip",
+  "archive_bytes": 2258526938,
+  "archive_md5": "c8dfacef77d4390786572194aa506595",
+  "archive_sha256": "298e046239db831194a7ac6f194c6c62077b103577e650cf6d3462e543311f8e",
+  "checkpoint_tree_sha256": "9acd4d81364577aa826504083a309d34a8722444f248eb2d1eb6ad68001b6925",
+  "configuration": "3d_fullres",
+  "folds": [0, 1, 2, 3, 4],
+  "verified_at": "2026-08-10",
+  "acceptance": {
+    "input": "208-slice whole-torso MRI technical fixture",
+    "domain_warning": "Execution and DICOM geometry test only; fixture is not a PROMISE12 prostate T2 MRI",
+    "nonempty_rois": 1,
+    "referenced_images": 208,
+    "rtstruct_bytes": 8510964,
+    "rtstruct_sha256": "f4bd07d8d43bb5abc4a25140ad39f033b21d7bf9ead9677dfb9090abcdc82e49",
+    "result": "passed_technical",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

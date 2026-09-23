@@ -1,85 +1,90 @@
-# RTsegmentator
+# DICOM RT Segmentation Portal
 
-RTsegmentator is a research WebUI and HTTP API for assessing DICOM uploads,
-running GPU segmentation, and exporting strictly validated DICOM RT Structure
-Set (`RTSTRUCT`) files. It supports CT, MR and PET workflows, TotalSegmentator,
-RT-focused lymph-node/tumour models, and interactive prompts for PAM, SAT3D and
-SAM-Med2D.
+Research portal for uploading DICOM image series, selecting compatible GPU segmentation models, and downloading the results as validated DICOM RT Structure Set (`RTSTRUCT`) files.
 
-> **Research use only.** This software and its model outputs are not medical
-> devices. Every result must be reviewed before clinical use.
+The WebUI can run inference in the same GPU container or send jobs over SSH to a dedicated GPU worker. Uploads are assessed locally before transfer: invalid files are ignored, distinct DICOM series are separated, and the user explicitly chooses one series and compatible models.
 
-## What it does
+> **Research use only.** Model outputs require clinical review and are not suitable for unattended treatment-planning decisions.
 
-- Inspects uploads locally before sending anything to a worker.
-- Rejects invalid files and separates multiple studies, series and modalities.
-- Lets the user select exactly one compatible series and model set.
-- Keeps `total` (CT) and `total_mr` (MR) mutually exclusive.
-- Supports a GPU on the WebUI host or a separate SSH-connected GPU worker.
-- Exposes a versioned API and generated Swagger UI at `/api/docs`.
-- Deletes input DICOM after completion and expires retained jobs automatically.
-- Terminates each model process after inference, allowing GPU memory to be
-  reclaimed between jobs.
+## Features
 
-The model picker includes descriptions, expected structures, validation state
-and links to the upstream release. Models that cannot safely run remain visible
-and disabled with their blocker.
+- CT, MR and PET DICOM ingestion and series-level inspection.
+- Modality-aware model selection. `total` and `total_mr` are never selected together.
+- Current TotalSegmentator task catalog obtained from the installed worker version.
+- External lymph-node, tumour and CTV models with descriptions, output structures, validation status and upstream references.
+- Interactive slice viewer for PAM, SAT3D and SAM-Med2D point/box prompts.
+- PET models can require a co-referenced CT series.
+- Strict RTSTRUCT acceptance checks against the selected source series.
+- Serialized GPU job execution and process-group termination.
+- Per-job temporary-data cleanup so model processes release VRAM after completion.
 
-## Deployment choices
+The live catalog currently exposes 81 tasks. Models without reproducible weights, required metadata, authoritative label mappings or required paired inputs remain visible but disabled with a precise blocker status.
 
-### One offline GPU host
+## Architecture
 
-After preparing the authorized model payload described in
-[Offline deployment](docs/OFFLINE.md):
+```text
+Browser :8080
+    |
+    v
+FastAPI portal host
+  - upload assessment
+  - DICOM series selection
+  - prompt capture
+  - job history/download
+    |
+    | SSH/SCP
+    v
+GPU worker
+  - DICOM -> geometry-preserving NIfTI
+  - model-specific preprocessing/inference
+  - mask -> RTSTRUCT
+  - strict DICOM validation
+```
+
+## Repository layout
+
+- `app.py` — FastAPI application and WebUI.
+- `run_task.py` — worker-side model dispatcher.
+- `run_*.py` — compatibility and inference wrappers for external releases.
+- `convert_validate_rtstruct.py` — mask conversion and strict RTSTRUCT validation.
+- `dicom_series_to_nifti.py` — geometry-preserving DICOM conversion.
+- `labels/` and `*-labels.json` — explicit output-label mappings.
+- `EXTERNAL_MODELS.md` — model integration and validation evidence ledger.
+- `docs/DEPLOYMENT.md` — host and worker deployment procedure.
+- `docs/OPERATIONS.md` — operation, validation, privacy and troubleshooting.
+
+Model weights, patient images, generated jobs, virtual environments and license keys are deliberately excluded from Git.
+
+## Quick start with Docker and NVIDIA GPU
 
 ```bash
 docker compose build
 docker compose up -d
+curl -fsS http://localhost:8080/api/v1/health
 ```
 
-Open `http://HOST:8080`. The same container runs the portal and GPU worker.
+Open `http://localhost:8080`. This runs the WebUI and worker together with `WORKER_MODE=local`. See [Containers and offline deployment](docs/CONTAINERS.md) for a separate GPU server and air-gapped installation.
 
-### Separate portal and GPU worker
+## Local application development
 
-Run `compose.remote-worker.yaml` on the GPU server and `compose.portal.yaml` on
-the WebUI server. Only the selected series is transferred to the worker over
-SSH. See [Deployment](docs/DEPLOYMENT.md).
-
-### Source development
+For local application development:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements-dev.txt
-WORKER_MODE=ssh SEGMENTATION_WORKER=user@gpu-host \
-  .venv/bin/uvicorn app:app --host 0.0.0.0 --port 8080
+.venv/bin/pip install -r requirements.txt
+WORKER_MODE=local .venv/bin/uvicorn app:app --host 0.0.0.0 --port 8080
 ```
 
-Model weights, patient images, generated jobs, license keys and built offline
-images are intentionally excluded from Git. Upstream model terms still apply;
-see `models/manifest.json` and [the model ledger](EXTERNAL_MODELS.md).
+The local runtime must contain the model environments and artifacts documented in `EXTERNAL_MODELS.md`. Set `WORKER_MODE=ssh` for a separately managed worker.
 
 ## Automation
 
-The recommended workflow is two-stage: upload and inspect, then submit one
-returned `series_key`. This prevents accidental processing of mixed archives.
-
-```bash
-curl -H "X-API-Key: $RTSEG_API_KEY" \
-  -F 'files=@study.zip' http://localhost:8080/api/v1/uploads
-
-curl -H "X-API-Key: $RTSEG_API_KEY" \
-  -F 'series_key=SERIES_KEY_FROM_FIRST_RESPONSE' \
-  -F 'models=total' \
-  http://localhost:8080/api/v1/uploads/UPLOAD_ID/jobs
-```
-
-Poll `/api/v1/jobs/JOB_ID`, then download
-`/api/v1/jobs/JOB_ID/result`. Full examples are in [API](docs/API.md).
+The stable automation surface is `/api/v1`, with interactive documentation at `/api/docs`. It supports model discovery, multipart DICOM submission, job polling, health checks, and result download. See [API](docs/API.md).
 
 ## Documentation
 
-- [Offline image and model payload](docs/OFFLINE.md)
-- [Portal/worker deployment](docs/DEPLOYMENT.md)
+- [Deployment](docs/DEPLOYMENT.md)
+- [Containers and offline deployment](docs/CONTAINERS.md)
 - [Automation API](docs/API.md)
-- [Operations, privacy and validation](docs/OPERATIONS.md)
+- [Operations and safety](docs/OPERATIONS.md)
 - [External-model validation ledger](EXTERNAL_MODELS.md)

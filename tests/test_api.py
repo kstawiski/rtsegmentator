@@ -15,9 +15,8 @@ from pydicom.uid import CTImageStorage, ExplicitVRLittleEndian, generate_uid
 def load_app(tmp_path: Path):
     os.environ["PORTAL_DATA"] = str(tmp_path / "jobs")
     os.environ["WORKER_MODE"] = "local"
-    os.environ["LOCAL_PYTHON"] = os.sys.executable
+    os.environ["LOCAL_PYTHON"] = sys.executable
     os.environ["LOCAL_RUNNER"] = str(Path(__file__).parents[1] / "run_task.py")
-    os.environ["RTSEG_API_KEY"] = "test-key"
     sys.modules.pop("app", None)
     module = importlib.import_module("app")
     return module.app
@@ -53,14 +52,12 @@ def make_slice(path: Path, series_uid: str, instance: int) -> None:
     ds.save_as(path, enforce_file_format=True)
 
 
-def test_versioned_api_catalog_and_auth(tmp_path):
+def test_versioned_api_catalog(tmp_path):
     with TestClient(load_app(tmp_path)) as client:
-        assert client.get("/api/v1/health").status_code == 401
-        headers = {"X-API-Key": "test-key"}
-        health = client.get("/api/v1/health", headers=headers)
+        health = client.get("/api/v1/health")
         assert health.status_code == 200
         assert health.json()["worker_mode"] == "local"
-        catalog = client.get("/api/v1/models", headers=headers).json()["tasks"]
+        catalog = client.get("/api/v1/models").json()["tasks"]
         assert catalog
         assert all(item.get("description") and item.get("structures") and item.get("reference") for item in catalog)
         assert client.get("/api/openapi.json").status_code == 200
@@ -75,12 +72,11 @@ def test_assessment_api_groups_dicom_series(tmp_path):
         path = source / f"slice-{index}.dcm"
         make_slice(path, series_uid, index)
         paths.append(path)
-    headers = {"X-API-Key": "test-key"}
     with TestClient(load_app(tmp_path)) as client:
         handles = [path.open("rb") for path in paths]
         try:
             files = [("files", (path.name, handle, "application/dicom")) for path, handle in zip(paths, handles)]
-            response = client.post("/api/v1/uploads", headers=headers, files=files)
+            response = client.post("/api/uploads", files=files)
         finally:
             for handle in handles:
                 handle.close()

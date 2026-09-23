@@ -13,7 +13,16 @@ def main():
     a=p.parse_args(); pred=nib.load(a.prediction); inp=nib.load(a.model_input)
     if pred.shape != inp.shape: raise SystemExit(f"shape mismatch: prediction {pred.shape}, input {inp.shape}")
     if not np.allclose(pred.affine,inp.affine,atol=1e-3): raise SystemExit("prediction affine does not match model input")
-    data=np.rint(np.asanyarray(pred.dataobj)).astype(np.int16); raw=json.loads(Path(a.labels).read_text())
+    data=np.rint(np.asanyarray(pred.dataobj)).astype(np.int16)
+    # TotalSegmentator's RTSTRUCT writer expects radiological LAS voxel axes.
+    # SimpleITK writes our geometry-faithful DICOM conversion as LPS, so giving
+    # its raw array directly to that writer reflects contours in the AP axis.
+    # Reorient the label array (nearest-neighbour by construction) without
+    # resampling before applying the writer's DICOM plane transform.
+    current=nib.orientations.io_orientation(pred.affine)
+    expected=nib.orientations.axcodes2ornt(("L","A","S"))
+    data=nib.orientations.apply_orientation(data,nib.orientations.ornt_transform(current,expected))
+    raw=json.loads(Path(a.labels).read_text())
     labels={int(k):str(v) for k,v in raw.items() if int(k)>0}; present=set(np.unique(data))-set([0])
     unknown=present-set(labels)
     if unknown: raise SystemExit(f"unmapped prediction labels: {sorted(unknown)}")

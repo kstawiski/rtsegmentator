@@ -1,0 +1,29 @@
+{
+  "family": "lungmask",
+  "package_version": "0.2.21",
+  "repository": "https://github.com/JoHof/lungmask",
+  "license": "MIT",
+  "verified_at": "2026-08-10",
+  "checkpoints": [
+    {
+      "model": "R231",
+      "url": "https://github.com/JoHof/lungmask/releases/download/v0.0/unet_r231-d5d2fc3d.pth",
+      "sha256": "d5d2fc3df432115933491f115b283e94d1f5c841c0e82f6e7bd2d65d3ccde69f"
+    },
+    {
+      "model": "LTRCLobes",
+      "url": "https://github.com/JoHof/lungmask/releases/download/v0.0/unet_ltrclobes-3a07043d.pth",
+      "sha256": "3a07043d9252efd04ece4adc9b47538b68f1a976b1bce6e4692b9f447e3f0665"
+    }
+  ],
+  "acceptance": {
+    "input": "179-slice thoracic CT DICOM subset derived from the whole-body test series",
+    "tasks": {
+      "lungmask_r231": {"rois": 2, "referenced_images": 159, "rtstruct_bytes": 2898638},
+      "lungmask_ltrc_lobes": {"rois": 5, "referenced_images": 159, "rtstruct_bytes": 3456598},
+      "lungmask_ltrc_lobes_r231": {"rois": 5, "referenced_images": 159, "rtstruct_bytes": 3828138}
+    },
+    "validator": "convert_validate_rtstruct.py",
+    "result": "passed"
+  }
+}

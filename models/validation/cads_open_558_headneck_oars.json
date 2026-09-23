@@ -1,0 +1,1 @@
+{"task":"cads_open_558_headneck_oars","result":"passed","verified_at":"2026-08-11","fixture":"287173-ct-head-dicom","nonempty_rois":15,"referenced_images_with_contours":64,"rtstruct_bytes":618398,"rtstruct_sha256":"851f1ed26608d517c4b57c9d0aaf89767e73417f06e0540b86071b80e90a04f2","validator":"convert_validate_rtstruct.py"}

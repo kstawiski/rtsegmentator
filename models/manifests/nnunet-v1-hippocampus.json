@@ -1,0 +1,23 @@
+{
+  "family": "nnU-Net v1 pretrained model zoo",
+  "task": "Task004_Hippocampus",
+  "record": "https://zenodo.org/records/4003545",
+  "archive": "Task004_Hippocampus.zip",
+  "archive_bytes": 284204269,
+  "archive_md5": "44dad55102901e203f5cda68084f0c5c",
+  "archive_sha256": "9b79415d303b38f66bd84c90281736c4ef7b5bb94ad6aa058f569a926cbd37fe",
+  "checkpoint_tree_sha256": "89dca2d8a43fb525448916a650e3d3097d81a8274bcbe1371b994f40c169207f",
+  "configuration": "3d_fullres",
+  "folds": [0, 1, 2, 3, 4],
+  "verified_at": "2026-08-10",
+  "acceptance": {
+    "input": "35-slice synthetic DICOM from an official MSD Task04 training MRI",
+    "fixture_source": "https://msd-for-monai.s3-us-west-2.amazonaws.com/Task04_Hippocampus.tar",
+    "nonempty_rois": 2,
+    "referenced_images": 24,
+    "rtstruct_bytes": 19456,
+    "rtstruct_sha256": "29d0132fca07fb6a74d5ee5c097dc7b37d24bece1a648eb00f99efdf6544f1ab",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

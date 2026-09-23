@@ -1,0 +1,23 @@
+{
+  "family": "nnU-Net v1 pretrained model zoo",
+  "task": "Task027_ACDC",
+  "record": "https://zenodo.org/records/4003545",
+  "archive": "Task027_ACDC.zip",
+  "archive_bytes": 1830026265,
+  "archive_md5": "70723b2d5dd7237e38461128b5d5c601",
+  "archive_sha256": "e612908b37753ba32d436d17c12e3c33d955880a33c033b3a8dda1b59fd7c93a",
+  "checkpoint_tree_sha256": "1f4d4c8858654a453774148a0c841b448a68389663dc9fb21fa2b590bc5369ee",
+  "configuration": "3d_fullres",
+  "folds": [0, 1, 2, 3, 4],
+  "verified_at": "2026-08-10",
+  "acceptance": {
+    "input": "130-slice synthetic DICOM from official MSD Task02 cardiac MRI la_007",
+    "domain_warning": "Technical execution and geometry test; fixture is cardiac MRI but not an ACDC short-axis cine case",
+    "nonempty_rois": 3,
+    "referenced_images": 115,
+    "rtstruct_bytes": 1173466,
+    "rtstruct_sha256": "a3376188878ee3d71b2c788ab8606447366ee6e827ebe2693e761df036ae1fc8",
+    "result": "passed_technical",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

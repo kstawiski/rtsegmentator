@@ -1,0 +1,31 @@
+{
+  "family": "TotalSpineSeg",
+  "package_version": "20260807",
+  "model_release": "r20260730",
+  "repository": "https://github.com/neuropoly/totalspineseg",
+  "verified_at": "2026-08-10",
+  "archives": [
+    {
+      "dataset": "Dataset101_TotalSpineSeg_step1",
+      "url": "https://github.com/neuropoly/totalspineseg/releases/download/r20260730/Dataset101_TotalSpineSeg_step1_r20260730.zip",
+      "sha256": "781f81e8c94feccd3cef17d819ba5c293b506e9b1f2b106fc5e31b9dd85887b0"
+    },
+    {
+      "dataset": "Dataset102_TotalSpineSeg_step2",
+      "url": "https://github.com/neuropoly/totalspineseg/releases/download/r20260730/Dataset102_TotalSpineSeg_step2_r20260730.zip",
+      "sha256": "494c640ab8cb25475bd0fc4338c0931d37079af9dd19403879335c3908c06b46"
+    }
+  ],
+  "runtime_compatibility": {
+    "kornia": "0.7.4",
+    "reason": "auglab 20260109 imports Tensor and Module from kornia.core; Kornia 0.8.3 removed those exports"
+  },
+  "acceptance": {
+    "input": "82-slice cervical T2 MRI synthetic DICOM series",
+    "nonempty_rois": 16,
+    "referenced_images": 69,
+    "rtstruct_bytes": 1351576,
+    "validator": "convert_validate_rtstruct.py",
+    "result": "passed"
+  }
+}

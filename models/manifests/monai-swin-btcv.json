@@ -1,0 +1,22 @@
+{
+  "family": "MONAI Model Zoo",
+  "bundle": "swin_unetr_btcv_segmentation",
+  "bundle_version": "0.5.8",
+  "source": "https://huggingface.co/MONAI/swin_unetr_btcv_segmentation",
+  "bundle_tree_sha256_excluding_cache": "4696ca68017c2ecad5cf0405bd54b4ec58d306154b2436b389fae4d652f431f9",
+  "model_pt_sha256": "52e7c3114444e41bb14f644e0dd2b7d42d70ad4b4dec0c1bfa4a552a4b92a096",
+  "runtime": {"monai": "1.6.0", "pytorch_ignite": "0.4.11"},
+  "compatibility": "The job-local config removes the obsolete MONAI <=1.4 SwinUNETR img_size constructor argument; the official bundle remains unchanged.",
+  "verified_at": "2026-08-11",
+  "acceptance": {
+    "input": "167-slice abdominal CT acceptance fixture",
+    "nonempty_rois": 13,
+    "nonempty_labels": ["Spleen", "Kidney_Right", "Kidney_Left", "Gallbladder", "Esophagus", "Liver", "Stomach", "Aorta", "Inferior_Vena_Cava", "Portal_And_Splenic_Veins", "Pancreas", "Adrenal_Gland_Right", "Adrenal_Gland_Left"],
+    "referenced_images_with_contours": 167,
+    "source_images_in_referenced_series": 167,
+    "rtstruct_bytes": 3272662,
+    "rtstruct_sha256": "b00d4ea92039a6a597a18386d4494eb7b77af81ee5a60adbd2398d02bc66563a",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

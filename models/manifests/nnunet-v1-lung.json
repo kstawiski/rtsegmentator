@@ -1,0 +1,24 @@
+{
+  "family": "nnU-Net v1 pretrained model zoo",
+  "task": "Task006_Lung",
+  "record": "https://zenodo.org/records/4003545",
+  "archive": "Task006_Lung.zip",
+  "archive_bytes": 5006898593,
+  "archive_md5": "9c7f89f3b2153292f69d6478da6a218f",
+  "archive_sha256": "8917d3df7cbc2f31c228c2e392bd65b0b5a790cb0a92cf8b03f5b645b99c6792",
+  "checkpoint_tree_sha256": "c00eb72340e5d44326bbfbf503ddcca7879fb551d1aee634cba4860eaa7d355a",
+  "configuration": "3d_fullres",
+  "folds": [0, 1, 2, 3, 4],
+  "verified_at": "2026-08-10",
+  "acceptance": {
+    "input": "252-slice synthetic DICOM from official MSD Task06 training CT lung_053",
+    "fixture_source": "https://msd-for-monai.s3-us-west-2.amazonaws.com/Task06_Lung.tar",
+    "fixture_archive_sha256": "f782cd09da9cf7a3128475d4a53650d371db10f0427aa76e166fccfcb2654161",
+    "nonempty_rois": 1,
+    "referenced_images": 77,
+    "rtstruct_bytes": 502838,
+    "rtstruct_sha256": "b9687b45a3b8694ac1933796ec775691174d9198b018dfb4ba5b0949fef7a81c",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

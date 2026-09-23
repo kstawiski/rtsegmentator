@@ -1,0 +1,7 @@
+{
+  "verified_at": "2026-08-10",
+  "result": "passed",
+  "gate": "non-empty RTSTRUCT with source-series SOP reference validation",
+  "evidence_root": "results/acceptance",
+  "note": "Install one copy under validation/<task>.json for each accepted task."
+}

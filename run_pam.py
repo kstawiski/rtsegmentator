@@ -40,7 +40,7 @@ parser.add_argument("--prompt", required=True)
 parser.add_argument("--modality", required=True, choices=["CT", "MR", "PT"])
 args = parser.parse_args()
 
-model_root = Path(os.environ.get("RTSEG_MODEL_ROOT", "/home/konrad/lymph-models"))
+model_root = Path(os.environ.get("RTSEG_MODEL_ROOT", "/models"))
 repo = model_root / "sources/PAM"
 sys.path.insert(0, str(repo))
 from model.PAM import PAM  # noqa: E402

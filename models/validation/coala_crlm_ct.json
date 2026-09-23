@@ -1,0 +1,11 @@
+{
+  "artifact_bytes": 3432498,
+  "artifact_sha256": "03333a7de9f7905f917881bd444dcdac577f94d3d459263feee41459c8903587",
+  "contour_sets": 11,
+  "fixture": "287173-ct-abdomen-dicom",
+  "model": "Task001_CRLM lowres plus 3d_cascade_fullres five-fold ensemble",
+  "referenced_images": 139,
+  "rois": 11,
+  "task": "coala_crlm_ct",
+  "validated_at": "2026-08-11T04:30:00Z"
+}

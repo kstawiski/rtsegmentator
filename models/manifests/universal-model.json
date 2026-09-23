@@ -1,0 +1,13 @@
+{
+  "name": "CLIP-Driven Universal Model",
+  "source": "https://github.com/ljwztc/CLIP-Driven-Universal-Model",
+  "source_commit": "43c12399cc98a40f447342a8dc2cecae5edae84c",
+  "license": "CC BY-NC-ND 4.0",
+  "checkpoints": {
+    "clip_driven_universal_unet.pth": "bfa7482e05556ed31f63a32a3a9ad59e478e7f36a956c5f66c112b5aa083b553",
+    "clip_driven_universal_swin_unetr.pth": "cde35d9ca344a744c849ebe0cd086cb64984e79f605376c56bd04531c767ed07"
+  },
+  "runtime": "Python 3.10, PyTorch 2.6.0+cu124, MONAI 0.9.0, NumPy 1.26.4",
+  "output_contract": "32 overlapping sigmoid masks combined in released class order, with lesion/cyst classes taking precedence over containing organs",
+  "acceptance": "Both official architectures passed strict DICOM RTSTRUCT validation; see models/validation/universal_model_*.json."
+}

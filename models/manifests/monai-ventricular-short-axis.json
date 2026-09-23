@@ -1,0 +1,22 @@
+{
+  "family": "MONAI Model Zoo",
+  "bundle": "ventricular_short_axis_3label",
+  "bundle_version": "0.3.5",
+  "source": "https://huggingface.co/MONAI/ventricular_short_axis_3label",
+  "bundle_tree_sha256_excluding_cache": "763ab08d807ea5bb00d5a4f2e108c746d0d8d9f838543c66c8c40770141868b1",
+  "model_pt_sha256": "464ca796028831f6c9e2b1cdaebe9af002fc1d7f494f7a89a63f2079e38837a1",
+  "model_ts_sha256": "27d5532401fa6c1883872fa21635adbb7615981e7f385d0c58dd75b355e340b3",
+  "runtime": {"monai": "1.6.0", "pytorch_ignite": "0.4.11"},
+  "verified_at": "2026-08-11",
+  "acceptance": {
+    "input": "MSD cardiac MRI la_007, 130-slice research DICOM",
+    "nonempty_rois": 3,
+    "nonempty_labels": ["lv_pool", "myocardium", "rv_pool"],
+    "referenced_images_with_contours": 130,
+    "source_images_in_referenced_series": 130,
+    "rtstruct_bytes": 1974990,
+    "rtstruct_sha256": "358ba6ea4a6222f61b9d972637a5d1f9b082df92e2c7398e7dc1a2bc030b1a47",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

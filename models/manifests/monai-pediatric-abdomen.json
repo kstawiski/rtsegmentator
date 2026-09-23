@@ -1,0 +1,23 @@
+{
+  "family": "MONAI Model Zoo",
+  "bundle": "pediatric_abdominal_ct_segmentation",
+  "bundle_version": "0.4.6",
+  "source": "https://huggingface.co/MONAI/pediatric_abdominal_ct_segmentation",
+  "bundle_tree_sha256_excluding_cache": "6e61ce6cb0afdb82ae453553285572317566d29bcf062824a3fa0e8f0c61bae7",
+  "model_pt_sha256": "5d5c616267cfb8b111cb9d2e3dc54419f8d7af952228b8c049aa6fa1e5224bfd",
+  "a100_trt_sha256": "079a5a65757055121a7badbfd770b7b39e108e379dbf3ce3c1533e094c9b609f",
+  "runtime": {"monai": "1.6.0", "pytorch_ignite": "0.4.11"},
+  "verified_at": "2026-08-11",
+  "acceptance": {
+    "input": "167-slice adult abdominal CT technical fixture",
+    "domain_warning": "Execution and geometry only; the fixture is not pediatric.",
+    "nonempty_rois": 3,
+    "nonempty_labels": ["Liver", "Spleen", "Pancreas"],
+    "referenced_images_with_contours": 112,
+    "source_images_in_referenced_series": 167,
+    "rtstruct_bytes": 1248946,
+    "rtstruct_sha256": "6a1cba72cb29663d4068180b47927eb2ff1f0ace7bc7339c3509ce9a708d0b3a",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

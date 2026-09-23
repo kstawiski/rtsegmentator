@@ -1,0 +1,24 @@
+{
+  "family": "MONAI Model Zoo",
+  "bundle": "multi_organ_segmentation",
+  "bundle_version": "0.0.6",
+  "source": "https://huggingface.co/MONAI/multi_organ_segmentation",
+  "bundle_tree_sha256_excluding_cache": "5e107b83ff94a02c4fe4f5310813643037bcf6810d0ffed2bced6001efb1acb0",
+  "model_pt_sha256": "0ed27c74695d94a5f4b05f1f345b239ed3dcd630ee4dd4e7f593d7d7a740ca3b",
+  "model_ts_sha256": "3da668b2484e263ff01c148ed4210df4421f8bbd7683da34b7930d965011a9e5",
+  "search_code_sha256": "01e361e9843e2f4e5ff1599da0abac77013ea38cab8fdd6c9286bb6572c9a32d",
+  "runtime": {"monai": "1.6.0", "pytorch_ignite": "0.4.11"},
+  "verified_at": "2026-08-11",
+  "acceptance": {
+    "input": "167-slice abdominal CT acceptance fixture",
+    "nonempty_rois": 6,
+    "nonempty_labels": ["Artery", "Portal_Vein", "Liver", "Spleen", "Stomach", "Pancreas"],
+    "empty_checkpoint_labels": ["Gallbladder"],
+    "referenced_images_with_contours": 144,
+    "source_images_in_referenced_series": 167,
+    "rtstruct_bytes": 1240254,
+    "rtstruct_sha256": "507f9a8dbd009216ab771bda9e66543b367ed3a8d13cab20781c130c391690a8",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "family": "nnU-Net v1 pretrained model zoo",
+  "task": "Task048_KiTS_clean",
+  "catalog_alias": "Task040_KiTS",
+  "record": "https://zenodo.org/records/4003545",
+  "archive": "Task048_KiTS_clean.zip",
+  "archive_bytes": 5046705739,
+  "archive_md5": "a0e1c4929f223de2eb829f916c0c6a14",
+  "archive_sha256": "25e8e842df8b8a7593b94bfe045da4be2e892b4d6b2f6249749777429d047909",
+  "checkpoint_tree_sha256": "d918fd10fce0c8b31e8b6ffb9a3cc30eedfe652796da95b20433db6a3a9050cb",
+  "configuration": "3d_fullres",
+  "folds": [0, 1, 2, 3, 4],
+  "verified_at": "2026-08-10",
+  "acceptance": {
+    "input": "KiTS19 case_00000 contrast-enhanced renal CT converted to a 611-slice research DICOM series",
+    "input_image_sha256": "cdae5f3e0fbc7c98ab0430b3de42677abda2c1cf93ae0f86bd29fb8606688cb7",
+    "input_segmentation_sha256": "d1019d9a690e193e167cadf3518499e9ed54c1c7757ce520152a3ed072159e09",
+    "nonempty_rois": 2,
+    "nonempty_labels": ["Kidney", "Kidney_Tumor"],
+    "referenced_images_with_contours": 264,
+    "source_images_in_referenced_series": 611,
+    "rtstruct_bytes": 1421284,
+    "rtstruct_sha256": "b65fc2605efff7e64ea4945d6b4af7cf0b513c223bb3607b79e76920a8b2d7e2",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

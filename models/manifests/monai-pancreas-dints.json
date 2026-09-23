@@ -1,0 +1,23 @@
+{
+  "family": "MONAI Model Zoo",
+  "bundle": "pancreas_ct_dints_segmentation",
+  "bundle_version": "0.5.2",
+  "source": "https://huggingface.co/MONAI/pancreas_ct_dints_segmentation",
+  "bundle_tree_sha256_excluding_cache": "f68177b88af3a7ff7380731f482bfe3e4286b214b86c47a587d8112c030fead4",
+  "model_pt_sha256": "a18ae8b837f6affe778d7e9f130e6045c04a6f7d5b5dd8470155b9a18b6bcb65",
+  "model_ts_sha256": "39d6087354fcff7b90e27191e5654774b98e6d7b503aa5752edfa9b07867bd5a",
+  "search_code_sha256": "5049f457b4cdbee036faf56ff5445c633300128d582731e6364c97fa3dc8a515",
+  "runtime": {"monai": "1.6.0", "pytorch_ignite": "0.4.11"},
+  "verified_at": "2026-08-11",
+  "acceptance": {
+    "input": "167-slice abdominal CT acceptance fixture",
+    "nonempty_rois": 2,
+    "nonempty_labels": ["Pancreas", "Pancreatic_Tumor"],
+    "referenced_images_with_contours": 59,
+    "source_images_in_referenced_series": 167,
+    "rtstruct_bytes": 244048,
+    "rtstruct_sha256": "687d9bb09d9a0715b01459139dccb4b89ac27274b20f864b494b2c76c6a4c158",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

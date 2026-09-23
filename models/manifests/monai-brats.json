@@ -1,0 +1,12 @@
+{
+  "family": "MONAI Model Zoo",
+  "bundle": "brats_mri_segmentation",
+  "bundle_version": "0.5.4",
+  "source": "https://huggingface.co/MONAI/brats_mri_segmentation",
+  "bundle_tree_sha256_excluding_cache": "f0dca8c23ad825d4d61f90d3c3480af9f64400588a2eb4b8c28a9349bb133bcf",
+  "model_pt_sha256": "860ccb3f1c21c99d0410ad8a1ac4ef6b8fab60cec0a503b0ba42675741a750ae",
+  "model_ts_sha256": "729980a0bd9347bf2397701eb329e12517918dc282a2d09c40458e95b24ceed9",
+  "input_contract": ["T1c", "T1", "T2", "FLAIR"],
+  "status": "requires_four_registered_mr_series",
+  "verified_at": "2026-08-11"
+}

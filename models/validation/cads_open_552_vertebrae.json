@@ -1,0 +1,1 @@
+{"task":"cads_open_552_vertebrae","result":"passed","verified_at":"2026-08-11","fixture":"287173-ct-abdomen-dicom","nonempty_rois":10,"referenced_images_with_contours":167,"rtstruct_bytes":1243786,"rtstruct_sha256":"60367487df562a6fa0b2d2346c5c4dbdf7565c8bb5733946f755dd198c13ca6a","validator":"convert_validate_rtstruct.py"}

@@ -1,0 +1,24 @@
+{
+  "family": "nnU-Net v1 pretrained model zoo",
+  "task": "Task002_Heart",
+  "record": "https://zenodo.org/records/4003545",
+  "archive": "Task002_Heart.zip",
+  "archive_bytes": 2250439042,
+  "archive_md5": "47918532eabe17478eb29335b90b6604",
+  "archive_sha256": "1d600680dc5e95f47a8d1a0a92033166112d0df118d659c387181330a7bbf012",
+  "checkpoint_tree_sha256": "5053fc1e194945d720f89f7625e72c362cfd91c56665d28a4bcbdcdf46335f1e",
+  "configuration": "3d_fullres",
+  "folds": [0, 1, 2, 3, 4],
+  "verified_at": "2026-08-10",
+  "acceptance": {
+    "input": "130-slice synthetic DICOM from official MSD Task02 training MRI la_007",
+    "fixture_source": "https://msd-for-monai.s3-us-west-2.amazonaws.com/Task02_Heart.tar",
+    "fixture_archive_sha256": "4277dc6dfe100142aa8060e895f6ff0f81c5b733703ea250bd294df8f820bcba",
+    "nonempty_rois": 1,
+    "referenced_images": 76,
+    "rtstruct_bytes": 159588,
+    "rtstruct_sha256": "dfe70e36331b60670d183d311f00ec43ab0fddfb38ffe16c9008e41c4c4ba0e8",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

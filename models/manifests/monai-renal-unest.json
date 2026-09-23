@@ -1,0 +1,21 @@
+{
+  "family": "MONAI Model Zoo",
+  "bundle": "renalStructures_UNEST_segmentation",
+  "bundle_version": "0.2.7",
+  "source": "https://huggingface.co/MONAI/renalStructures_UNEST_segmentation",
+  "bundle_tree_sha256_excluding_cache": "e8dca014e2f2bc34b499e28e0e08dc07e76dc58e9f4d414fc0674c271a9e258b",
+  "model_pt_sha256": "8928e88771d31945c51d1b302a8448825e6f9861a543a6e1023acb9576840962",
+  "runtime": {"monai": "1.6.0", "pytorch_ignite": "0.4.11"},
+  "verified_at": "2026-08-11",
+  "acceptance": {
+    "input": "KiTS19 case_00000 contrast-enhanced renal CT, 611-slice research DICOM",
+    "nonempty_rois": 3,
+    "nonempty_labels": ["Kidney_Cortex", "Kidney_Medulla", "Pelvicalyceal_System"],
+    "referenced_images_with_contours": 352,
+    "source_images_in_referenced_series": 611,
+    "rtstruct_bytes": 4768052,
+    "rtstruct_sha256": "2feb5b95ecfd66119e0caa235b4c28b68db02baccd689e18373cef7d2529bc5d",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

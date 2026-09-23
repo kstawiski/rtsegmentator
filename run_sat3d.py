@@ -19,7 +19,7 @@ parser.add_argument("--output", required=True)
 parser.add_argument("--prompt", required=True)
 args = parser.parse_args()
 
-model_root = Path(os.environ.get("RTSEG_MODEL_ROOT", "/home/konrad/lymph-models"))
+model_root = Path(os.environ.get("RTSEG_MODEL_ROOT", "/models"))
 repo = model_root / "sources/SAT3D"
 sys.path.insert(0, str(repo))
 # SAT3D only needs two small timm layer helpers. Supplying them locally avoids

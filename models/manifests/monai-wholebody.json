@@ -1,0 +1,24 @@
+{
+  "family": "MONAI Model Zoo",
+  "bundle": "wholeBody_ct_segmentation",
+  "bundle_version": "0.2.7",
+  "source": "https://huggingface.co/MONAI/wholeBody_ct_segmentation",
+  "bundle_tree_sha256_excluding_cache": "9dc544113f41fedb225a2d8ea62f5a56b991a59e5dbd1a2fe290133d7c55c20b",
+  "model_highres_sha256": "80b429fb4b080df11c9ed0b0bdaa8a615ff083921bb213a512cf285afbc4e3fe",
+  "model_lowres_sha256": "c3ab55eb979785fdcb30690872c210bbeee73d79a170c32fdaa1eca117779f90",
+  "selected_checkpoint": "model_lowres.pt",
+  "selection_reason": "The official 1.5 mm path requires a 32 GiB softmax allocation in addition to 33 GiB already resident and exceeds the worker's 48 GiB GPU; the bundle-provided 3 mm checkpoint completes without cropping.",
+  "runtime": {"monai": "1.6.0", "pytorch_ignite": "0.4.11"},
+  "verified_at": "2026-08-11",
+  "acceptance": {
+    "input": "735-slice whole-body CT acceptance fixture",
+    "nonempty_rois": 102,
+    "empty_checkpoint_labels": ["face", "gallbladder"],
+    "referenced_images_with_contours": 701,
+    "source_images_in_referenced_series": 735,
+    "rtstruct_bytes": 18842824,
+    "rtstruct_sha256": "88d18988f8a5525457bf6f4faedd1509835b0f48afa0c3980825524c4773da59",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

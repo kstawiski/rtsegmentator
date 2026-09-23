@@ -1,0 +1,17 @@
+{
+  "verified_at": "2026-08-11",
+  "storage_root": "/umed-projekty/RTsegmentator-private/model-bundle-v2",
+  "archives": {
+    "adaptive_male_pelvis": {"record": "15746134", "file": "Prostate_MRL_nnUNetTrainerNoMirroring_3d_fullres.zip", "md5": "992df6b5f42bf23856917420d94ef60f"},
+    "kidney_dixon": {"record": "15328218", "file": "nnunet_kidneys_v2.zip", "md5": "6d7daff04abeb4cf19af9889f03a7308", "status": "installed_requires_four_registered_dixon_series"},
+    "lung_five_region": {"record": "15215411", "file": "trained_models.zip", "md5": "e3aa1006740be7ef69cf4f4e181cf328"},
+    "lipoma_alt": {"record": "10964138", "file": "Task803_LipomaALT.zip", "md5": "f20df58a75c0ed31946bcee60ac7c954"},
+    "adipose_tissue": {"record": "7229667", "file": "Task001_AdiposeTissue.zip", "md5": "9e26aa20ff5818d707244b97d18ee3c9", "packaging_repair": "plans.pkl reconstructed from the identical plans object embedded in official fold metadata"},
+    "thoracolumbar_rib": {"record": "14864106", "file": "ribseg_model_weights.zip", "md5": "a3fa6ac14de2c23c6299f61c36ce0fad"},
+    "upper_airway_dynamic_mr": {"record": "19021077", "file": "Dataset010_AirwaySegmentation.zip", "md5": "c42d7ace1788eeb045dc0fe2322d4de7", "extraction": "weights and metadata only; upstream validation arrays omitted"}
+  },
+  "non_runnable_audits": {
+    "urinary_oars": {"record": "17749267", "status": "weights_not_in_release", "evidence": "sole 152380-byte source archive contains no checkpoint"},
+    "pelvic_13_oar": {"record": "18875608", "status": "no_checkpoint_thesis_only", "evidence": "sole file is a 4705345-byte thesis PDF"}
+  }
+}

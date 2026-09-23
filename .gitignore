@@ -21,8 +21,21 @@ data/
 
 # Model artifacts and credentials
 weights/
+runtimes/
+models/
+!models/
 models/*
-!models/manifest.json
+!models/README.md
+!models/manifests/
+!models/validation/
+!models/patches/
+models/manifests/*
+!models/manifests/*.json
+models/validation/*
+!models/validation/*.json
+!models/validation/README.md
+models/patches/*
+!models/patches/*.patch
 checkpoints/
 *.pth
 *.pt
@@ -34,14 +47,17 @@ checkpoints/
 *license*.txt
 *token*.txt
 *secret*.txt
-offline/payload/
-offline/payload.tar
-offline/payload.tar.sha256
-offline/*.tar
-offline/*.tar.zst
-offline/*.sha256
+
+# Private / local operational files - never publish
 private/
 secrets/
+offline/
+rtsegmentator-offline/
+HANDOFF.md
+*.tar.gz
+*.tar
+*.sha256
+SHA256SUMS
 
 # Local tooling
 .DS_Store

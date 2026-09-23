@@ -1,0 +1,26 @@
+{
+  "family": "nnU-Net v1 pretrained model zoo",
+  "task": "Task010_Colon",
+  "record": "https://zenodo.org/records/4003545",
+  "archive": "Task010_Colon.zip",
+  "archive_bytes": 5003911923,
+  "archive_md5": "ffa6a2ee13a41cdbde3addc151d3c773",
+  "archive_sha256": "9386885df312888fe4f15ecac1eeb175c35ea584b034e89cdb6729c8eee96700",
+  "checkpoint_tree_sha256": "26feee4887498fc445a63fca9a7a0223832b6905c3f889b97bbf0834d086ce38",
+  "configuration": "3d_fullres",
+  "folds": [0, 1, 2, 3, 4],
+  "verified_at": "2026-08-10",
+  "acceptance": {
+    "input": "Medical Segmentation Decathlon colon_053 portal-venous CT converted to a 137-slice research DICOM series",
+    "input_image_sha256": "ee89f45470e0b774f11505ba503cf69bdb4c5b8b54796cca6eb7a83ec773e931",
+    "input_segmentation_sha256": "f592d6ed8cfdafb31b4ea66b16cc80e7aaa1f611ec3f2807c5109b3eaacb2b25",
+    "nonempty_rois": 1,
+    "nonempty_labels": ["Colon_Tumor"],
+    "referenced_images_with_contours": 8,
+    "source_images_in_referenced_series": 137,
+    "rtstruct_bytes": 45168,
+    "rtstruct_sha256": "b9f437fe47c47964fe5780775338b4e01eaeee81e5209be58464e4e939a805ee",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

@@ -1,20 +1,19 @@
 services:
   rtsegmentator:
-    image: rtsegmentator/offline-worker:latest
-    build:
-      context: .
-      dockerfile: Dockerfile.offline-worker
-    environment:
-      RTSEG_ROLE: combined
-      WORKER_MODE: local
-      RTSEG_API_KEY: ${RTSEG_API_KEY:-}
-      RETENTION_HOURS: ${RETENTION_HOURS:-24}
-      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-8589934592}
+    build: .
+    image: rtsegmentator:1.0
     ports:
       - "8080:8080"
+    environment:
+      WORKER_MODE: local
+      PORTAL_DATA: /data
+      RETENTION_HOURS: "24"
+      RTSEG_MODEL_ROOT: /models
+      RTSEG_RUNTIME_ROOT: /runtimes
     volumes:
-      - rtsegmentator-jobs:/var/lib/rtsegmentator/jobs
-      - totalsegmentator-config:/home/konrad/.totalsegmentator
+      - rtsegmentator-data:/data
+      - ${RTSEG_MODEL_BUNDLE:-./models}:/models:ro
+      - ${RTSEG_RUNTIME_BUNDLE:-./runtimes}:/runtimes:ro
     deploy:
       resources:
         reservations:
@@ -25,5 +24,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  rtsegmentator-jobs:
-  totalsegmentator-config:
+  rtsegmentator-data:

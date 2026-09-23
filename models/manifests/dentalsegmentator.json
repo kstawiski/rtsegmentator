@@ -1,0 +1,18 @@
+{
+  "family": "DentalSegmentator",
+  "original_record": "https://zenodo.org/records/10829675",
+  "deployment": "MOOSE-compatible checkpoint package",
+  "weights_url": "https://model.s.mdforge.com/Dataset112_DentalSegmentator_v100_moose.zip",
+  "checkpoint_tree_sha256": "675c73e0dc02b3d022734ff0130f7f454a31a8877e543dad97f00c1cc88ed628",
+  "labels": ["Upper Skull", "Mandible", "Upper Teeth", "Lower Teeth", "Mandibular canal"],
+  "verified_at": "2026-08-10",
+  "acceptance": {
+    "input": "142-slice head CT subseries",
+    "nonempty_rois": 5,
+    "referenced_images": 126,
+    "rtstruct_bytes": 2930026,
+    "rtstruct_sha256": "6cdd800f05eac64f3ce57b7171e5ab6904dfb58fb5f2ff4b606a62b4a8e18104",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

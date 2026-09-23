@@ -1,0 +1,36 @@
+{
+  "family": "MOOSE",
+  "package_version": "3.2.2",
+  "repository": "https://github.com/ENHANCE-PET/MOOSE",
+  "license": "Apache-2.0 package; model-specific terms must also be reviewed",
+  "verified_at": "2026-08-10",
+  "release_base": "https://github.com/ENHANCE-PET/MOOSE/releases/tag/moosez-v.3.1.3",
+  "models": {
+    "clin_ct_body": {"dataset": "Dataset001_body", "checkpoint_tree_sha256": "763a52323a570854e914547fbc226a93eec76a68e4df8abe85dfe4bb5a3407e4"},
+    "clin_ct_cardiac": {"dataset": "Dataset888_Cardiac", "checkpoint_tree_sha256": "ccd82e429e1efdd101df0ea207259c2d3f36b879dd06e927f6e14ad0c98becfb"},
+    "clin_ct_digestive": {"dataset": "Dataset999_Digestive", "checkpoint_tree_sha256": "ce44a87e1fcb912643ed0eb0456ad9367855a532838f363912e2981ff8883c38"},
+    "clin_ct_lungs": {"dataset": "Dataset333_HMS3dlungs", "checkpoint_tree_sha256": "cf00a9eefc81fabed9a237d1cd2ad81dbde850477ddbb087d9106d1c9f926ddf"},
+    "clin_ct_muscles": {"dataset": "Dataset555_Muscles", "checkpoint_tree_sha256": "c418ae720cfc0d9e2dc01d3053d1058b1e6e76c94be49e3e985504ebfb94b99f"},
+    "clin_ct_organs": {"dataset": "Dataset123_Organs", "checkpoint_tree_sha256": "d01566191613f20ceac73baa9eea3034b39d3b43f8878c066edf97edb0426196"},
+    "clin_ct_peripheral_bones": {"dataset": "Dataset666_Peripheral-Bones", "checkpoint_tree_sha256": "01506dd88e1794b3c3a6e6cb9598428d81b34ef249a36195b6feaca0094a36a3"},
+    "clin_ct_ribs": {"dataset": "Dataset444_Ribs", "checkpoint_tree_sha256": "d7159da3baaca59a3da8736d27910a19aefac4f6bef864a58ddd3e081ee5cd39"},
+    "clin_ct_vertebrae": {"dataset": "Dataset111_Vertebrae", "checkpoint_tree_sha256": "e41e8fe96c459e1348be49deebcf22524039ce8144ea0a86e88488a51fec9c74"},
+    "clin_ct_body_composition": {"dataset": "Dataset778_Body_composition", "checkpoint_tree_sha256": "8a10dcfae54d771203ca78c3e135330d3eed95748cf5e31a96d254c44e3a35a5", "dependency": "Dataset112_FastVertebrae"}
+  },
+  "acceptance": {
+    "fixture": "735-slice whole-body CT; lungs additionally checked on 179-slice thoracic CT",
+    "validator": "convert_validate_rtstruct.py",
+    "results": {
+      "clin_ct_body": {"nonempty_rois": 4, "referenced_images": 735, "rtstruct_bytes": 6195374, "result": "passed"},
+      "clin_ct_cardiac": {"nonempty_rois": 10, "referenced_images": 150, "rtstruct_bytes": 2066302, "result": "passed"},
+      "clin_ct_digestive": {"nonempty_rois": 4, "referenced_images": 430, "rtstruct_bytes": 3703840, "result": "passed"},
+      "clin_ct_lungs": {"nonempty_rois": 5, "referenced_images": 159, "rtstruct_bytes": 3391676, "result": "passed"},
+      "clin_ct_muscles": {"nonempty_rois": 10, "referenced_images": 526, "rtstruct_bytes": 7101706, "result": "passed"},
+      "clin_ct_organs": {"nonempty_rois": 18, "referenced_images": 400, "rtstruct_bytes": 6712920, "result": "passed"},
+      "clin_ct_peripheral_bones": {"nonempty_rois": 11, "referenced_images": 472, "rtstruct_bytes": 5428656, "result": "passed"},
+      "clin_ct_ribs": {"nonempty_rois": 25, "referenced_images": 179, "rtstruct_bytes": 2791728, "result": "passed"},
+      "clin_ct_vertebrae": {"nonempty_rois": 27, "referenced_images": 537, "rtstruct_bytes": 5591462, "result": "passed"},
+      "clin_ct_body_composition": {"nonempty_rois": 3, "referenced_images": 42, "rtstruct_bytes": 5429846, "result": "passed"}
+    }
+  }
+}

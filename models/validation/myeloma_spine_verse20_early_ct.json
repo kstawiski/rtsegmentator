@@ -1,0 +1,1 @@
+{"artifact_bytes":1120814,"artifact_sha256":"4ece700435d4101d5293dd139d199c8bbc471d5728dc739777a33cd4d3831383","contour_sets":10,"fixture":"287173-ct-abdomen-dicom","model":"Dataset800_Spine_segmentation_trained_on_VerSe20","referenced_images":167,"rois":10,"task":"myeloma_spine_verse20_early_ct","validated_at":"2026-08-11T05:05:00Z"}

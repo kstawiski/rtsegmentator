@@ -1,0 +1,25 @@
+{
+  "family": "MONAI Model Zoo",
+  "bundle": "spleen_ct_segmentation",
+  "bundle_version": "0.6.1",
+  "source": "https://huggingface.co/MONAI/spleen_ct_segmentation",
+  "bundle_tree_sha256_excluding_cache": "b5e6a4b7d7cb7bd33923a585638c4a64c7d2b8fc17e8bd563e33e25e10462e53",
+  "model_pt_sha256": "502c312893994ec071a85c4f2e7d83a43f7789969faa73dae62f1291177f50fe",
+  "model_ts_sha256": "d8d7b04a24b1a6016aa32c662913b907dab4fb91cd88a91cb7e0a8f11eeafec0",
+  "runtime": {
+    "monai": "1.6.0",
+    "pytorch_ignite": "0.4.11"
+  },
+  "verified_at": "2026-08-10",
+  "acceptance": {
+    "input": "Medical Segmentation Decathlon spleen_19, 51-slice research DICOM",
+    "nonempty_rois": 1,
+    "nonempty_labels": ["Spleen"],
+    "referenced_images_with_contours": 18,
+    "source_images_in_referenced_series": 51,
+    "rtstruct_bytes": 69122,
+    "rtstruct_sha256": "3a747837b719f2c9ce9f457d1df5a1442f0c8550cc7dca08e926bffa49e01c08",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

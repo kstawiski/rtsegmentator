@@ -1,0 +1,24 @@
+{
+  "family": "nnU-Net v1 pretrained model zoo",
+  "task": "Task017_AbdominalOrganSegmentation",
+  "record": "https://zenodo.org/records/4003545",
+  "archive": "Task017_AbdominalOrganSegmentation.zip",
+  "archive_bytes": 4987156551,
+  "archive_md5": "017e463a292b396882302dfa643f62f8",
+  "archive_sha256": "fa9f3179b9b80a041e617a9e68d22a3380bab7976d2b86ebb35af91e6ba7d62e",
+  "checkpoint_tree_sha256": "1ea17c6278246a1331116aedd8cf1370ccdd6f2d62ca5782dce5cbad5b051144",
+  "label_source": "nnunet/dataset_conversion/Task017_BeyondCranialVaultAbdominalOrganSegmentation.py",
+  "configuration": "3d_fullres",
+  "folds": [0, 1, 2, 3, 4],
+  "verified_at": "2026-08-10",
+  "acceptance": {
+    "input": "167-slice abdominal CT acceptance fixture",
+    "nonempty_rois": 12,
+    "empty_labels": ["Gallbladder"],
+    "referenced_images": 167,
+    "rtstruct_bytes": 2726606,
+    "rtstruct_sha256": "c5040fefe42bbc54ddd0290fa6fec9df5b52436cd1b390691516827a9bb3e6fb",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

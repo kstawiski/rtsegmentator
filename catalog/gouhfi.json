@@ -1,0 +1,18 @@
+{
+  "gouhfi_v2_brain_mr": {
+    "modality": "MR",
+    "description": "GOUHFI 2.0 contrast-, resolution- and field-strength-agnostic whole-brain MRI segmentation",
+    "structures": "35 cerebral, ventricular, cerebellar, deep-gray, brainstem, hippocampal and related labels",
+    "reference": "https://github.com/mafortin/GOUHFI",
+    "mode": "brain",
+    "lut": "misc/gouhfi_v2p0_brain_labels_lut.txt"
+  },
+  "gouhfi_v2_dkt_mr": {
+    "modality": "MR",
+    "description": "GOUHFI 2.0 contrast-, resolution- and field-strength-agnostic DKT cortical parcellation",
+    "structures": "62 bilateral Desikan-Killiany-Tourville cortical regions",
+    "reference": "https://github.com/mafortin/GOUHFI",
+    "mode": "parcellation",
+    "lut": "misc/gouhfi_v2p0_cortex_labels_lut.txt"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "CADS open model family",
+  "version": "cads-model-open_v1.0.0",
+  "source": "https://github.com/murong-xu/CADS",
+  "source_commit": "7480324808ab490b5e27035c8bfd28486e8c004a",
+  "code_license": "Apache-2.0",
+  "model_license": "CC BY-SA 4.0",
+  "runtime": "envs/cads (Python 3.11, PyTorch 2.6.0+cu124, nnU-Net v2 2.5.2)",
+  "archives": {
+    "Dataset551_Totalseg251.zip": "99b33943d202d794249e85c6e42bb30c7b72c7afc36d044fe57103b675e85656",
+    "Dataset552_Totalseg252.zip": "de132d4104627401852f2a7c426056462423df30bee7ffed7e07aebe32d32736",
+    "Dataset553_Totalseg253.zip": "927dbe88f9873fc9598702884c11cf3adc4535749146cd3e6424ac40579b3e45",
+    "Dataset554_Totalseg254.zip": "cbee9dda40dd946c70c238f9e580f64ab4367c27d5472c9fc77853d16509e54f",
+    "Dataset555_Totalseg255.zip": "a7fdf1ca915746551f322168623def871462e6b56bf1a59e0cc253f2baf41e54",
+    "Dataset556_GC256.zip": "a2110a2501de85c3dfc63298fcda1d19fb3b935e6d012692c0d749b97b2c8d1e",
+    "Dataset557_Brain257.zip": "18b563d7bd20b1a2bce0632b98064a0279280d0f3e56e91f2e6328eb1a7e740c",
+    "Dataset558_OAR258.zip": "8fa72c933bd33d5a30b1bc9f2f0bee18f8a3e6c445589255e58327a80447b831",
+    "Dataset559_Saros259.zip": "1b1b546f27e7c548dbaf49951cd1974c376719e6714a1f4c3def40a1c4c0dca9"
+  },
+  "tasks": [551, 552, 553, 554, 555, 556, 557, 558, 559],
+  "foreground_classes": 167,
+  "acceptance": "Each task passed DICOM-to-GPU-inference-to-RTSTRUCT validation; see models/validation/cads_open_*.json."
+}

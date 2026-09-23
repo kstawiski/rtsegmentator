@@ -2,8 +2,8 @@ _meta_: {}
 name: ISRT_CT_Segmentation
 modality: CT
 input_channels: 1
-dataroot: __DATAROOT__
-datalist: __DATAROOT__/datalist.json
+dataroot: __DATA_ROOT__
+datalist: __DATA_ROOT__/datalist.json
 data_file_base_dir: $@dataroot
 data_list_file_path: $@datalist
 bundle_root: __BUNDLE_ROOT__

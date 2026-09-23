@@ -1,0 +1,246 @@
+{
+  "nnunetv1_hippocampus": {
+    "modality": "MR",
+    "description": "Legacy nnU-Net v1 public model-zoo Task004 five-fold 3D full-resolution ensemble",
+    "structures": "Anterior hippocampus and posterior hippocampus",
+    "reference": "https://zenodo.org/records/4003545",
+    "task": "Task004_Hippocampus",
+    "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2",
+    "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Anterior_Hippocampus", "2": "Posterior_Hippocampus"}
+  },
+  "nnunetv1_lung_tumor": {
+    "modality": "CT",
+    "description": "Legacy nnU-Net v1 public model-zoo Task006 five-fold 3D full-resolution ensemble",
+    "structures": "Lung tumor",
+    "reference": "https://zenodo.org/records/4003545",
+    "task": "Task006_Lung",
+    "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2",
+    "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Lung_Tumor"}
+  },
+  "nnunetv1_left_atrium": {
+    "modality": "MR",
+    "description": "Legacy nnU-Net v1 public model-zoo Task002 five-fold 3D full-resolution ensemble",
+    "structures": "Left atrium",
+    "reference": "https://zenodo.org/records/4003545",
+    "task": "Task002_Heart",
+    "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2",
+    "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Left_Atrium"}
+  },
+  "nnunetv1_spleen": {
+    "modality": "CT",
+    "description": "Legacy nnU-Net v1 public model-zoo Task009 five-fold 3D full-resolution ensemble",
+    "structures": "Spleen",
+    "reference": "https://zenodo.org/records/4003545",
+    "task": "Task009_Spleen",
+    "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2",
+    "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Spleen"}
+  },
+  "nnunetv1_liver_tumor": {
+    "modality": "CT",
+    "description": "Legacy nnU-Net v1 public model-zoo Task003 five-fold 3D full-resolution ensemble",
+    "structures": "Liver and liver tumor",
+    "reference": "https://zenodo.org/records/4003545",
+    "task": "Task003_Liver",
+    "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2",
+    "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Liver", "2": "Liver_Tumor"}
+  },
+  "nnunetv1_pancreas_tumor": {
+    "modality": "CT",
+    "description": "Legacy nnU-Net v1 public model-zoo Task007 five-fold 3D full-resolution ensemble",
+    "structures": "Pancreas and pancreatic tumor",
+    "reference": "https://zenodo.org/records/4003545",
+    "task": "Task007_Pancreas",
+    "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2",
+    "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Pancreas", "2": "Pancreatic_Tumor"}
+  },
+  "nnunetv1_hepatic_vessels_tumor": {
+    "modality": "CT",
+    "description": "Legacy nnU-Net v1 public model-zoo Task008 five-fold 3D full-resolution ensemble",
+    "structures": "Hepatic vessels and liver tumor",
+    "reference": "https://zenodo.org/records/4003545",
+    "task": "Task008_HepaticVessel",
+    "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2",
+    "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Hepatic_Vessels", "2": "Liver_Tumor"}
+  },
+  "nnunetv1_acdc_cardiac": {
+    "modality": "MR",
+    "description": "Legacy nnU-Net v1 public model-zoo Task027 ACDC five-fold 3D full-resolution ensemble; intended for ACDC-like short-axis cine cardiac MRI",
+    "structures": "Right-ventricular cavity, myocardium and left-ventricular cavity",
+    "reference": "https://zenodo.org/records/4003545",
+    "task": "Task027_ACDC",
+    "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2",
+    "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Right_Ventricle_Cavity", "2": "Myocardium", "3": "Left_Ventricle_Cavity"}
+  },
+  "nnunetv1_promise_prostate": {
+    "modality": "MR",
+    "description": "Legacy nnU-Net v1 public model-zoo Task024 PROMISE five-fold 3D full-resolution ensemble; intended for prostate T2-weighted MRI",
+    "structures": "Whole prostate gland",
+    "reference": "https://zenodo.org/records/4003545",
+    "task": "Task024_Promise",
+    "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2",
+    "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Prostate"}
+  },
+  "nnunetv1_segthor": {
+    "modality": "CT",
+    "description": "Legacy nnU-Net v1 public model-zoo Task055 SegTHOR five-fold 3D full-resolution ensemble",
+    "structures": "Esophagus, heart, trachea and aorta",
+    "reference": "https://zenodo.org/records/4003545",
+    "task": "Task055_SegTHOR",
+    "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2",
+    "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Esophagus", "2": "Heart", "3": "Trachea", "4": "Aorta"}
+  },
+  "nnunetv1_btcv_abdomen": {
+    "modality": "CT",
+    "description": "Legacy nnU-Net v1 public model-zoo Task017 BTCV five-fold 3D full-resolution ensemble",
+    "structures": "13 BTCV abdominal organs and vessels",
+    "reference": "https://zenodo.org/records/4003545",
+    "task": "Task017_AbdominalOrganSegmentation",
+    "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2",
+    "plans": "nnUNetPlansv2.1",
+    "labels": {
+      "1": "Spleen", "2": "Kidney_Right", "3": "Kidney_Left",
+      "4": "Gallbladder", "5": "Esophagus", "6": "Liver",
+      "7": "Stomach", "8": "Aorta", "9": "Inferior_Vena_Cava",
+      "10": "Portal_And_Splenic_Veins", "11": "Pancreas",
+      "12": "Adrenal_Gland_Right", "13": "Adrenal_Gland_Left"
+    }
+  },
+  "nnunetv1_lits_liver_tumor": {
+    "modality": "CT",
+    "description": "Legacy nnU-Net v1 public model-zoo Task029 LiTS five-fold 3D full-resolution ensemble",
+    "structures": "Liver and liver tumor",
+    "reference": "https://zenodo.org/records/4003545",
+    "task": "Task029_LITS",
+    "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2",
+    "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Liver", "2": "Liver_Tumor"}
+  },
+  "nnunetv1_kits_kidney_tumor": {
+    "modality": "CT",
+    "description": "Legacy nnU-Net v1 public model-zoo KiTS checkpoint; the published archive is Task048_KiTS_clean although the conversion script and older catalogs call it Task040",
+    "structures": "Kidney and kidney tumor",
+    "reference": "https://zenodo.org/records/4003545",
+    "task": "Task048_KiTS_clean",
+    "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2",
+    "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Kidney", "2": "Kidney_Tumor"}
+  },
+  "nnunetv1_colon_tumor": {
+    "modality": "CT",
+    "description": "Legacy nnU-Net v1 public model-zoo Task010 five-fold 3D full-resolution ensemble",
+    "structures": "Colon tumor",
+    "reference": "https://zenodo.org/records/4003545",
+    "task": "Task010_Colon",
+    "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2",
+    "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Colon_Tumor"}
+  },
+  "mars_brainstem_t1_mr": {
+    "modality": "MR",
+    "description": "MARS nnU-Net five-fold brainstem-subregion model for whole-brain T1-weighted MRI",
+    "structures": "Mesencephalon, pons and medulla oblongata",
+    "reference": "https://github.com/miac-research/dl-brainstem",
+    "task": "Task600_Brainstem",
+    "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2",
+    "plans": "nnUNetPlansv2.1_24GB",
+    "labels": {"1": "Mesencephalon", "2": "Pons", "3": "MedullaOblongata"}
+  },
+  "bamf_nsclc_lungs_nodules_ct": {
+    "modality": "CT",
+    "description": "BAMF/AIMI nnU-Net v1 five-fold model trained on NSCLC-Radiomics and NSCLC-Radiogenomics",
+    "structures": "Lungs and pulmonary nodule/tumor",
+    "reference": "https://zenodo.org/records/8290169",
+    "task": "Task775_CT_NSCLC_RG", "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2", "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Lungs", "2": "Pulmonary_Nodule_Tumor"}
+  },
+  "bamf_lidc_lung_nodules_ct": {
+    "modality": "CT",
+    "description": "BAMF/AIMI nnU-Net v1 five-fold pulmonary-nodule model trained on DICOM-LIDC-IDRI-Nodules",
+    "structures": "Pulmonary nodules (3–30 mm training definition)",
+    "reference": "https://zenodo.org/records/8290147",
+    "task": "Task777_CT_Nodules", "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2", "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Pulmonary_Nodule"}
+  },
+  "bamf_liver_t1_mr": {
+    "modality": "MR",
+    "description": "BAMF nnU-Net v1 five-fold liver model trained on AMOS and Duke Liver T1 MRI",
+    "structures": "Liver",
+    "reference": "https://zenodo.org/records/8290124",
+    "task": "Task822_Liver_AMD", "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2", "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Liver"}
+  },
+  "bamf_prostate_t2_mr": {
+    "modality": "MR",
+    "description": "BAMF nnU-Net v1 five-fold prostate-gland model trained on PI-CAI T2 MRI",
+    "structures": "Prostate gland",
+    "reference": "https://zenodo.org/records/8290093",
+    "task": "Task788_ProstateX", "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2", "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Prostate"}
+  },
+  "adipose_tissue_dixon_fat_mr": {
+    "modality": "MR",
+    "description": "Five-fold nnU-Net v1 model for semantic adipose-tissue segmentation from the fat image of T1 Dixon MRI; the release does not document the numeric class ontology, so outputs retain neutral class names",
+    "structures": "Two released adipose-tissue classes (numeric ontology not documented upstream)",
+    "reference": "https://zenodo.org/records/7229667",
+    "task": "Task001_AdiposeTissue", "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2", "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Adipose_Tissue_Class_1", "2": "Adipose_Tissue_Class_2"}
+  },
+  "lipoma_alt_t1_mr": {
+    "modality": "MR",
+    "description": "Five-fold nnU-Net v1 model for lipoma and atypical lipomatous tumor segmentation on T1 MRI",
+    "structures": "Lipomatous tumor (lipoma or atypical lipomatous tumor)",
+    "reference": "https://zenodo.org/records/10964138",
+    "task": "Task803_LipomaALT", "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2", "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Lipomatous_Tumor"}
+  },
+  "mnms_cardiac_cine_mr": {
+    "modality": "MR",
+    "description": "M&Ms Challenge five-fold nnU-Net v1 cardiac cine MRI model",
+    "structures": "Left-ventricular cavity, myocardium and right-ventricular cavity",
+    "reference": "https://zenodo.org/records/4134721",
+    "task": "Task114_heart_MNMs", "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2_MMS", "plans": "nnUNetPlansv2.1",
+    "labels": {"1": "Left_Ventricle", "2": "Myocardium", "3": "Right_Ventricle"}
+  },
+  "lung_five_region_mr": {
+    "modality": "MR",
+    "description": "Single-fold nnU-Net v1 release for three-dimensional short- or ultrashort-echo lung MRI",
+    "structures": "Surrounding solid tissue, left/right lung parenchyma and left/right pulmonary vascular regions",
+    "reference": "https://zenodo.org/records/15215411",
+    "task": "Task612_lung_pass2", "configuration": "3d_fullres",
+    "trainer": "nnUNetTrainerV2_noMirroring", "plans": "nnUNetPlansv2.1",
+    "disable_tta": true,
+    "labels": {"1": "Surrounding_Solid_Tissue", "2": "Lung_Left", "3": "Lung_Right", "4": "Pulmonary_Vascular_Left", "5": "Pulmonary_Vascular_Right"}
+  }
+}

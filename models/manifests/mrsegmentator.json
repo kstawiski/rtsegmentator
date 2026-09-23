@@ -1,0 +1,40 @@
+{
+  "family": "MRSegmentator",
+  "package_version": "2.0.0",
+  "repository": "https://github.com/hhaentze/MRSegmentator",
+  "license": "Apache-2.0",
+  "verified_at": "2026-08-10",
+  "releases": [
+    {
+      "model": "base",
+      "model_version": "1.2",
+      "url": "https://github.com/hhaentze/MRSegmentator/releases/download/v1.2.0/weights.zip",
+      "archive_sha256": "dd26c1b511908a1f2a752b7fe8f5ca9c5603fc3e69fa52f57bf3ccdd52ceb286"
+    },
+    {
+      "model": "body_comp",
+      "model_version": "1.0",
+      "url": "https://zenodo.org/records/21211879/files/body_comp_weights.zip?download=1",
+      "archive_sha256": "3ec490f641dd1aebdd4d2f497e69f8c9f2e4060a45c7d0d69c3ea0e74daf1550"
+    }
+  ],
+  "acceptance": {
+    "mrsegmentator": {
+      "input": "179-slice thoracic CT DICOM",
+      "nonempty_rois": 21,
+      "referenced_images": 179,
+      "rtstruct_bytes": 6712534,
+      "result": "passed"
+    },
+    "mrsegmentator_body_comp": {
+      "input": "208-slice synthetic DICOM derived from TotalSegmentator MRI s0052",
+      "fixture_source": "https://zenodo.org/records/14710732",
+      "fixture_archive_md5": "54638f4cb883ce3b34225195358c398f",
+      "nonempty_rois": 5,
+      "referenced_images": 208,
+      "rtstruct_bytes": 5821456,
+      "result": "passed"
+    },
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

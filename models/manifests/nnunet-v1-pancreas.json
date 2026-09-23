@@ -1,0 +1,24 @@
+{
+  "family": "nnU-Net v1 pretrained model zoo",
+  "task": "Task007_Pancreas",
+  "record": "https://zenodo.org/records/4003545",
+  "archive": "Task007_Pancreas.zip",
+  "archive_bytes": 5002701016,
+  "archive_md5": "f8983162ffb28664221e74bc63dc5c99",
+  "archive_sha256": "56f6cc3a5606bd5ebb253cb5bab1f92ffa468a768c3305f5bbe67430f840cc9b",
+  "checkpoint_tree_sha256": "30744e88547f5d42e698c3a4df00c473ba179d270955e1186681c0c269743c36",
+  "configuration": "3d_fullres",
+  "folds": [0, 1, 2, 3, 4],
+  "verified_at": "2026-08-10",
+  "acceptance": {
+    "input": "167-slice abdominal CT acceptance fixture",
+    "nonempty_rois": 1,
+    "nonempty_labels": ["Pancreas"],
+    "empty_labels": ["Pancreatic_Tumor"],
+    "referenced_images": 57,
+    "rtstruct_bytes": 217706,
+    "rtstruct_sha256": "705359b8aa2627a236be50a50528009525fdf65bff2db2989386ff227e29f7da",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

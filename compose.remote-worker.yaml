@@ -1,14 +1,18 @@
 services:
   worker:
-    image: rtsegmentator/offline-worker:latest
-    environment:
-      RTSEG_ROLE: worker
+    build: .
+    image: rtsegmentator:1.0
+    command: ["worker-ssh"]
     ports:
-      - "2222:22"
+      - "2222:2222"
+    environment:
+      SSH_AUTHORIZED_KEY: ${SSH_AUTHORIZED_KEY:?set SSH_AUTHORIZED_KEY}
+      RTSEG_MODEL_ROOT: /models
+      RTSEG_RUNTIME_ROOT: /runtimes
     volumes:
-      - ./secrets/authorized_keys:/run/secrets/authorized_keys:ro
-      - worker-jobs:/var/lib/rtsegmentator/jobs
-      - totalsegmentator-config:/home/konrad/.totalsegmentator
+      - worker-jobs:/home/worker/jobs
+      - ${RTSEG_MODEL_BUNDLE:-./models}:/models:ro
+      - ${RTSEG_RUNTIME_BUNDLE:-./runtimes}:/runtimes:ro
     deploy:
       resources:
         reservations:
@@ -20,4 +24,3 @@ services:
 
 volumes:
   worker-jobs:
-  totalsegmentator-config:

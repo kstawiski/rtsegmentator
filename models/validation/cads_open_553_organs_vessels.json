@@ -1,0 +1,1 @@
+{"task":"cads_open_553_organs_vessels","result":"passed","verified_at":"2026-08-11","fixture":"287173-ct-abdomen-dicom","nonempty_rois":11,"referenced_images_with_contours":167,"rtstruct_bytes":2804840,"rtstruct_sha256":"8ef3cc5d5514b83652b697b74ebc9ce472d99eb90879e525f476e7058fed891a","validator":"convert_validate_rtstruct.py"}

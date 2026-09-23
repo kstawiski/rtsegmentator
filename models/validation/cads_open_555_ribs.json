@@ -1,0 +1,1 @@
+{"task":"cads_open_555_ribs","result":"passed","verified_at":"2026-08-11","fixture":"287173-ct-chest-dicom","nonempty_rois":22,"referenced_images_with_contours":179,"rtstruct_bytes":2379244,"rtstruct_sha256":"e3f6d5566eb82568ed1cbafcb086d3272840f98953572ea73ab9ffc4d77f2982","validator":"convert_validate_rtstruct.py"}

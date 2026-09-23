@@ -1,0 +1,1 @@
+{"task":"mrannotator_pelvis_prostate_mr","result":"passed","verified_at":"2026-08-11","fixture":"Medical Segmentation Decathlon Task05 prostate_00 T2 synthetic DICOM","nonempty_rois":1,"referenced_images_with_contours":10,"rtstruct_bytes":52404,"rtstruct_sha256":"35946fac71ce2ef361dd8349637a8ca6cde7a043b319ec14b8dd278175c8268e","validator":"convert_validate_rtstruct.py"}

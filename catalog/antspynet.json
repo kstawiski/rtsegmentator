@@ -1,0 +1,37 @@
+{
+  "antspynet_brain_extraction_t1": {
+    "runner_task": "brain_extraction", "modality": "MR",
+    "description": "ANTsPyNet robust T1 brain extraction", "structures": "Brain mask",
+    "reference": "https://github.com/ANTsX/ANTsPyNet", "labels": {"1": "Brain"}
+  },
+  "antspynet_deep_atropos_t1": {
+    "runner_task": "deep_atropos", "modality": "MR",
+    "description": "ANTsPyNet DeepAtropos six-tissue T1 segmentation", "structures": "CSF, gray matter, white matter, deep gray matter, brainstem and cerebellum",
+    "reference": "https://github.com/ANTsX/ANTsPyNet", "labels": {"1": "CSF", "2": "GrayMatter", "3": "WhiteMatter", "4": "DeepGrayMatter", "5": "Brainstem", "6": "Cerebellum"}
+  },
+  "antspynet_hippmapp3r_t1": {
+    "runner_task": "hippmapp3r", "modality": "MR",
+    "description": "ANTsPyNet HippMapp3r hippocampal segmentation", "structures": "Hippocampi",
+    "reference": "https://github.com/ANTsX/ANTsPyNet", "labels": {"1": "Hippocampi"}
+  },
+  "antspynet_hypothalamus_t1": {
+    "runner_task": "hypothalamus", "modality": "MR",
+    "description": "ANTsPyNet hypothalamic-subunit segmentation", "structures": "Ten left/right hypothalamic subunits",
+    "reference": "https://github.com/ANTsX/ANTsPyNet", "labels": {"1": "Hypo_L_AntInf", "2": "Hypo_L_AntSup", "3": "Hypo_L_Post", "4": "Hypo_L_TubInf", "5": "Hypo_L_TubSup", "6": "Hypo_R_AntInf", "7": "Hypo_R_AntSup", "8": "Hypo_R_Post", "9": "Hypo_R_TubInf", "10": "Hypo_R_TubSup"}
+  },
+  "antspynet_deep_flash_t1": {
+    "runner_task": "deep_flash", "modality": "MR",
+    "description": "ANTsPyNet DeepFlash medial-temporal T1 parcellation", "structures": "Bilateral entorhinal, perirhinal, parahippocampal and hippocampal subfields",
+    "reference": "https://github.com/ANTsX/ANTsPyNet", "labels": {"5": "L_aLEC", "6": "R_aLEC", "7": "L_pMEC", "8": "R_pMEC", "9": "L_Perirhinal", "10": "R_Perirhinal", "11": "L_Parahippocampal", "12": "R_Parahippocampal", "13": "L_DG_CA2_CA3_CA4", "14": "R_DG_CA2_CA3_CA4", "15": "L_CA1", "16": "R_CA1", "17": "L_Subiculum", "18": "R_Subiculum"}
+  },
+  "antspynet_cerebellum_t1": {
+    "runner_task": "cerebellum", "modality": "MR",
+    "description": "ANTsPyNet cerebellar lobule parcellation", "structures": "Bilateral cerebellar lobules I-II through X",
+    "reference": "https://github.com/ANTsX/ANTsPyNet", "labels": {"1": "L_I_II", "2": "L_III", "3": "L_IV", "4": "L_V", "5": "L_VI", "6": "L_Crus_I", "7": "L_Crus_II", "8": "L_VIIB", "9": "L_VIIIA", "10": "L_VIIIB", "11": "L_IX", "12": "L_X", "101": "R_I_II", "102": "R_III", "103": "R_IV", "104": "R_V", "105": "R_VI", "106": "R_Crus_I", "107": "R_Crus_II", "108": "R_VIIB", "109": "R_VIIIA", "110": "R_VIIIB", "111": "R_IX", "112": "R_X"}
+  },
+  "antspynet_dkt_t1": {
+    "runner_task": "dkt", "modality": "MR",
+    "description": "ANTsPyNet Desikan-Killiany-Tourville whole-brain labeling", "structures": "Cortical DKT regions, deep gray nuclei, ventricles, hippocampi, amygdalae, brainstem and cerebellar structures",
+    "reference": "https://github.com/ANTsX/ANTsPyNet", "labels_file": "labels/antspynet-dkt.json"
+  }
+}

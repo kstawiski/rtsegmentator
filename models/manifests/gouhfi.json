@@ -1,0 +1,17 @@
+{
+  "family": "GOUHFI 2.0",
+  "repository": "https://github.com/mafortin/GOUHFI",
+  "source_tag": "2.0.0",
+  "source_commit": "2e94e8131e4efaea371deba990b7e0daeee6e9b6",
+  "weights_record": "https://zenodo.org/records/17920473",
+  "archives": {
+    "gouhfi_2p0_brain_seg.zip": {"bytes": 7457699023, "md5": "ea3a48b59603eb8d902a4463e0db6955"},
+    "gouhfi_2p0_parc.zip": {"bytes": 7454658486, "md5": "c57abf0378271987f779d68003d47606"}
+  },
+  "folds": [0, 1, 2, 3, 4],
+  "verified_at": "2026-08-13",
+  "acceptance": {
+    "gouhfi_v2_brain_mr": {"labels": 35, "nonempty_rois": 35, "referenced_images": 78, "rtstruct_bytes": 3022176, "sha256": "2de5be3df7f6b8aeadbc3b0563cd3b1a73630e748ebf5904eb211708fd0556b6"},
+    "gouhfi_v2_dkt_mr": {"labels": 62, "nonempty_rois": 62, "referenced_images": 67, "rtstruct_bytes": 1323692, "sha256": "203e40bd0f067eafb278875d0e9268d8a31b113764ba0c7d046d201f6fd7aabb"}
+  }
+}

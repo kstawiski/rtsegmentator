@@ -1,0 +1,18 @@
+{
+  "universal_model_unet_ct": {
+    "backbone": "unet",
+    "checkpoint": "weights/universal-model/clip_driven_universal_unet.pth",
+    "modality": "CT",
+    "description": "CLIP-driven UniversalModel U-Net for abdominal organs and tumors",
+    "structures": "25 organs plus kidney, liver, pancreas, hepatic-vessel, lung and colon tumors, and kidney cysts",
+    "reference": "https://github.com/ljwztc/CLIP-Driven-Universal-Model"
+  },
+  "universal_model_swinunetr_ct": {
+    "backbone": "swinunetr",
+    "checkpoint": "weights/universal-model/clip_driven_universal_swin_unetr.pth",
+    "modality": "CT",
+    "description": "CLIP-driven UniversalModel Swin UNETR for abdominal organs and tumors",
+    "structures": "25 organs plus kidney, liver, pancreas, hepatic-vessel, lung and colon tumors, and kidney cysts",
+    "reference": "https://github.com/ljwztc/CLIP-Driven-Universal-Model"
+  }
+}

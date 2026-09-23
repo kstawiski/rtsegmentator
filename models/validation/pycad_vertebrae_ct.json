@@ -1,0 +1,1 @@
+{"task":"pycad_vertebrae_ct","result":"passed","verified_at":"2026-08-11","fixture":"287173 CT chest DICOM","nonempty_rois":16,"referenced_images_with_contours":179,"rtstruct_bytes":1210814,"rtstruct_sha256":"eac2d23cf3bcf23ccccb53aed626709311625fa886b11c4e83364a3e07e41cc5","validator":"convert_validate_rtstruct.py"}

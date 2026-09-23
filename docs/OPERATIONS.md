@@ -50,7 +50,7 @@ Jobs execute under a serialized worker lock. Each model runs in its own process 
 Check active GPU processes:
 
 ```bash
-ssh konrad@cpd-konrad-worker \
+ssh worker@rtsegmentator-worker \
   nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader
 ```
 
@@ -58,8 +58,8 @@ ssh konrad@cpd-konrad-worker \
 
 ```bash
 systemctl is-active dicom-rt-portal.service
-curl -fsS http://127.0.0.1:8080/api/tasks
-curl -fsS http://127.0.0.1:8080/api/jobs
+curl -fsS http://127.0.0.1:8080/api/v1/health
+curl -fsS http://127.0.0.1:8080/api/v1/models | head -c 500
 journalctl -u dicom-rt-portal.service -n 100 --no-pager
 ```
 

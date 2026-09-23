@@ -1,0 +1,30 @@
+{
+  "mrannotator_abdomen_mr": {
+    "model_folder": "weights/mrannotator/mrannotator_weights/Dataset001_Abdomen/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres",
+    "modality": "MR", "description": "MRAnnotator abdomen model for diverse MRI sequences",
+    "structures": "Spleen, kidneys, gallbladder, liver, aorta, inferior vena cava and pancreas",
+    "reference": "https://github.com/lzl199704/MRAnnotator",
+    "labels": {"1":"Spleen","2":"Kidney_R","3":"Kidney_L","4":"Gallbladder","5":"Liver","6":"Aorta","7":"InferiorVenaCava","8":"Pancreas"}
+  },
+  "mrannotator_shoulder_knee_mr": {
+    "model_folder": "weights/mrannotator/mrannotator_weights/Dataset002_ShoulderKnee/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres",
+    "modality": "MR", "description": "MRAnnotator shoulder and knee model for PD/T2-family MRI",
+    "structures": "Femur, patella, fibula, tibia, bilateral humeri, clavicles and scapulae",
+    "reference": "https://github.com/lzl199704/MRAnnotator",
+    "labels": {"1":"Femur","2":"Patella","3":"Fibula","4":"Tibia","5":"Humerus_R","6":"Clavicle_R","7":"Scapula_R","8":"Humerus_L","9":"Clavicle_L","10":"Scapula_L"}
+  },
+  "mrannotator_pelvis_prostate_mr": {
+    "model_folder": "weights/mrannotator/mrannotator_weights/Dataset003_PelvisProstate/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres",
+    "modality": "MR", "description": "MRAnnotator pelvis and prostate MRI model",
+    "structures": "Femoral heads, ilium, sacrum and prostate",
+    "reference": "https://github.com/lzl199704/MRAnnotator",
+    "labels": {"1":"FemoralHeads","2":"Ilium","3":"Sacrum","4":"Prostate"}
+  },
+  "mrannotator_spine_mr": {
+    "model_folder": "weights/mrannotator/mrannotator_weights/Dataset004_Spine/nnUNetTrainerNoMirroring__nnUNetPlans__3d_fullres",
+    "modality": "MR", "description": "MRAnnotator per-level spine MRI model",
+    "structures": "C3–C7, T1–T12 and L1–L5 vertebrae",
+    "reference": "https://github.com/lzl199704/MRAnnotator",
+    "labels": {"1":"C3","2":"C4","3":"C5","4":"C6","5":"C7","6":"T1","7":"T2","8":"T3","9":"T4","10":"T5","11":"T6","12":"T7","13":"T8","14":"T9","15":"T10","16":"T11","17":"T12","18":"L1","19":"L2","20":"L3","21":"L4","22":"L5"}
+  }
+}

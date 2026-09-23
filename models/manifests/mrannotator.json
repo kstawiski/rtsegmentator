@@ -1,0 +1,19 @@
+{
+  "name": "MRAnnotator",
+  "source": "https://github.com/lzl199704/MRAnnotator",
+  "source_commit": "4cd0d5b5cd120f17bc9e17462534872c4ad2b12a",
+  "model_license": "CC BY-NC",
+  "archive": {
+    "MRAnnotator_weights.zip": "34f5e5dc20192a4d17c283592f212cd79ada285e4ae775b40145e19a043cdcf6"
+  },
+  "runtime": "envs/cads (Python 3.11, PyTorch 2.6.0+cu124, nnU-Net v2 2.5.2)",
+  "tasks": {
+    "Dataset001_Abdomen": 8,
+    "Dataset002_ShoulderKnee": 10,
+    "Dataset003_PelvisProstate": 4,
+    "Dataset004_Spine": 22
+  },
+  "foreground_classes": 44,
+  "input_contract": "One MR DICOM series; input is reoriented to the released LAS inference convention and predictions are resampled back to the source geometry.",
+  "acceptance": "All four released fold-0 checkpoints passed DICOM-to-GPU-inference-to-RTSTRUCT validation; see models/validation/mrannotator_*.json."
+}

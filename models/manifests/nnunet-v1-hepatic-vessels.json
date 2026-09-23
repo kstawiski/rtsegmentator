@@ -1,0 +1,24 @@
+{
+  "family": "nnU-Net v1 pretrained model zoo",
+  "task": "Task008_HepaticVessel",
+  "record": "https://zenodo.org/records/4003545",
+  "archive": "Task008_HepaticVessel.zip",
+  "archive_bytes": 5002919698,
+  "archive_md5": "5cb797f542b43f882e1873129cd11021",
+  "archive_sha256": "462f96e9bb5385e7539550bc2748171ad14a5821fdb38476130063ed062655a1",
+  "checkpoint_tree_sha256": "7deefd49acde2351e0dbb2942781ef9cfb4f448126b65c5f96e5b93b6cb377b8",
+  "configuration": "3d_fullres",
+  "folds": [0, 1, 2, 3, 4],
+  "verified_at": "2026-08-10",
+  "acceptance": {
+    "input": "167-slice abdominal CT acceptance fixture",
+    "nonempty_rois": 1,
+    "nonempty_labels": ["Hepatic_Vessels"],
+    "empty_labels": ["Liver_Tumor"],
+    "referenced_images": 3,
+    "rtstruct_bytes": 18662,
+    "rtstruct_sha256": "b5d5c457fe851b2f9d0af7909960247d63890120741e64fddf36d8b9072a3f3e",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

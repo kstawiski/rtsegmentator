@@ -1,0 +1,113 @@
+{
+  "monai_spleen_ct": {
+    "modality": "CT",
+    "description": "MONAI Model Zoo reproducible spleen CT bundle",
+    "structures": "Spleen",
+    "reference": "https://huggingface.co/MONAI/spleen_ct_segmentation",
+    "bundle": "spleen_ct_segmentation",
+    "config": "configs/inference.json",
+    "labels": {"1": "Spleen"}
+  },
+  "monai_multi_organ_ct": {
+    "modality": "CT",
+    "description": "MONAI Model Zoo DiNTS multi-organ abdominal CT bundle",
+    "structures": "Artery, portal vein, liver, spleen, stomach, gallbladder and pancreas",
+    "reference": "https://huggingface.co/MONAI/multi_organ_segmentation",
+    "bundle": "multi_organ_segmentation",
+    "config": "configs/inference.yaml",
+    "trusted_architecture_pickle": true,
+    "datalist_records": true,
+    "labels": {
+      "1": "Artery", "2": "Portal_Vein", "3": "Liver", "4": "Spleen",
+      "5": "Stomach", "6": "Gallbladder", "7": "Pancreas"
+    }
+  },
+  "monai_pancreas_dints_ct": {
+    "modality": "CT",
+    "description": "MONAI Model Zoo DiNTS pancreas and pancreatic-tumor CT bundle",
+    "structures": "Pancreas and pancreatic tumor",
+    "reference": "https://huggingface.co/MONAI/pancreas_ct_dints_segmentation",
+    "bundle": "pancreas_ct_dints_segmentation",
+    "config": "configs/inference.yaml",
+    "trusted_architecture_pickle": true,
+    "datalist_records": true,
+    "labels": {"1": "Pancreas", "2": "Pancreatic_Tumor"}
+  },
+  "monai_pediatric_abdominal_ct": {
+    "modality": "CT",
+    "description": "MONAI Model Zoo pediatric abdominal CT DynUNet bundle",
+    "structures": "Liver, spleen and pancreas",
+    "reference": "https://huggingface.co/MONAI/pediatric_abdominal_ct_segmentation",
+    "bundle": "pediatric_abdominal_ct_segmentation",
+    "config": "configs/inference.yaml",
+    "checkpoint": "models/dynunet_FT.pt",
+    "datalist_records": true,
+    "output_relative": "input_trans.nii.gz",
+    "labels": {"1": "Liver", "2": "Spleen", "3": "Pancreas"}
+  },
+  "monai_renal_unest_ct": {
+    "modality": "CT",
+    "description": "MONAI Model Zoo UNEST renal-substructure contrast CT bundle",
+    "structures": "Kidney cortex, medulla and pelvicalyceal system",
+    "reference": "https://huggingface.co/MONAI/renalStructures_UNEST_segmentation",
+    "bundle": "renalStructures_UNEST_segmentation",
+    "config": "configs/inference.json",
+    "run_id": "evaluating",
+    "labels": {"1": "Kidney_Cortex", "2": "Kidney_Medulla", "3": "Pelvicalyceal_System"}
+  },
+  "monai_swin_unetr_btcv_ct": {
+    "modality": "CT",
+    "description": "MONAI Model Zoo Swin UNETR BTCV abdominal CT bundle",
+    "structures": "13 abdominal organs, vessels and adrenal glands",
+    "reference": "https://huggingface.co/MONAI/swin_unetr_btcv_segmentation",
+    "bundle": "swin_unetr_btcv_segmentation",
+    "config": "configs/inference.json",
+    "remove_network_img_size": true,
+    "labels": {
+      "1": "Spleen", "2": "Kidney_Right", "3": "Kidney_Left",
+      "4": "Gallbladder", "5": "Esophagus", "6": "Liver",
+      "7": "Stomach", "8": "Aorta", "9": "Inferior_Vena_Cava",
+      "10": "Portal_And_Splenic_Veins", "11": "Pancreas",
+      "12": "Adrenal_Gland_Right", "13": "Adrenal_Gland_Left"
+    }
+  },
+  "monai_whole_body_ct": {
+    "modality": "CT",
+    "description": "MONAI Model Zoo whole-body CT SegResNet bundle",
+    "structures": "104 whole-body organs, vessels, bones and muscles",
+    "reference": "https://huggingface.co/MONAI/wholeBody_ct_segmentation",
+    "bundle": "wholeBody_ct_segmentation",
+    "config": "configs/inference.json",
+    "overrides": {"displayable_configs#highres": false},
+    "labels_from_metadata": true
+  },
+  "monai_ventricular_short_axis_mr": {
+    "modality": "MR",
+    "description": "MONAI Model Zoo short-axis cardiac MRI ventricular bundle",
+    "structures": "Left-ventricular blood pool, myocardium and right-ventricular blood pool",
+    "reference": "https://huggingface.co/MONAI/ventricular_short_axis_3label",
+    "bundle": "ventricular_short_axis_3label",
+    "config": "configs/inference.json",
+    "run_id": "evaluating",
+    "labels_from_metadata": true
+  },
+  "monai_whole_brain_unest_mr": {
+    "modality": "MR",
+    "description": "MONAI Model Zoo Large UNEST 133-label whole-brain T1 MRI bundle",
+    "structures": "132 foreground ventricular, deep-gray, cerebellar and cortical structures",
+    "reference": "https://huggingface.co/MONAI/wholeBrainSeg_Large_UNEST_segmentation",
+    "bundle": "wholeBrainSeg_Large_UNEST_segmentation",
+    "config": "configs/inference.json",
+    "run_id": "evaluating",
+    "labels_from_metadata": true
+  },
+  "monai_prostate_anatomy_mr": {
+    "modality": "MR",
+    "description": "MONAI Model Zoo single-channel T2 MRI prostate-zonal anatomy bundle",
+    "structures": "Prostate central gland and peripheral zone",
+    "reference": "https://huggingface.co/MONAI/prostate_mri_anatomy",
+    "bundle": "prostate_mri_anatomy",
+    "config": "configs/inference.json",
+    "labels_from_metadata": true
+  }
+}

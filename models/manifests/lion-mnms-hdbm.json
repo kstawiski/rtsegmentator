@@ -1,0 +1,14 @@
+{
+  "artifacts": [
+    {"name": "LION FDG", "source": "https://github.com/ENHANCE-PET/LION/releases/download/lionz-v.1.0.3/clin_pt_fdg_5209_27032026.zip", "sha256": "e912620a316a4b35bef92912a3524715777da72dfb1de66951e75f21f5d44496"},
+    {"name": "LION PSMA", "source": "https://github.com/ENHANCE-PET/LION/releases/download/lionz-v.1.0.0/clin_pt_psma_2046_25112025.zip", "sha256": "3082cc95290a69ddd5c05a3fabcd573f5b45fb9dbf6ec1ccbc467acee2c0e3ee"},
+    {"name": "M&Ms cardiac MRI", "source": "https://zenodo.org/records/4134721", "md5": "e6613f33cd3a7621541875a057fc14f8"},
+    {"name": "HD-BM", "source": "https://zenodo.org/records/7024601", "md5": "42eac13497c561435be7570bbd62a5e3"},
+    {"name": "COALA CRLM", "source": "https://zenodo.org/records/12795094", "md5": "665f4e73ba332a75ef26ca241da25607"},
+    {"name": "PDAC tumor", "source": "https://zenodo.org/records/14782552", "md5": "b16fd244f2b42e9c48095270ded322d8"},
+    {"name": "PDAC vessels", "source": "https://zenodo.org/records/14782552", "md5": "709793617c779945306536a5cdc40cbc"}
+    ,{"name": "Spinal-Multiple-Myeloma-SEG models", "source": "https://zenodo.org/records/18598645", "md5": "02f72a4c4bf8c34790b36400db7cc6d1"},
+    {"name": "BAMF FDG PET/CT", "source": "https://zenodo.org/records/8290055", "md5": "48ed2ef050257e664ede71b18fff6c9b"}
+  ],
+  "verified": "2026-08-11"
+}

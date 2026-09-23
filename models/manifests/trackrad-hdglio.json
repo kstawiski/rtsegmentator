@@ -1,0 +1,25 @@
+{
+  "families": [
+    {
+      "name": "TrackRAD Track'n'Treat",
+      "repository": "https://github.com/DIAGNijmegen/TrackRAD25_submission",
+      "source_commit": "bc94b8322ac272a2bc25c3ac2e9bd6ec008efd65",
+      "checkpoint_url": "https://zenodo.org/records/20664496",
+      "checkpoint_file": "modelA/rank_weighted_average.pt",
+      "archive_bytes": 427135152,
+      "archive_md5": "708e38578a1f81738dab7e1e1b55d195",
+      "checkpoint_sha256": "e64c63da1fbaacbf973e573091604a08ffac64fd9140710f8e8d337be3bc4c1b",
+      "status": "requires_cine_series_and_first_frame_mask"
+    },
+    {
+      "name": "HD-GLIO-AUTO",
+      "repository": "https://github.com/NeuroAI-HD/HD-GLIO-AUTO",
+      "source_commit": "6acaad894c818b81e897e556415ba27f3bb5f4dc",
+      "checkpoint_url": "https://zenodo.org/records/4014850",
+      "checkpoint_archive": "hd_glio_v2_params.zip",
+      "archive_bytes": 226452950,
+      "archive_md5": "65704898365b11630887389a90c10122",
+      "status": "requires_four_mr_series_and_registration_pipeline"
+    }
+  ]
+}

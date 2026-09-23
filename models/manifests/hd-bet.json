@@ -1,0 +1,21 @@
+{
+  "family": "HD-BET",
+  "package_version": "2.0.1",
+  "model_release": "2.0.0",
+  "source": "https://github.com/MIC-DKFZ/HD-BET",
+  "weight_source": "https://zenodo.org/records/14445620/files/release_v1.5.0.zip",
+  "weight_tree_sha256": "b60391ac7d6fce7ca9f361026da72b22780c97fca3e32f1d8a4fb9567c223ed4",
+  "checkpoint_sha256": "d31dc59b4c5fe0028070901870c44c0b526f48c507ce50804941344356df7b52",
+  "verified_at": "2026-08-11",
+  "acceptance": {
+    "input": "HNTS-MRG24 patient 101 pre-RT T2 MRI synthetic DICOM geometry fixture, 82 slices",
+    "nonempty_rois": 1,
+    "nonempty_labels": ["Brain"],
+    "referenced_images_with_contours": 28,
+    "source_images_in_referenced_series": 82,
+    "rtstruct_bytes": 370834,
+    "rtstruct_sha256": "78d22d43723d8667928280caafed90265337c0a440b4dbf4c1e772d2a0966c25",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

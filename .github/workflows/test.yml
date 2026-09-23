@@ -25,5 +25,5 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile.portal
+          file: Dockerfile
           push: false

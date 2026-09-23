@@ -1,0 +1,11 @@
+{
+  "artifact_bytes": 271356,
+  "artifact_sha256": "c15c6119c152ca801f632da32cd03afa744d13e1de0ac94f3e8f46fad483ad52",
+  "contour_sets": 1,
+  "fixture": "rano2-kcl-p003-tp002-t1c-axial",
+  "model": "Dataset901_All_T1wCE-Enhancing/nnUNetTrainer__nnUNetPlans_80G__3d_fullres",
+  "referenced_images": 44,
+  "rois": 1,
+  "task": "matto_gbm_enhancing_t1ce_mr",
+  "validated_at": "2026-08-11T05:40:00Z"
+}

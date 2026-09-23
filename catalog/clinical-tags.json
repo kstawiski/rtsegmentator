@@ -1,0 +1,19 @@
+{
+  "lung_cancer": {"label": "Lung cancer", "terms": ["lung", "pulmonary", "thoracic", "thorax", "mediastinal", "nsclc", "chest"]},
+  "prostate_cancer": {"label": "Prostate cancer", "terms": ["prostate", "male pelvis", "male-pelvis", "seminal vesicle", "penile bulb", "psma"]},
+  "bladder_cancer": {"label": "Bladder cancer", "terms": ["bladder", "urinary", "ureter", "pelvic organ", "pelvic oar"]},
+  "glioblastoma_glioma": {"label": "Glioblastoma / glioma", "terms": ["glioblastoma", "glioma", "gbm", "brats", "brain", "cerebral", "hippocamp", "ventricle", "cerebell", "brainstem", "cranial", "white-matter", "dkt"]},
+  "brain_metastases": {"label": "Brain metastases / SRS", "terms": ["brain metast", "brain mask", "whole-brain", "brain structures", "cerebral", "hippocamp", "brainstem", "cranial", "ventricle"]},
+  "head_neck_cancer": {"label": "Head and neck cancer", "terms": ["head-and-neck", "head and neck", "headneck", "hntsmrg", "craniofacial", "dental", "oral cavity", "phary", "laryn", "parotid", "submandibular"]},
+  "breast_cancer": {"label": "Breast cancer", "terms": ["breast", "axillary"]},
+  "liver_cancer": {"label": "Liver cancer / liver metastases", "terms": ["liver", "hepatic", "hcc", "crlm"]},
+  "pancreatic_cancer": {"label": "Pancreatic cancer", "terms": ["pancrea", "pdac", "duodenum", "celiac trunk"]},
+  "kidney_cancer": {"label": "Kidney cancer", "terms": ["kidney", "renal"]},
+  "colorectal_cancer": {"label": "Colorectal / rectal cancer", "terms": ["colon", "colorectal", "rectal", "rectum", "bowel", "crlm"]},
+  "cervical_cancer": {"label": "Cervical cancer", "terms": ["cervix", "cervical", "ctvt", "uterus"]},
+  "lymphoma": {"label": "Lymphoma / nodal RT", "terms": ["lymphoma", "lymph-node", "lymph node", "lymphoid", "isrt", "lnq", "lnseg", "nodal"]},
+  "spine_tumors": {"label": "Spine tumors / SBRT", "terms": ["spine", "spinal", "vertebr", "myeloma", "sacrum", "cord", "canal"]},
+  "neuroendocrine_tumors": {"label": "Neuroendocrine tumors", "terms": ["dotatate", "somatostatin", "neuroendocrine"]},
+  "sarcoma_soft_tissue": {"label": "Sarcoma / soft-tissue tumors", "terms": ["sarcoma", "lipoma", "lipomatous", "extremit", "thigh", "shoulder"]},
+  "whole_body_metastatic": {"label": "Whole-body metastatic disease", "terms": ["whole-body", "whole body", "fdg-avid", "psma-avid", "dotatate-avid", "tumor lesions", "tumour lesions", "metabolic tumor"]}
+}

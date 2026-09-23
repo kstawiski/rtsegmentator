@@ -1,0 +1,9 @@
+{
+  "installed_at": "2026-08-11", "runtime": "envs/segmentation-modern",
+  "archives": {
+    "Dataset009_Breast.zip": {"zenodo": 11998679, "md5": "40442b1f4dab2b9e14f52f716f3957fc", "status": "validated"},
+    "Dataset011_Breast.zip": {"zenodo": 11504675, "md5": "e55f1ee70b0f1e7a2de847906ae187a1", "status": "validated"},
+    "Dataset002_BRATS19.zip": {"zenodo": 11582627, "md5": "23a3f55dead4a6642271a08d1a503bbb", "status": "installed_requires_four_registered_sequences"}
+  },
+  "ensemble": "five folds, checkpoint_final.pth"
+}

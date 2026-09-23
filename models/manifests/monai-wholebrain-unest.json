@@ -1,0 +1,22 @@
+{
+  "family": "MONAI Model Zoo",
+  "bundle": "wholeBrainSeg_Large_UNEST_segmentation",
+  "bundle_version": "0.2.7",
+  "source": "https://huggingface.co/MONAI/wholeBrainSeg_Large_UNEST_segmentation",
+  "bundle_tree_sha256_excluding_cache": "9f6825cc73332b9c97dd0cc3a72cf1c0d23873b68f748ef29a5a1585f09a8a23",
+  "model_pt_sha256": "79a52ccd77bc35d05410f39788a1b063af3eb3b809b42241335c18aed27ec422",
+  "checkpoint_foreground_labels": 132,
+  "runtime": {"monai": "1.6.0", "pytorch_ignite": "0.4.11"},
+  "verified_at": "2026-08-11",
+  "acceptance": {
+    "input": "MSD hippocampus cropped T1 MRI, 35-slice research DICOM",
+    "fixture_limitation": "This cropped technical fixture proves execution and DICOM geometry only; it is not a full-brain performance test.",
+    "nonempty_rois": 38,
+    "referenced_images_with_contours": 33,
+    "source_images_in_referenced_series": 35,
+    "rtstruct_bytes": 121882,
+    "rtstruct_sha256": "9a1d40810f77bcc662cb77fce3d3fa99292998478c0b408b305c97ad9c389bd7",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

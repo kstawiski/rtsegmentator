@@ -1,0 +1,1 @@
+{"task":"cads_open_557_brain_tissues","result":"passed","verified_at":"2026-08-11","fixture":"287173-ct-head-dicom","nonempty_rois":9,"referenced_images_with_contours":126,"rtstruct_bytes":13019398,"rtstruct_sha256":"22d5023d0d59c25ee715960fed8567c2a8e29e1a45b98f1e8eebddabe7699f2f","validator":"convert_validate_rtstruct.py"}

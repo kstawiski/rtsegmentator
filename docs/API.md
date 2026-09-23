@@ -1,66 +1,33 @@
 # Automation API
 
-Swagger UI is available at `/api/docs`; the OpenAPI document is
-`/api/openapi.json`. Set `RTSEG_API_KEY` to require an `X-API-Key` header on all
-versioned `/api/v1` endpoints. Put the service behind TLS and network access
-control whenever it handles identifiable data.
+The versioned API is available under `/api/v1`; interactive OpenAPI documentation is at `/api/docs` and the schema at `/api/openapi.json`.
 
-## Recommended two-stage submission
+## Submit and follow a job
 
-1. `POST /api/v1/uploads` with one or more `files` parts. Files may be DICOM or
-   ZIP archives. The response reports rejected files and every detected CT, MR
-   or PET series. No data has reached the GPU worker yet.
-2. `POST /api/v1/uploads/{upload_id}/jobs` with one returned `series_key`, one
-   or more repeated `models` fields, and optional `prompt_json`.
-3. Poll `GET /api/v1/jobs/{job_id}` until `complete` or `failed`.
-4. Download `GET /api/v1/jobs/{job_id}/result`.
+Submit one DICOM image series as repeated multipart `files` fields. Repeat `models` for each requested model:
 
 ```bash
-base=http://localhost:8080
-auth="X-API-Key: ${RTSEG_API_KEY}"
-
-curl -sS -H "$auth" -F 'files=@study.zip' \
-  "$base/api/v1/uploads" > assessment.json
-
-curl -sS -H "$auth" \
-  -F 'series_key=SERIES_KEY' -F 'models=total' \
-  "$base/api/v1/uploads/UPLOAD_ID/jobs"
-
-curl -sS -H "$auth" "$base/api/v1/jobs/JOB_ID"
-curl -fL -H "$auth" -o result.zip "$base/api/v1/jobs/JOB_ID/result"
+curl -fsS -X POST http://localhost:8080/api/v1/jobs \
+  -F 'models=total' \
+  -F 'files=@CT.1.dcm' \
+  -F 'files=@CT.2.dcm'
 ```
 
-`GET /api/v1/models` returns supported modality/modalities, structures,
-description, prompt type, upstream reference, availability and validation
-status for every model. Clients must not assume disabled models can be run.
+The response contains the job `id`. Poll it and download the result after `status` becomes `complete`:
 
-## Prompted models
-
-Coordinates are `[column, row, zero_based_slice]` in the assessed series.
-
-```json
-{
-  "positive_points": [[210, 164, 72]],
-  "negative_points": [[180, 140, 72]],
-  "box": [[190, 145, 72], [240, 190, 72]],
-  "text": "lymph node"
-}
+```bash
+curl -fsS http://localhost:8080/api/v1/jobs/JOB_ID
+curl -fLo rtstruct.zip http://localhost:8080/api/v1/jobs/JOB_ID/result
 ```
 
-- PAM requires a positive point or same-slice box and propagates in 3D.
-- SAT3D requires at least one positive point and accepts negative points.
-- SAM-Med2D is slice-wise; prompt every slice that should be contoured.
+Other routes:
 
-Send the JSON as the `prompt_json` form field. Model and coordinate validation
-occurs before any transfer or inference.
+- `GET /api/v1/health` — portal mode and worker reachability.
+- `GET /api/v1/models` — model catalog, modalities, outputs, availability, and curated `clinical_tags` for tumor-site discovery. Tags mean a model may be useful in that planning workflow; they do not imply tumor-segmentation capability or a clinical indication.
+- `GET /api/v1/jobs` — recent jobs.
 
-## Direct submission
+HTTP `202` means accepted. HTTP `409` from the result endpoint means the job is not complete. Validation failures use `400`/`422`.
 
-`POST /api/v1/jobs` accepts an already isolated, single DICOM series through
-repeated `files` parts plus repeated `models` fields. Mixed uploads are rejected.
-Prompted and paired PET/CT models require the two-stage API, which is safer for
-all arbitrary archives.
+## Security
 
-`GET /api/v1/health` is a liveness endpoint. A successful response does not
-prove that every model weight or GPU path is healthy; use a locally validated
-smoke series after installation.
+The service handles medical data and does not implement user identity or tenant isolation. Do not expose it directly to the public internet. Put it behind authenticated TLS termination, restrict request size and network access, and use a separate data volume with an appropriate retention policy. Job identifiers are not authorization credentials.

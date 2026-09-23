@@ -1,0 +1,1 @@
+{"task":"mrannotator_abdomen_mr","result":"passed","verified_at":"2026-08-11","fixture":"TotalSegmentator MRI s0052 synthetic DICOM","nonempty_rois":6,"referenced_images_with_contours":204,"rtstruct_bytes":2252622,"rtstruct_sha256":"0a3920811bb6cfdbfc2ab69ce2307aef936221359f9cdca8fe3e64a8634d7d28","validator":"convert_validate_rtstruct.py"}

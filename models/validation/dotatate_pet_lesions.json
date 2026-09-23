@@ -1,0 +1,12 @@
+{
+  "artifact_bytes": 344824,
+  "artifact_sha256": "b5e2b9079bc25566a62cfe43e27f69bbc2828e763bfd284e2c78e86e4f4ff99d",
+  "contour_sets": 1,
+  "fixture": "miednice-489871-pt-dicom",
+  "model": "Task521_PET_5foldEnsemble_nnunet.onnx",
+  "referenced_images": 310,
+  "rois": 1,
+  "runtime": "onnxruntime 1.28.0",
+  "task": "dotatate_pet_lesions",
+  "validated_at": "2026-08-11T04:06:32Z"
+}

@@ -1,0 +1,18 @@
+{
+  "family": "SIAM v3",
+  "repository": "https://github.com/romainVala/SIAM",
+  "source_commit": "e690b1a71ef481fbf238dcaf8a145b2fb75203ac",
+  "weights_record": "https://zenodo.org/records/17733431",
+  "archive": {"name": "pred_DS108_LcsfP_Ano.tar.gz", "bytes": 5370314072, "md5": "0c3ca6d0730a3dcb924e079af04474c3"},
+  "folds": [0, 1, 2, 3, 4],
+  "labels": 17,
+  "verified_at": "2026-08-13",
+  "acceptance": {
+    "fixture": "TemplateFlow MNI152 T1 converted to geometry-faithful research DICOM",
+    "nonempty_rois": 17,
+    "referenced_images": 91,
+    "rtstruct_bytes": 4704902,
+    "rtstruct_sha256": "1c1283e891dbb467a170a3270251c13a13dbd026b8abcd0034251aad0ecbc39f",
+    "result": "passed"
+  }
+}

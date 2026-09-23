@@ -1,0 +1,18 @@
+{
+  "family": "MRISegmentator",
+  "package_version": "0.4.2",
+  "repository": "https://github.com/rsummers11/MRISegmenter",
+  "weights_url": "https://nihcc.app.box.com/index.php?rm=box_download_shared_file&shared_name=q6vl3015hteoufz7jll63u3hdqk79li7&file_id=f_1544045874167",
+  "checkpoint_tree_sha256": "4937ce3b24a1c18c7e6b1d3bb4775f99057c99fca44acda9b8459cf554b8bfd9",
+  "labels": 62,
+  "verified_at": "2026-08-10",
+  "acceptance": {
+    "input": "208-slice synthetic DICOM derived from TotalSegmentator MRI s0052",
+    "nonempty_rois": 16,
+    "referenced_images": 208,
+    "rtstruct_bytes": 3797518,
+    "rtstruct_sha256": "02914733656eb831cf3f1250d8ec95b450aedc2ef770df243be0f82f99f6b4c1",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

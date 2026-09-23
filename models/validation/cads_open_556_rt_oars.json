@@ -1,0 +1,1 @@
+{"task":"cads_open_556_rt_oars","result":"passed","verified_at":"2026-08-11","fixture":"287173-ct-abdomen-dicom","nonempty_rois":9,"referenced_images_with_contours":167,"rtstruct_bytes":2475546,"rtstruct_sha256":"1a877ad9b0a400c86496bc39924cebb44edca4842e3d1bd71d541ffbecc846f1","validator":"convert_validate_rtstruct.py"}

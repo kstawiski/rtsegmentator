@@ -1,0 +1,24 @@
+{
+  "family": "nnU-Net v1 pretrained model zoo",
+  "task": "Task009_Spleen",
+  "record": "https://zenodo.org/records/4003545",
+  "archive": "Task009_Spleen.zip",
+  "archive_bytes": 5025132998,
+  "archive_md5": "3a7bef6d372b6fd9e1d7454a23bd793f",
+  "archive_sha256": "67c06536dbad35f1dc4642a6bab5f62a5ba885bae18b216ad0d5edc6da273de5",
+  "checkpoint_tree_sha256": "939db32b8abba588bd6fb551e695b36bf8e80421f94331e1478cc82c52872fdf",
+  "configuration": "3d_fullres",
+  "folds": [0, 1, 2, 3, 4],
+  "verified_at": "2026-08-10",
+  "acceptance": {
+    "input": "51-slice synthetic DICOM from official MSD Task09 training CT spleen_19",
+    "fixture_source": "https://msd-for-monai.s3-us-west-2.amazonaws.com/Task09_Spleen.tar",
+    "fixture_archive_sha256": "dfeba347daae4fb08c38f4d243ab606b28b91b206ffc445ec55c35489fa65e60",
+    "nonempty_rois": 1,
+    "referenced_images": 18,
+    "rtstruct_bytes": 71702,
+    "rtstruct_sha256": "2c56a2d6fb7b92c624d7f5d17825392c6fc950712f56df18f35b49adb7bc5b92",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

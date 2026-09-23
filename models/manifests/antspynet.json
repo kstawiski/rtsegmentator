@@ -1,0 +1,16 @@
+{
+  "installed_at": "2026-08-11",
+  "runtime": "/home/konrad/rtseg-runtimes/envs/antspynet",
+  "python": "3.11.14",
+  "packages": {"antspyx": "0.6.3", "antspynet": "0.3.2", "tensorflow": "2.15.1"},
+  "cache": "weights/antspynet/cache",
+  "cache_storage": "NFS model bundle (not worker-local home cache)",
+  "validated_tasks": [
+    "antspynet_brain_extraction_t1", "antspynet_deep_atropos_t1",
+    "antspynet_hippmapp3r_t1", "antspynet_hypothalamus_t1",
+    "antspynet_deep_flash_t1", "antspynet_cerebellum_t1", "antspynet_dkt_t1"
+  ],
+  "disabled_tasks": {
+    "antspynet_wmh_flair_t1": "requires a FLAIR volume plus a co-registered T1 volume"
+  }
+}

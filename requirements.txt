@@ -3,4 +3,4 @@ uvicorn[standard]==0.35.0
 python-multipart==0.0.20
 pydicom==3.0.1
 numpy>=1.26,<3
-Pillow>=10,<13
+Pillow>=10,<12

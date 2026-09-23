@@ -20,7 +20,7 @@ parser.add_argument("--output", required=True)
 parser.add_argument("--prompt", required=True)
 args = parser.parse_args()
 
-model_root = Path(os.environ.get("RTSEG_MODEL_ROOT", "/home/konrad/lymph-models"))
+model_root = Path(os.environ.get("RTSEG_MODEL_ROOT", "/models"))
 repo = model_root / "sources/SAM-Med2D"
 # Avoid the upstream package initializer: it eagerly imports the automatic
 # mask generator and therefore torchvision NMS, which prompted inference does

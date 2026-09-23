@@ -1,25 +1,18 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
-role=${RTSEG_ROLE:-combined}
-
-if [[ "$role" == "combined" ]]; then
-  export WORKER_MODE=local
-  exec setpriv --reuid=konrad --regid=konrad --init-groups \
-    /home/konrad/dicom-rt-seg/.venv/bin/uvicorn app:app \
-    --app-dir /home/konrad/dicom-rt-seg --host 0.0.0.0 --port 8080 --workers 1
-fi
-
-if [[ "$role" == "worker" ]]; then
-  if [[ ! -s /run/secrets/authorized_keys ]]; then
-    echo "RTSEG_ROLE=worker requires /run/secrets/authorized_keys" >&2
-    exit 2
-  fi
-  install -d -m 0700 -o konrad -g konrad /home/konrad/.ssh
-  install -m 0600 -o konrad -g konrad /run/secrets/authorized_keys /home/konrad/.ssh/authorized_keys
-  ssh-keygen -A
-  exec /usr/sbin/sshd -D -e
-fi
-
-echo "RTSEG_ROLE must be combined or worker" >&2
-exit 2
+case "${1:-portal}" in
+  portal)
+    exec /opt/rtsegmentator/venv/bin/uvicorn app:app --host 0.0.0.0 --port "${PORT:-8080}" --workers 1
+    ;;
+  worker-ssh)
+    test -n "${SSH_AUTHORIZED_KEY:-}" || { echo "SSH_AUTHORIZED_KEY is required" >&2; exit 2; }
+    printf '%s\n' "$SSH_AUTHORIZED_KEY" > /home/worker/.ssh/authorized_keys
+    chmod 700 /home/worker/.ssh
+    chmod 600 /home/worker/.ssh/authorized_keys
+    chown -R worker:worker /home/worker/.ssh
+    printf '%s\n' 'Port 2222' 'PermitRootLogin no' 'PasswordAuthentication no' 'AllowUsers worker' >> /etc/ssh/sshd_config
+    exec /usr/sbin/sshd -D -e
+    ;;
+  *) exec "$@" ;;
+esac

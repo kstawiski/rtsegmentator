@@ -1,0 +1,11 @@
+{
+  "artifact_bytes": 667046,
+  "artifact_sha256": "5efa369c02d1ccc70ccd8ae9e57f24b09555b8911edb09a7e0409c6d7a8c3625",
+  "contour_sets": 1,
+  "fixture": "miednice-489871-pt-dicom",
+  "model": "Dataset789_Tumors/nnUNetTrainerDA5__nnUNetPlans__3d_fullres",
+  "referenced_images": 279,
+  "rois": 1,
+  "task": "lion_fdg_pet_lesions",
+  "validated_at": "2026-08-11T04:14:04Z"
+}

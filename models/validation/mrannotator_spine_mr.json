@@ -1,0 +1,1 @@
+{"task":"mrannotator_spine_mr","result":"passed","verified_at":"2026-08-11","fixture":"HNTS-MRG 101 pre-RT T2 synthetic DICOM","nonempty_rois":11,"referenced_images_with_contours":65,"rtstruct_bytes":142042,"rtstruct_sha256":"36d8254c3022a5b59b99052d24b5c289b94782ff7809b5e007c05bafbf3f8b7b","validator":"convert_validate_rtstruct.py"}

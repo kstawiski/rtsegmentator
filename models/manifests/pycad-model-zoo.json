@@ -1,0 +1,15 @@
+{
+  "name": "PYCAD Model Zoo",
+  "source": "https://github.com/pycadd/pycad-model-zoo",
+  "source_commit": "189451904a9eab64c54485e986103fae5393b0f8",
+  "license": "MIT repository license; upstream asks users to check source-dataset terms",
+  "archives": {
+    "spine.zip": "346803c98e8f02845f3bede48019af9eb32bbedb192485489f35a32ce4ccaedb",
+    "skull.zip": "e3763131ddf08959b894037afba7f22b5d7fa69a5b70640f1c48b054c8a9f083",
+    "heart.zip": "c1c5cedb2404e8844d9d0fa9b7396a4e7fd03fc159e29e3bbbeb52ae5e16dab7",
+    "Dataset224_KNEE.zip": "446de302eabc04cab072ec04e4c5b8d4fd3838894c4803334b7d26792eff000f"
+  },
+  "runtime": "envs/cads (Python 3.11, PyTorch 2.6.0+cu124, nnU-Net v2 2.5.2)",
+  "acceptance": "All four official fold-0 checkpoints passed DICOM-to-GPU-inference-to-RTSTRUCT validation; see models/validation/pycad_*.json.",
+  "limitations": "The cardiac release uses opaque h1/h2/h3 class names. Knee execution was tested on an out-of-domain MR geometry fixture and therefore does not establish knee-domain accuracy."
+}

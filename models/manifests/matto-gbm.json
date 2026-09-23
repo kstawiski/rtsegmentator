@@ -1,0 +1,30 @@
+{
+  "family": "MATTO-GBM TRANSCAN",
+  "repository": "https://github.com/MATTO-GBM-TRANSCAN/Segmentation",
+  "source_commit": "faace05ef907d83b70d298d12a679b989cb2f5a0",
+  "record": "https://zenodo.org/records/21453119",
+  "archive_count": 12,
+  "archive_checksums": {
+    "ALL__EyesMaskedT1wCE-Lenses.zip": "md5:23b7da155da315acb76a052a58de6e54",
+    "ALL__EyesMaskedT1wCE-Retinas.zip": "md5:f6b10149ea9365c4a810568095a54f07",
+    "ALL__FLAIR-Edema.zip": "md5:f500c4e91d907accc54c38226af308a8",
+    "ALL__PET-Uptake.zip": "md5:2bb86b8eab72442d6cc63f80c8e56491",
+    "ALL__PETUptake_PTV.zip": "md5:fefeee194464b8b513c2049ee00f73bf",
+    "ALL__T1wCE-Brain.zip": "md5:2cd16bc7b03734d91d4f194c2280c964",
+    "ALL__T1wCE-Brainstem.zip": "md5:1fa3d3dcadafcca4d58d6702d01b0d42",
+    "ALL__T1wCE-Enhancing.zip": "md5:ef4471f58a0ffee6810e83285d1c4260",
+    "ALL__T1wCE-Eyes.zip": "md5:d9bddf4b9404e8d3bdd344358eda4539",
+    "ALL__T1wCE-Hippocampi.zip": "md5:91d68b378c86e45a9c9c78c66b4fbf90",
+    "ALL__T1wCEEnhancing-rPTV.zip": "md5:d4346b3ab5b9669c565dc1c3814aedfb",
+    "ALL__T1wCEFLAIREnhancingEdema-PTV.zip": "md5:78dfda0503ca9a94a2993a1bca25db40"
+  },
+  "acceptance": {
+    "task": "matto_gbm_enhancing_t1ce_mr",
+    "preprocessing": "HD-BET followed by 0.1/99.9 percentile normalization",
+    "rois": 1,
+    "referenced_images": 44,
+    "rtstruct_bytes": 271356,
+    "rtstruct_sha256": "c15c6119c152ca801f632da32cd03afa744d13e1de0ac94f3e8f46fad483ad52",
+    "result": "passed"
+  }
+}

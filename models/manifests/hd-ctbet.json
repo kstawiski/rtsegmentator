@@ -1,0 +1,24 @@
+{
+  "family": "HD-CTBET",
+  "package_version": "1.1",
+  "source": "https://github.com/CAAI/HD-CTBET",
+  "source_commit": "78da973bb23a1264eec00183fb9c455dd219a677",
+  "patch": "models/patches/hd-ctbet-export-shape.patch",
+  "patch_reason": "Upstream compares the segmentation array itself with a three-element target shape, causing a broadcasting ValueError; the patch compares seg_old_size.shape.",
+  "patched_data_loading_sha256": "dce3ae85dc400a4d35e8507f44cb146e2abe150fc10219238eb5f696c85a9591",
+  "model_sha256": "042777767584be9530010a69fd6a9850ec13e7bedd8eb6ae3a77447b46a08812",
+  "model_metadata_sha256": "1fe0f60c70ce5336682654d6a169e995c9ca7f7cf13224ba39f66294e8bd054f",
+  "verified_at": "2026-08-11",
+  "acceptance": {
+    "input": "142-slice head CT fixture",
+    "inference_mode": "official fold 0, fast mode, TTA disabled",
+    "nonempty_rois": 1,
+    "nonempty_labels": ["Brain"],
+    "referenced_images_with_contours": 92,
+    "source_images_in_referenced_series": 142,
+    "rtstruct_bytes": 598312,
+    "rtstruct_sha256": "045972c5a415acb87af4c3ea59d6dc5459c049a63127db10b9cdda1f69dc4f02",
+    "result": "passed",
+    "validator": "convert_validate_rtstruct.py"
+  }
+}

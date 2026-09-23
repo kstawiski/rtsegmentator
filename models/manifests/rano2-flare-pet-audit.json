@@ -1,0 +1,16 @@
+{
+  "verified_at": "2026-08-11",
+  "storage_root": "/umed-projekty/RTsegmentator-private/model-bundle-v2",
+  "rano2_assist": {
+    "record": "15411078",
+    "archive_md5": "df95653320bee3182775cde51ffad298",
+    "source_commit": "b36ec82c4757a733bd07365fd70fa7026b9554b2",
+    "enabled_checkpoint": "task4000_brats24 single-T1c",
+    "blocked_checkpoint": "task4001_brats24allmod requires T1c, T1, FLAIR and T2"
+  },
+  "audits": {
+    "accurate": {"record": "3908203", "archive_md5": "724eac36f6587698faec8f8b41e5ab39", "status": "windows_idl_application_no_reusable_checkpoint"},
+    "flare2023": {"record": "8372563", "files_md5": ["5be8968188e1d4386c59c8e518c11ed4", "66a240f28c3605c39b3c0a28ae8a6bba", "abe4d1a2359850ddd5e544796a3bcf22", "7a45cbfc2324490faf5d39ab141803df"], "status": "checkpoint_only_missing_architecture_and_preprocessing"},
+    "dotatate_onnx": {"record": "7843469", "archive_md5": "0295342d76f1ff789d2d1ae4987d8896", "status": "downloaded_pending_source_contract_audit"}
+  }
+}

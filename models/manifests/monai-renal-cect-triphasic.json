@@ -1,0 +1,12 @@
+{
+  "family": "MONAI Model Zoo",
+  "bundle": "renalStructures_CECT_segmentation",
+  "bundle_version": "0.2.3",
+  "source": "https://huggingface.co/MONAI/renalStructures_CECT_segmentation",
+  "bundle_tree_sha256_excluding_cache": "b2b4977e09005b3041bc2590d884a9241c918d91af84d5ac6f02f005aaab5ba0",
+  "model_pt_sha256": "ef934ae5b6fdf9a19b83ab9ec28b64d63dca43aea8ef3e177724c3076170a21f",
+  "verified_at": "2026-08-11",
+  "status": "requires_triphasic_ct",
+  "input_contract": ["registered arterial CT", "registered venous CT", "registered excretory CT"],
+  "blocker": "The current portal job contract selects one DICOM series; duplicating one phase would not validate the released three-channel model. The upstream inference config also assumes a reference merged label and requires adaptation for unlabeled deployment."
+}

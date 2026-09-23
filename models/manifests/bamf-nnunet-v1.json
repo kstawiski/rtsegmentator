@@ -1,0 +1,13 @@
+{
+  "installed_at": "2026-08-11",
+  "runtime": "envs/nnunet-v1",
+  "source": "https://github.com/bamf-health/aimi-lung-ct",
+  "source_commit": "cfa845e11d7c0f0832efec4e065beb6d4cac01bd",
+  "archives": {
+    "Task775_CT_NSCLC_RG.zip": {"zenodo": 8290169, "md5": "132c34158aab8e09464d65470d8638b0"},
+    "Task777_CT_Nodules.zip": {"zenodo": 8290147, "md5": "243c9425bf2db677ea733cacaa1f558c"},
+    "Task788_Prostate.zip": {"zenodo": 8290093, "md5": "e45f25cd9e50d1a756428dfcc2f5759e"},
+    "Task882_MR_Liver.zip": {"zenodo": 8290124, "md5": "0f76371ee4fac619f78881d607943773"}
+  },
+  "ensemble": "five folds, model_final_checkpoint"
+}

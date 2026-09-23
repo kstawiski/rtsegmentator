@@ -7,7 +7,7 @@ import sys
 import SimpleITK as sitk
 
 
-model_root = Path(os.environ.get("RTSEG_MODEL_ROOT", "/home/konrad/lymph-models"))
+model_root = Path(os.environ.get("RTSEG_MODEL_ROOT", "/models"))
 source = model_root / "sources/HNTS-MRG24-UWLAIR/inference/Task1_preRT"
 weights = model_root / "weights/hntsmrg-uwlair/extracted/preRT_models"
 sys.path.insert(0, str(source))

@@ -1,0 +1,12 @@
+{
+  "name": "SynthSeg standalone v1",
+  "source": "https://github.com/BBillot/SynthSeg",
+  "source_commit": "2a2aa3bbfccb83f8253a51ca8b329b9938a2646d",
+  "license": "Apache-2.0",
+  "checkpoint": {
+    "models/synthseg_1.0.h5": "7d2e32d298fe38dc51ea38e6a8e8fc5c665d56b63cddb409e8b199535f8b5298"
+  },
+  "runtime": "Python 3.8, TensorFlow GPU 2.2.0 executed in CPU mode with 8 threads, Keras 2.3.1",
+  "output_contract": "31 unique FreeSurfer-compatible foreground labels from the released SynthSeg v1 label table; the native 1 mm output is nearest-neighbour resampled to the selected source series geometry before RTSTRUCT conversion.",
+  "acceptance": "Passed full-brain DICOM-to-inference-to-RTSTRUCT validation; see models/validation/synthseg_v1_brain.json."
+}
