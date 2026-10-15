@@ -13,6 +13,143 @@ APP_ROOT = Path(os.environ.get("RTSEG_APP_ROOT", Path(__file__).resolve().parent
 
 COMMON = ["dicom_series_to_nifti.py", "convert_validate_rtstruct.py"]
 REQUIREMENTS = {
+    "medical_sam3_3d_prompted": [
+        "@run_medical_sam3.py", "@prompted-target-label.json",
+        "envs/segmentation-modern/bin/python",
+        "runtime-homes/medical-sam3-site/ftfy/__init__.py",
+        "runtime-homes/medical-sam3-site/pycocotools/_mask.cpython-311-x86_64-linux-gnu.so",
+        "sources/Medical-SAM3/sam3/model_builder.py",
+        "sources/Medical-SAM3/assets/bpe_simple_vocab_16e6.txt.gz",
+        "weights/medical-sam3/checkpoint_3D.pt",
+        "validation/medical_sam3_3d_prompted.json",
+    ],
+    "medsam_vit_b_box_2d": [
+        "@run_medsam.py", "@prompted-target-label.json",
+        "envs/pam/bin/python",
+        "sources/MedSAM/segment_anything/build_sam.py",
+        "weights/medlsam/medsam_vit_b.pth",
+        "validation/medsam_vit_b_box_2d.json",
+    ],
+    "sam_med3d_turbo_prompted": [
+        "@run_sam_med3d.py", "@prompted-target-label.json",
+        "envs/pam/bin/python",
+        "sources/SAM-Med3D/segment_anything/build_sam3D.py",
+        "sources/SAM-Med3D/segment_anything/modeling/prompt_encoder3D.py",
+        "weights/sam-med3d/sam_med3d_turbo.pth",
+        "validation/sam_med3d_turbo_prompted.json",
+    ],
+    "medical_sam2_prompted_ct": [
+        "@run_medsam2.py", "@prompted-target-label.json",
+        "envs/pam/bin/python", "runtime-homes/medsam2-site/hydra/__init__.py",
+        "sources/Medical-SAM2/sam2_train/build_sam.py",
+        "sources/Medical-SAM2/sam2_train/sam2_hiera_t.yaml",
+        "weights/medical-sam2/MedSAM2_pretrain.pth",
+        "validation/medical_sam2_prompted_ct.json",
+    ],
+    "medsam2_ct_lesion_prompted": [
+        "@run_medsam2.py", "@prompted-target-label.json",
+        "envs/pam/bin/python",
+        "runtime-homes/medsam2-site/hydra/__init__.py",
+        "runtime-homes/medsam2-site/iopath/__init__.py",
+        "sources/MedSAM2/sam2/build_sam.py",
+        "sources/MedSAM2/sam2/configs/sam2.1_hiera_t512.yaml",
+        "weights/medsam2/medsam2_FLARE25_RECIST_baseline.pt",
+        "validation/medsam2_ct_lesion_prompted.json",
+    ],
+    "medlsam_structseg_han_oars": [
+        "@run_medlsam.py", "@labels/medlsam-structseg-han.json",
+        "envs/pam/bin/python",
+        "sources/MedLSAM/MedLAM/Anatomy_detection.py",
+        "sources/MedLSAM/MedSAM/segment_anything/build_sam.py",
+        "weights/medlsam/medlam.pth",
+        "weights/medlsam/medsam_vit_b.pth",
+        "testdata/medlsam-structseg-han/HaN_OAR/1/data.nii.gz",
+        "testdata/medlsam-structseg-han/HaN_OAR/1/label.nii.gz",
+        "testdata/medlsam-structseg-han/HaN_OAR/2/data.nii.gz",
+        "testdata/medlsam-structseg-han/HaN_OAR/2/label.nii.gz",
+        "testdata/medlsam-structseg-han/HaN_OAR/3/data.nii.gz",
+        "testdata/medlsam-structseg-han/HaN_OAR/3/label.nii.gz",
+        "validation/medlsam_structseg_han_oars.json",
+    ],
+    "universeg_few_shot_2d": [
+        "envs/segmentation-modern/bin/python",
+        "sources/UniverSeg/universeg/model.py",
+        "sources/UniverSeg/LICENSE-model",
+        "weights/universeg/universeg_v1_nf64_ss64_STA.pt",
+        "validation/universeg_few_shot_2d.json",
+    ],
+    "segvol_prompted_ct": [
+        "@run_segvol.py", "@prompted-target-label.json",
+        "envs/lnq/bin/python",
+        "runtime-homes/segvol-site/monai/__init__.py",
+        "runtime-homes/segvol-site/monai-0.9.0.dist-info/METADATA",
+        "runtime-homes/voxtell-env/lib/python3.11/site-packages/transformers/__init__.py",
+        "sources/SegVol/README.md",
+        "weights/segvol/config.json",
+        "weights/segvol/model_segvol_single.py",
+        "weights/segvol/pytorch_model.bin",
+        "validation/segvol_prompted_ct.json",
+    ],
+    "voxtell_v1_1_text_prompted": [
+        "@run_voxtell.py", "@prompted-target-label.json",
+        "envs/segmentation-modern/bin/python",
+        "runtime-homes/voxtell-env/lib/python3.11/site-packages/transformers/__init__.py",
+        "runtime-homes/voxtell-env/lib/python3.11/site-packages/positional_encodings/__init__.py",
+        "sources/VoxTell/voxtell/inference/predictor.py",
+        "weights/voxtell/voxtell_v1.1/plans.json",
+        "weights/voxtell/voxtell_v1.1/fold_0/checkpoint_final.pth",
+        "weights/voxtell/embeddings/voxtell_v1.1/text_embeddings.npz",
+        "weights/voxtell/qwen3-embedding-4b/config.json",
+        "validation/voxtell_v1_1_text_prompted.json",
+    ],
+    "vista3d_prompted_ct": [
+        "@run_vista3d.py", "@prompted-target-label.json",
+        "envs/lnq/bin/python",
+        "sources/NV-Segment-CTMR/NV-Segment-CT/configs/inference.json",
+        "sources/NV-Segment-CTMR/NV-Segment-CT/scripts/evaluator.py",
+        "weights/vista3d/NV-Segment-CT/model.pt",
+        "validation/vista3d_prompted_ct.json",
+    ],
+    "nninteractive_v1_prompted": [
+        "@run_nninteractive.py", "@prompted-target-label.json",
+        "envs/segmentation-modern/bin/python",
+        "sources/nnInteractive/nnInteractive/inference/inference_session.py",
+        "runtime-homes/nninteractive-site/nninteractive-2.5.1.dist-info/METADATA",
+        "weights/nninteractive/nnInteractive_v1.0/fold_0/checkpoint_final.pth",
+        "weights/nninteractive/nnInteractive_v1.0/plans.json",
+        "weights/nninteractive/nnInteractive_v1.0/dataset.json",
+        "validation/nninteractive_v1_prompted.json",
+    ],
+    "hippunfold_adni_t1_subfields_mr": [
+        "@run_hippunfold.py", "@combine_hippunfold_subfields.py",
+        "@resample_label_to_reference.py", "@labels/hippunfold-bigbrain.json",
+        "sources/HippUnfold/hippunfold/workflow/Snakefile",
+        "images/hippunfold/hippunfold-v1.5.3.sif",
+        "weights/hippunfold/trained_model.3d_fullres.Task301_ADNI_T1w_successful.nnUNetTrainer.tar",
+        "weights/hippunfold/t1-v1/nnUNet/3d_fullres/Task301_ADNI_T1w_successful/Task301_ADNI_T1w_successful__nnUNetPlansv2.1/fold_0/nnUNetTrainer.model",
+        "validation/hippunfold_adni_t1_subfields_mr.json",
+    ],
+    "hippunfold_maguire_t2_subfields_mr": [
+        "@run_hippunfold.py", "@combine_hippunfold_subfields.py",
+        "@resample_label_to_reference.py", "@labels/hippunfold-bigbrain.json",
+        "sources/HippUnfold/hippunfold/workflow/Snakefile",
+        "images/hippunfold/hippunfold-dev-v2.0.0.sif",
+        "runtime-homes/hippunfold-v2-overlay-dir",
+        "weights/hippunfold/Dataset001_HippUnfoldMag.nnUNetTrainer__nnUNetPlans__3d_fullres.tar.gz",
+        "weights/hippunfold/t2-v2/nnunet_v2/Dataset001_HippUnfoldMag/nnUNetTrainer__nnUNetPlans__3d_fullres/fold_0/checkpoint_best.pth",
+        "validation/hippunfold_maguire_t2_subfields_mr.json",
+    ],
+    "brats_toolkit_legacy_ensemble_mr": [
+        "sources/BraTS-Toolkit/brats_toolkit/segmentor.py",
+        "images/brats-toolkit/mic-dkfz.sif",
+        "images/brats-toolkit/scan.sif",
+        "images/brats-toolkit/xfeng.sif",
+        "images/brats-toolkit/zyx-2019.sif",
+        "images/brats-toolkit/scan-2019.sif",
+        "images/brats-toolkit/econib.sif",
+        "images/brats-toolkit/lfb-rwth.sif",
+        "images/brats-toolkit/gbmnet.sif",
+    ],
     "siam_v3_head_mr_ct": ["@labels/siam-v3.json", "envs/segmentation-modern/bin/python",
         "sources/SIAM/SIAMpred/entry_point.py", "sources/SIAM/SIAMpred/nn_prediction.py",
         "weights/siam/v0.3/pred_DS108_LcsfP_Ano/fold_0/checkpoint_final.pth",
@@ -38,7 +175,7 @@ REQUIREMENTS = {
     "pam_prompted": ["@run_pam.py", "envs/pam/bin/python", "sources/PAM/tutorials/3d-propagation.ipynb", "weights/pam/propmask.pth"],
     "sam_med2d_prompted": ["@run_sam_med2d.py", "envs/pam/bin/python", "sources/SAM-Med2D/segment_anything/build_sam.py", "weights/sam-med2d/sam-med2d_b.pth"],
     "sat3d_prompted": ["@run_sat3d.py", "envs/pam/bin/python", "sources/SAT3D/networks/__init__.py", "weights/sat3d/sam_model_dice_best.pth", "weights/sat3d/critic_dice_best.pth"],
-    "hnlnl_2d3d": ["envs/nnunet-v1/bin/nnUNet_predict", "envs/nnunet-v1/bin/nnUNet_ensemble", "weights/hnlnl/model"],
+    "hnlnl_2d3d": ["envs/nnunet-v1/bin/nnUNet_predict", "envs/nnunet-v1/bin/nnUNet_ensemble", "weights/hnlnl/model", "validation/hnlnl_2d3d.json"],
     "dbdmp_lnq": ["@run_dbdmp.py", "envs/lnq/bin/python", "sources/LNQ2023_training_code/nnUNet", "results/dbdmp/model"],
     "compai_lnq": ["@run_compai_predict.py", "envs/lnq/bin/python", "sources/CompAI_MediastinalLymphNodeSegmentation/lnq_segmentation/nnunet", "weights/compai-model7"],
     # lnq-segmenter owns its versioned cache and downloads missing releases itself.
@@ -87,6 +224,13 @@ NNUNET_V1_TASKS = json.loads((APP_ROOT / "catalog/nnunet-v1.json").read_text())
 for task, details in NNUNET_V1_TASKS.items():
     model = f"weights/nnunet-v1/model-zoo/{details['configuration']}/{details['task']}/{details['trainer']}__{details['plans']}"
     REQUIREMENTS[task] = ["envs/nnunet-v1/bin/nnUNet_predict", model, f"validation/{task}.json"]
+
+MULTITALENT_V1_TASKS = json.loads((APP_ROOT / "catalog/multitalent-v1.json").read_text())
+for task, details in MULTITALENT_V1_TASKS.items():
+    REQUIREMENTS[task] = ["@run_multitalent_v1.py", "@convert_masks_validate_rtstruct.py",
+                          "envs/nnunet-v1/bin/python", "sources/MultiTalentV1",
+                          details["model_folder"], "@labels/multitalent-v1-masks.json",
+                          f"validation/{task}.json"]
 
 MONAI_BUNDLE_TASKS = json.loads((APP_ROOT / "catalog/monai-bundles.json").read_text())
 for task, details in MONAI_BUNDLE_TASKS.items():
@@ -138,7 +282,9 @@ for task, details in ANTSPYNET_TASKS.items():
 
 SCT_TASKS = json.loads((APP_ROOT / "catalog/sct.json").read_text())
 for task, details in SCT_TASKS.items():
-    REQUIREMENTS[task] = ["@combine_sct_outputs.py", "runtime-homes/sct/sct_7.3/bin/sct_deepseg",
+    REQUIREMENTS[task] = ["@combine_sct_outputs.py", "@convert_masks_validate_rtstruct.py",
+                          "runtime-homes/sct/sct_7.3/bin/sct_deepseg",
+                          "runtime-homes/sct/sct_7.3/python/envs/venv_sct/bin/python3.10",
                           "runtime-homes/sct/sct_7.3/data/deepseg_models", f"validation/{task}.json"]
     if "labels_file" in details:
         REQUIREMENTS[task].append("@" + details["labels_file"])
@@ -152,6 +298,43 @@ for task, details in GOUHFI_TASKS.items():
                   f"validation/{task}.json"]
     if details["mode"] == "parcellation": requirements.append("sources/GOUHFI/trained_model/Dataset024_gouhfi_parc")
     REQUIREMENTS[task]=requirements
+
+FASTSURFER_TASKS = json.loads((APP_ROOT / "catalog/fastsurfer.json").read_text())
+for task in FASTSURFER_TASKS:
+    REQUIREMENTS[task] = ["@run_fastsurfer.py", "@labels_from_segmentation_lut.py",
+        "@resample_label_to_reference.py", "envs/segmentation-modern/bin/python",
+        "runtime-homes/fastsurfer-python/h5py/__init__.py",
+        "sources/FastSurfer/FastSurferCNN/run_prediction.py",
+        "sources/FastSurfer/FastSurferCNN/config/FreeSurferColorLUT.txt",
+        "sources/FastSurfer/checkpoints/aparc_vinn_axial_v2.0.0.pkl",
+        "sources/FastSurfer/checkpoints/aparc_vinn_coronal_v2.0.0.pkl",
+        "sources/FastSurfer/checkpoints/aparc_vinn_sagittal_v2.0.0.pkl",
+        f"validation/{task}.json"]
+
+CERR_TASKS = json.loads((APP_ROOT / "catalog/cerr.json").read_text())
+for task, details in CERR_TASKS.items():
+    if details.get("runner") == "smit":
+        entrypoint = ("run_segmentation_rectum.py" if details["upstream_model"] == "MR_Rectum_GTV_SMIT"
+                      else "run_segmentation.py")
+        REQUIREMENTS[task] = [
+            "@run_cerr_smit.py", "envs/segmentation-modern/bin/python",
+            "runtime-homes/cerr/monai08-overlay/monai/__init__.py",
+            f"sources/cerr/{details['upstream_model']}/{entrypoint}",
+            details["checkpoint"], f"validation/{task}.json",
+        ]
+    elif details.get("runner") == "legacy_mrrn":
+        REQUIREMENTS[task] = [
+            "@run_cerr_legacy.py", "envs/segmentation-modern/bin/python",
+            f"sources/cerr/{details['upstream_model']}/run_inference_lung_oars.py",
+            details["checkpoint"], f"validation/{task}.json",
+        ]
+    elif details.get("runner") == "legacy_prostate":
+        REQUIREMENTS[task] = [
+            "@run_cerr_legacy.py", "runtime-homes/cerr/env6-prostate/bin/python",
+            "runtime-homes/cerr/env6-prostate/lib/python3.5/site-packages/tensorflow/__init__.py",
+            f"sources/cerr/{details['upstream_model']}/model_wrapper/run_inference_nii.py",
+            details["checkpoint"], f"validation/{task}.json",
+        ]
 
 REQUIREMENTS["lungmask_r231"] = ["@labels/lungmask-lungs.json", "envs/segmentation-modern/bin/lungmask",
                                   "weights/torch/hub/checkpoints/unet_r231-d5d2fc3d.pth",
@@ -175,6 +358,25 @@ REQUIREMENTS["hd_ctbet_ct"] = ["@labels/hd-bet.json",
                                 "runtime-homes/hd-ctbet/hd-bet_params/CT_0.model",
                                 "runtime-homes/hd-ctbet/hd-bet_params/CT_0.model.pkl",
                                 "validation/hd_ctbet_ct.json"]
+REQUIREMENTS["hecktor2020_petct_gtvt"] = ["@validate_hecktor_checkpoints.py",
+    "sources/hecktor/src/models.py",
+    "weights/hecktor-2020/s0_best_model_weights.pt",
+    "weights/hecktor-2020/s1_best_model_weights.pt",
+    "weights/hecktor-2020/s2_best_model_weights.pt",
+    "weights/hecktor-2020/s3_best_model_weights.pt",
+    "weights/hecktor-2020/ns0_best_model_weights.pt",
+    "weights/hecktor-2020/ns1_best_model_weights.pt",
+    "weights/hecktor-2020/ns2_best_model_weights.pt",
+    "weights/hecktor-2020/ns3_best_model_weights.pt"]
+REQUIREMENTS["totalsegmentator2d_projection_ct"] = [
+    "sources/TotalSegmentator2D/ts2d/tool.py",
+    "runtime-homes/ts2d-venv/bin/ts2d",
+    "runtime-homes/ts2d-home/.ts2d/models/ts2d-v2-ep4000b2_cardiac/r001",
+    "runtime-homes/ts2d-home/.ts2d/models/ts2d-v2-ep4000b2_muscles/r001",
+    "runtime-homes/ts2d-home/.ts2d/models/ts2d-v2-ep4000b2_organs/r001",
+    "runtime-homes/ts2d-home/.ts2d/models/ts2d-v2-ep4000b2_ribs/r001",
+    "runtime-homes/ts2d-home/.ts2d/models/ts2d-v2-ep4000b2_vertebrae/r001",
+    "validation/totalsegmentator2d_projection_ct.json"]
 
 
 def audit() -> dict[str, dict]:

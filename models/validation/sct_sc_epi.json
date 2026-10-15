@@ -1,0 +1,21 @@
+{
+  "task": "sct_sc_epi",
+  "result": "passed",
+  "verified_at": "2026-08-13",
+  "runtime": "Spinal Cord Toolbox 7.3",
+  "model": "model_seg_sc_epi_nnunet v0.2",
+  "model_url": "https://github.com/sct-pipeline/fmri-segmentation/releases/download/v0.2/model-fmri-segmentation-v0.2_nnUNetTrainer.zip",
+  "checkpoint_best_sha256": "422335c09b7b962abc02457b90649476cdbeac437ca68ad4ac1494f125b36b5d",
+  "fixture": "Temporal mean of SCT bundled fmri/fmri.nii.gz testing series, converted to six source MR DICOM slices",
+  "fixture_sha256": "7d3991fab3a4bc476f17cf33815b1c67cded01f27434c60a7ec7148deeaf3e23",
+  "fixture_shape": [68, 68, 6],
+  "fixture_spacing_mm": [0.9558824, 0.9558824, 16.800001],
+  "inference": "official SCT sc_epi BOLD/fMRI task on CUDA",
+  "rtstruct_rois": 1,
+  "roi_names": ["Spinal_Cord"],
+  "referenced_images": 6,
+  "geometry_bbox_max_delta_mm": 0.0,
+  "rtstruct_bytes": 7356,
+  "rtstruct_sha256": "1cb814200e0951a903f10778dd3744b9063838f35da09a22660a0b3d5190ef57",
+  "orientation_evidence": "orientation-validation/sct_sc_epi.json"
+}

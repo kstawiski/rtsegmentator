@@ -1,0 +1,27 @@
+{
+  "family": "TractSeg 2.10",
+  "repository": "https://github.com/MIC-DKFZ/TractSeg",
+  "source_commit": "bff94975b0950385b4880050b8c9a095c7257adb",
+  "license": "Apache-2.0",
+  "weights": {
+    "pretrained_weights_dm_regression_v2.npz": "d1ee880ec6a73028aafec8c104d8635f9273cad9953b0b9ab19dbdc0977555ed",
+    "pretrained_weights_dm_regression_xtract_v1.npz": "3c1841c145ce57d4455bcb0268ae62b64f4e714f8b7850e540d9728f34db034b",
+    "pretrained_weights_endings_segmentation_v4.npz": "df91b21201c2c7d326ef350103ecc0f695b5c518869033fb4e1e76c1310c9d8b",
+    "pretrained_weights_peak_regression_part1_v2.npz": "73ab1d889b4c07c5972f00b44fd5013f9cfd1f25bf251e777fc973f68b0aab34",
+    "pretrained_weights_peak_regression_part2_v2.npz": "ce4a486d11a57a638028de26cd2e5a5468623693d704ef38465059ea76995789",
+    "pretrained_weights_peak_regression_part3_v2.npz": "1841a9abdd3d40c34277860c91eb577b7cc289f3fc7f2fdef932228cbc4a673e",
+    "pretrained_weights_peak_regression_part4_v2.npz": "f19a48c8ba4bd1f4ee280ee28aeebb191328134c5ccd38d69028e8b863e5ff4d",
+    "pretrained_weights_tract_segmentation_v3.npz": "2723d8d358eade8a6f08abada6ca05895f36cf499db1937449f9eb7b8cfef8d9",
+    "pretrained_weights_tract_segmentation_xtract_v1.npz": "121c54dfc8479a85544c7eca0fb4fd1ef850017771cc3579cf88e3aa90f3a267"
+  },
+  "runtime": "Shared CUDA segmentation runtime with NFS-hosted TractSeg/DIPY overlay",
+  "verified_at": "2026-08-13",
+  "upstream_acceptance": {
+    "fixture": "Official tests/reference_files/peaks.nii.gz",
+    "output_shape": [73, 87, 73, 72],
+    "nonempty_bundle_channels": 72,
+    "foreground_voxels": 237552,
+    "output_sha256": "89bb4efd168e0ef70ea517f547c1906d783cf4bc0cb25bd85133f85d05aed874"
+  },
+  "portal_status": "Disabled: requires a 9-channel diffusion peaks volume, or raw 4D DWI plus matched b-values and b-vectors; the current scalar-series DICOM contract cannot represent either safely."
+}

@@ -1,0 +1,22 @@
+{
+  "family": "VoxTell",
+  "task": "voxtell_v1_1_text_prompted",
+  "source": "https://github.com/MIC-DKFZ/VoxTell",
+  "source_commit": "8ef0332aec5d5dff925d6f6370386c00334b57ab",
+  "checkpoint_source": "https://huggingface.co/mrokuss/VoxTell",
+  "checkpoint_revision": "0809ac94c5ed594198bf4e85d63245cf222464d7",
+  "checkpoint": "voxtell_v1.1/fold_0/checkpoint_final.pth",
+  "checkpoint_sha256": "f45e61c34c56af7b71711a6de54e8414dbc4cb52441003894f3370ed68d8feaa",
+  "checkpoint_bytes": 1774589029,
+  "embedding_bank": "embeddings/voxtell_v1.1/text_embeddings.npz",
+  "embedding_bank_sha256": "65bdee9bcd4eb58d909d7b38701bf1c65e1dc6e4af6733ae00e152b21997c25a",
+  "precomputed_prompts": 14194,
+  "text_backbone": "Qwen/Qwen3-Embedding-4B",
+  "source_license": "Apache-2.0",
+  "checkpoint_license": "CC-BY-NC-SA-4.0",
+  "input_contract": "one 3-D CT, MR or PET series plus one free-text prompt",
+  "status": "validated",
+  "validation": "validation/voxtell_v1_1_text_prompted.json",
+  "orientation_validation": "orientation-validation/voxtell_v1_1_text_prompted.json",
+  "verified_at": "2026-08-13"
+}

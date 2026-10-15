@@ -1,0 +1,19 @@
+{
+  "family": "nnInteractive",
+  "task": "nninteractive_v1_prompted",
+  "source": "https://github.com/MIC-DKFZ/nnInteractive",
+  "source_commit": "bbe12fdccc876cb2d4e0a47133811e362608e000",
+  "package_version": "2.5.1",
+  "checkpoint": "nnInteractive_v1.0/fold_0/checkpoint_final.pth",
+  "checkpoint_sha256": "b3ac4421f85457bbd1aa0d87f5e67bcb7bc8e2ce6b824b6ac45077cc5d630ea9",
+  "checkpoint_bytes": 411387150,
+  "source_license": "Apache-2.0",
+  "checkpoint_license": "CC-BY-NC-SA-4.0",
+  "input_contract": "one 3D DICOM series plus at least one positive point or 2D box prompt",
+  "accepted_prompts": ["positive_points", "negative_points", "boxes_2d"],
+  "status": "validated",
+  "validation": "validation/nninteractive_v1_prompted.json",
+  "orientation_validation": "orientation-validation/nninteractive_v1_prompted.json",
+  "geometry_mapping": "direct [DICOM column,row,slice] to rt-utils [row,column,slice]",
+  "verified_at": "2026-08-13"
+}

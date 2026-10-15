@@ -1,0 +1,8 @@
+{
+  "fastsurfervinn_t1_mr": {
+    "modality": "MR",
+    "description": "FastSurferVINN whole-brain T1 MRI segmentation and DKT cortical parcellation",
+    "structures": "95 bilateral cortical, subcortical, ventricular, cerebellar, brainstem and white-matter labels",
+    "reference": "https://github.com/Deep-MI/FastSurfer"
+  }
+}

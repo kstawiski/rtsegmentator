@@ -1,0 +1,11 @@
+{
+  "verified_at": "2026-08-14",
+  "result": "passed",
+  "task": "cerr_mr_hn_nodule_smit",
+  "model": "CERR MR_HN_Nodule_SMIT MRI_HN_nodule.pt",
+  "fixture": "HNTS-MRG24 case 101 pre-RT T2 synthetic DICOM",
+  "gate": "H100-compatible SMIT inference; non-empty nodule ROI; exact physical voxel roundtrip; source SOP references and model-specific DICOM identity",
+  "evidence": "orientation-validation/cerr_mr_hn_nodule_smit.json",
+  "roundtrip_dice": 1.0,
+  "rois": 1
+}

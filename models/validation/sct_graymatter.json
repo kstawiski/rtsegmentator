@@ -1,0 +1,20 @@
+{
+  "task": "sct_graymatter",
+  "result": "passed",
+  "verified_at": "2026-08-13",
+  "runtime": "Spinal Cord Toolbox 7.3",
+  "model": "model_seg_gm_contrast_region_agnostic r20250420",
+  "model_url": "https://github.com/ivadomed/model-gm-contrast-region-agnostic/releases/download/r20250420/Dataset820_gm-seg.zip",
+  "checkpoint_sha256": "ced3b17b39fcb4da2df5adb3e9deb1e16eadd4766d47b79c08185111127e6178",
+  "fixture": "SCT bundled t2s/t2s.nii.gz testing scan converted to nine source MR DICOM slices",
+  "fixture_shape": [49, 54, 9],
+  "fixture_spacing_mm": [0.5, 0.5, 7.5],
+  "inference": "official contrast/region-agnostic SCT graymatter task on CUDA",
+  "rtstruct_rois": 1,
+  "roi_names": ["Spinal_Gray_Matter"],
+  "referenced_images": 9,
+  "geometry_bbox_max_delta_mm": 0.0,
+  "rtstruct_bytes": 21586,
+  "rtstruct_sha256": "0e429c88f289974916c911d9ce6c58453c384d45952e407a9c4dcf04587f0aa9",
+  "orientation_evidence": "orientation-validation/sct_graymatter.json"
+}

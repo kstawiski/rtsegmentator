@@ -1,0 +1,7 @@
+--- monai/utils/misc.py
++++ monai/utils/misc.py
+@@
+-MAX_SEED = NP_MAX + 1  # 2**32, the actual seed should be in [0, MAX_SEED - 1] for uint32
++# NumPy 2 rejects ``numpy.uint32 % 2**32`` as an out-of-range cast.
++# Excluding the single maximum seed preserves deterministic random-state setup.
++MAX_SEED = NP_MAX

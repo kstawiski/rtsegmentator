@@ -1,6 +1,6 @@
 {
   "installed_at": "2026-08-11",
-  "runtime": "/home/konrad/rtseg-runtimes/envs/antspynet",
+  "runtime": "/runtimes/envs/antspynet",
   "python": "3.11.14",
   "packages": {"antspyx": "0.6.3", "antspynet": "0.3.2", "tensorflow": "2.15.1"},
   "cache": "weights/antspynet/cache",

@@ -1,70 +1,56 @@
 # Operations and safety
 
-## Upload workflow
+## Upload and model selection
 
-1. Upload loose DICOM files or an archive.
-2. The portal reads DICOM metadata and groups images by Study, Series and modality.
-3. Invalid, non-image and unrelated files are reported and ignored.
-4. Select exactly one assessed image series.
-5. Select compatible models. CT defaults to `total`; MR defaults to `total_mr`; PET has no TotalSegmentator default.
-6. For prompted tools, choose a slice and add the required points or box.
-7. Submit the job and download the resulting RTSTRUCT archive after completion.
+Upload DICOM files, a folder, or ZIP archives. The portal groups images by Study, Series and modality. Select one assessed series and compatible models. CT defaults to `total`; MR defaults to `total_mr`. PET1 ISRT tasks require CT in the same Study and Frame of Reference. Do not treat this check as image registration.
 
-Multiple series or modalities in one upload are never silently merged. Registration-dependent PET/CT workflows require a compatible CT in the same Study and Frame of Reference.
+The browser uses resumable sessions with requests up to 32 MiB. A resumed chunk must use the server's expected byte offset. The receiving request times out after 60 seconds without new data. Session assessment runs in the background. Restart recovery marks interrupted jobs and sessions for review or retry; retention cleanup removes expired data.
 
-## Prompted models
+## Prompts
 
-- **PAM** — one positive point or axial box; propagates a target through the 3D volume.
-- **SAT3D** — at least one positive 3D point; accepts negative points within its prompt-centred ROI.
-- **SAM-Med2D** — point or box prompts are slice-wise. Prompt every slice that should be contoured.
-- **BiomedParse** — represented in the catalog but unavailable until its approval-gated checkpoint is supplied.
+Prompt coordinates are `[column, row, slice]` on the selected series. Keep prompt data with its source series. The catalog describes the required prompt type and supported modality for each model.
 
-Prompt coordinates are stored as `[column, row, slice]` and transferred with the selected series.
+- PAM propagates a positive point or axial box through a volume.
+- SAT3D needs a positive 3D point and supports negative points within its prompt-centred ROI.
+- SAM-Med2D is slice-wise; prompt every intended slice.
+- MedSAM, SAM-Med3D, MedSAM2/Medical-SAM2, Medical-SAM3, SegVol, nnInteractive, VISTA3D and VoxTell have separate prompt, license and field-of-view restrictions. Read their catalog entries and the model ledger before selecting them.
+- BiomedParse remains blocked by its approval-gated checkpoint.
 
-## RTSTRUCT acceptance gate
+The assessed-upload endpoint accepts `prompt_json`. Do not use the direct multipart job endpoint for paired or prompted models. See [API](API.md) for route differences.
 
-An automatic output is downloadable only when it satisfies all of these checks:
+## RTSTRUCT geometry gate
 
-1. Prediction geometry matches the geometry-preserving model input.
-2. Every nonzero label has an explicit ROI name.
-3. The SOP Class is DICOM RT Structure Set Storage.
-4. At least one ROI and one contour set are nonempty.
-5. Every contour image reference belongs to the selected source DICOM series.
+The converter checks prediction shape and affine against the model input, requires an explicit name for every nonzero label, maps column/row/slice arrays directly to RTSTRUCT row/column/slice masks, and checks DICOM SOP class and source image references. It compares physical LPS bounds and independently rasterizes contours onto the NIfTI grid. The physical round-trip minimum Dice is 0.95. Bounding-box tolerance is the larger of 2.1 mm and 2.1 times the largest voxel spacing. Overlapping-mask conversion preserves separate ROIs.
 
-Empty candidate-detector results are reported as no candidates; the system does not fabricate contours.
+External model availability also requires orientation acceptance markers. These technical checks detect conversion errors; they do not measure segmentation accuracy in a new patient. Empty candidate predictions may complete with a no-candidates note; contours are not fabricated.
 
-## Privacy
+## Prostate SBRT crop
 
-- Treat the portal as handling protected medical information.
-- Restrict port 8080 to trusted networks or place it behind authenticated TLS termination.
-- Do not commit `data/`, DICOM, NIfTI, RTSTRUCT files, prompts from patient jobs or model licenses.
-- Runtime jobs are retained only for the configured retention interval.
-- Review filesystem permissions and backup policies on both hosts.
+The CPU tool crops single-frame axial CT and matching RTSTRUCTs along patient z only. It accepts slice normals within 1 degree of patient z. It uses contours named PTV* or CTV*, excluding subtraction helpers such as `Bowel - PTV`, with a default 150 mm margin. The optional local `total` postprocess selects the ROI named `prostate` and retains the original full RTSTRUCT.
 
-This repository's `.gitignore` excludes common medical-image formats, generated jobs, weights, checkpoints, credentials and virtual environments.
+Pixel data are unchanged. Whole contours outside the retained slice range are removed. New Study, Frame, Series and SOP UIDs are the default, with RTSTRUCT references rewritten to match. `keep_uids` is a debugging option. Downloads include a crop report. Review the cropped image range and contours before any clinical use.
 
-## GPU and job lifecycle
+## Catalog and job lifecycle
 
-Jobs execute under a serialized worker lock. Each model runs in its own process group. Cancellation or failure terminates the child group, and successful jobs remove model-specific temporary volumes. Model processes exit after inference, releasing CUDA allocations.
+A cold model catalog waits for its first preflight. Subsequent requests use the cache while background refresh runs. The default cache lifetime is 600 seconds; editing the enabled-model file also requests refresh. Enabled flags depend on installation, orientation markers and local policy.
 
-Check active GPU processes:
+Jobs run under one worker lock. Local and SSH inference use a default 12-hour per-task limit. The portal snapshots the local process tree, sends SIGTERM, waits up to 45 seconds, then kills survivors with PID start-time checks. The SSH path also requests termination of the matching remote runner. Colab compatibility paths retain their separate timeout behavior.
 
-```bash
-ssh worker@rtsegmentator-worker \
-  nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader
-```
+## Public audit fixtures and private evidence
 
-## Health checks
+`catalog/orientation-audit-fixtures.json` contains public fixtures from MSD, KiTS19, TotalSegmentator MRI, TemplateFlow and other named releases. Missing private-case entries are intentional. Supply a complete external JSON task-to-fixture map with `RTSEG_ORIENTATION_FIXTURES`; values resolve under the model bundle's `testdata`. `RTSEG_ORIENTATION_PROMPTS` can select an external prompt map. Absolute prompt paths are supported by the existing path resolution.
+
+Historical acceptance metadata retains measured counts and model limitations. Private fixture names, job identifiers and private artifact hashes are withheld; a public fixture has not been substituted into those historical results. Revalidation aliases can be supplied with `RTSEG_LEGACY_ARTIFACT_ALIASES`, and `RTSEG_RAIDIONICS_RESULT_DIR` selects the legacy result directory. These configurations belong outside Git.
+
+`scripts/audit-worker-storage.sh` is a specialized NFS/loop-image audit, not a prerequisite for local-container deployment. Configure its `RTSEG_STORAGE_ROOT`, `RTSEG_STORAGE_FSTYPE_PREFIX`, `RTSEG_AUDIT_HOME`, `RTSEG_WORKER_STATE_ROOT`, application/runtime/venv roots and job/build/archive paths for that layout. It retains the existing 1 GiB Docker-storage threshold.
+
+## Privacy and checks
+
+Restrict the portal to authenticated users over TLS. Job IDs are not credentials. Do not commit uploads, patient prompts, model weights, license files or logs. Retention defaults to 24 hours; set `RETENTION_HOURS` and review storage permissions and backup policies.
 
 ```bash
-systemctl is-active dicom-rt-portal.service
-curl -fsS http://127.0.0.1:8080/api/v1/health
-curl -fsS http://127.0.0.1:8080/api/v1/models | head -c 500
-journalctl -u dicom-rt-portal.service -n 100 --no-pager
+curl -fsS http://localhost:8080/api/v1/health
+curl -fsS http://localhost:8080/api/v1/models
 ```
 
-The model catalog should contain a description, structures and reference URL for every entry, including disabled models.
-
-## Model validation evidence
-
-See `EXTERNAL_MODELS.md` for fixture modality, checkpoint state, known domain limitations, voxel counts and RTSTRUCT validation results. A model being technically runnable does not imply clinical suitability for a different modality, disease, contrast phase or anatomical protocol.
+See [EXTERNAL_MODELS.md](../EXTERNAL_MODELS.md) for the retained numerical results and model-specific restrictions.

@@ -1,0 +1,22 @@
+{
+  "family": "MedSAM2",
+  "task": "medsam2_ct_lesion_prompted",
+  "source": "https://github.com/bowang-lab/MedSAM2",
+  "source_commit": "332f30d420f1d1b08e2a79b3ae6a602458808383",
+  "checkpoint_source": "https://huggingface.co/wanglab/MedSAM2",
+  "checkpoint_license": "CC BY-SA 4.0; model card limits use to research and education",
+  "checkpoints": {
+    "MedSAM2_2411.pt": "dcd946a4d934f553236866fc7e8af77f7e931430e9c044f4ac9d6a723630a870",
+    "MedSAM2_US_Heart.pt": "295c0ff8912c99947c364287bbecd1cd36963f0c0ac67a042d292f0dedf8d933",
+    "MedSAM2_MRI_LiverLesion.pt": "3632fc77def3a136d7ae8d734613472d187a803b4a1846370b45419622072b2b",
+    "MedSAM2_CTLesion.pt": "78f7e125418dfd6fec22f4afe90bcd85cb1d4423d0a9df36f7a87ed63aa1a5f5",
+    "MedSAM2_latest.pt": "c92743b99f00d078bf32a3afcc38aaa9faf1c1692dffe3eaa7a90938c1991060",
+    "medsam2_FLARE25_RECIST_baseline.pt": "890e6e10924984c7b704a1984362c53a56dc0ee27c796a34eb49c83a1dc4a144"
+  },
+  "portal_checkpoint": "medsam2_FLARE25_RECIST_baseline.pt",
+  "input_contract": "one CT series plus positive/negative points or a 2-D box on one axial lesion slice",
+  "status": "validated_research",
+  "validation": "validation/medsam2_ct_lesion_prompted.json",
+  "orientation_validation": "orientation-validation/medsam2_ct_lesion_prompted.json",
+  "verified_at": "2026-08-13"
+}

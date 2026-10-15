@@ -1,0 +1,41 @@
+{
+  "task": "sct_lesion_ms",
+  "result": "passed",
+  "verified_at": "2026-08-13",
+  "runtime": "Spinal Cord Toolbox 7.3",
+  "model": "model_seg_ms_lesion five-fold ensemble r20250909",
+  "model_url": "https://github.com/ivadomed/ms-lesion-agnostic/releases/tag/r20250909",
+  "checkpoint_fold0_sha256": "c8f0613059e2119f04c0717407f0d8bf2194723d889145ff952581396960bd34",
+  "fixture": "Mendeley Data ydkrtmygjp v1, patient 51 contiguous axial T2 PNG slices 15-20, CC BY 4.0",
+  "fixture_url": "https://data.mendeley.com/datasets/ydkrtmygjp/1",
+  "fixture_doi": "10.17632/ydkrtmygjp.1",
+  "fixture_sha256": "3851aa07ed9a9c8e2540751a655aea986b2f2d215c26afca58eb52bfe8fda411",
+  "reference_lesion_sha256": "ed41419222b1dcf9f2de6134aedfdfb2fbb785eeb35a36f314eba8926a5ee82b",
+  "fixture_geometry_limitation": "The public PNG release lacks original patient-space metadata. Generated DICOM uses 1 mm in-plane spacing and the published 4 mm slice thickness; overlap is valid in the released pixel grid, while RTSTRUCT testing validates the generated DICOM geometry only.",
+  "reference_overlap": {
+    "MS_Lesion": {
+      "predicted_voxels": 84,
+      "reference_voxels": 268,
+      "intersection_voxels": 83,
+      "dice": 0.471591,
+      "precision": 0.988095,
+      "recall": 0.309701
+    }
+  },
+  "inference": "official SCT task on CUDA",
+  "rtstruct_rois": 1,
+  "roi_names": [
+    "MS_Lesion"
+  ],
+  "roi_contours": {
+    "MS_Lesion": 3
+  },
+  "referenced_images": 3,
+  "physical_roundtrip_dice": {
+    "MS_Lesion": 1.0
+  },
+  "geometry_bbox_max_delta_mm": 0.0,
+  "rtstruct_bytes": 3560,
+  "rtstruct_sha256": "305d38d9fa1381984039f85a122c701dd0fbd821174142c9113ccd578aa9828e",
+  "orientation_evidence": "orientation-validation/sct_lesion_ms.json"
+}

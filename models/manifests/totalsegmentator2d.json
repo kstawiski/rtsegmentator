@@ -1,0 +1,19 @@
+{
+  "name": "TotalSegmentator2D v2",
+  "source": "https://github.com/risc-mi/totalsegmentator2D",
+  "source_commit": "4ade710d2d5036d0a8587015d3d4035966f2e4c6",
+  "record": "https://zenodo.org/records/16985939",
+  "license": "CC BY-NC 4.0",
+  "release": "ts2d-v2-ep4000b2 revision r001",
+  "archives": {
+    "cardiac": {"bytes": 252019061, "md5": "4977642c0172d263c37f14a01ef7373f", "sha256": "a2ac4aacacf1da7f3a0942e0fe096914115b38cc498d9173a144818fa1abb997"},
+    "muscles": {"bytes": 254970017, "md5": "7a8d951d710654dd29bd4f8014c975dd", "sha256": "1cf1c223432218c4a8062a7202acf24a605b3fde5e39660d0ccb9efc16371325"},
+    "organs": {"bytes": 252959735, "md5": "2c8c9a8a924cfcd7a82f587bd6b95550", "sha256": "94f462bd255529091624e310b192181d1d2919595cd5def0f2c3fbf0fec0a466"},
+    "ribs": {"bytes": 253269253, "md5": "cee0d87e77fba50bb2ad96b48dc94dec", "sha256": "0e13a36414d2849ba63b42bb121c5b16b6f1c94a9d9a0cf3955c905acb366548"},
+    "vertebrae": {"bytes": 254047258, "md5": "2c8d2975070b63a7c0c60190f565a81f", "sha256": "63fc45b0a22f8bced492c17630d79c40b57d0685c3cc0ccdb829c26d3cb05021"}
+  },
+  "runtime": "Official ts2d 1.2.0 package in an isolated Python 3.12 / PyTorch 2.7.1+cu126 environment; local model database only",
+  "acceptance": "The official composite key resolved and ran all five groups on sample_s0332.nrrd with remote access disabled, producing five nonempty group segmentations and a combined 117-channel segmentation.",
+  "status": "projection_only_no_volumetric_rtstruct",
+  "blocker": "TS2D collapses the CT anterior-posterior axis into a coronal intensity projection. The preserved-geometry result contains one AP voxel spanning the source depth and cannot recover voxelwise 3-D anatomy; RTSTRUCT conversion would therefore be geometrically false."
+}

@@ -1,0 +1,32 @@
+{
+  "task": "multitalent_v1_unet_ct",
+  "result": "passed",
+  "orientation_fix": "direct_column_row_slice_mapping",
+  "structure_set_label": "multitalent_v1_u",
+  "structure_set_name": "RTSEG: multitalent_v1_unet_ct",
+  "series_description": "RTSEG: multitalent_v1_unet_ct",
+  "rois": 47,
+  "referenced_images": 51,
+  "contour_min_lps": [
+    40.640625,
+    30.28125,
+    0.0
+  ],
+  "contour_max_lps": [
+    368.15625,
+    310.78125,
+    250.0
+  ],
+  "source_origin_min_lps": [
+    407.203125,
+    407.203125,
+    0.0
+  ],
+  "source_origin_max_lps": [
+    407.203125,
+    407.203125,
+    250.0
+  ],
+  "artifact_bytes": 2954354,
+  "artifact_sha256": "5697c00523520007c01d89391e44922cf9175a14f9a5e18fc43a5277ab7de213"
+}

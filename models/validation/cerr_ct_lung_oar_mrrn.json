@@ -1,0 +1,11 @@
+{
+  "verified_at": "2026-08-14",
+  "result": "passed",
+  "task": "cerr_ct_lung_oar_mrrn",
+  "model": "CERR CT_LungOAR_incrMRRN seg_best_net_Seg_A.pth",
+  "fixture": "MSD Task06 lung_053 CT converted to DICOM",
+  "gate": "H100-compatible upstream MRRN inference; all six OAR classes non-empty; exact physical voxel roundtrip for every ROI; source SOP references and model-specific DICOM identity",
+  "evidence": "orientation-validation/cerr_ct_lung_oar_mrrn.json",
+  "roundtrip_dice": 1.0,
+  "rois": 6
+}

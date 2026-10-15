@@ -1,0 +1,13 @@
+{
+  "task": "medsam_vit_b_box_2d",
+  "result": "passed",
+  "verified_at": "2026-08-13",
+  "checkpoint_loading": "The official 93,735,728-parameter MedSAM ViT-B checkpoint loaded strictly",
+  "technical_fixture": "MSD Task09 spleen case 19, maximum-area spleen slice 26",
+  "technical_fixture_truth_voxels_on_prompted_slice": 8152,
+  "technical_fixture_prediction_voxels": 8651,
+  "technical_fixture_intersection_voxels": 8015,
+  "technical_fixture_slice_dice": 0.9539963101827055,
+  "scope_warning": "The released model is 2-D. Only explicitly box-prompted slices are segmented; it does not produce an automatic 3-D organ contour.",
+  "orientation_evidence": "orientation-validation/medsam_vit_b_box_2d.json"
+}

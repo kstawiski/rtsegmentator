@@ -36,7 +36,7 @@ points=np.concatenate(points); origins=np.asarray(positions)
 # assuming anatomy or requiring contours to touch the DICOM volume boundary.
 lo=origins.min(0)-1000; hi=origins.max(0)+1000
 if np.any(points.min(0)<lo) or np.any(points.max(0)>hi): raise SystemExit("contours lie outside source patient-space envelope")
-payload={"task":a.task,"result":"passed","orientation_fix":"dynamic_nifti_to_LAS",
+payload={"task":a.task,"result":"passed","orientation_fix":"direct_column_row_slice_mapping",
          "structure_set_label":str(ds.StructureSetLabel),"structure_set_name":str(ds.StructureSetName),
          "series_description":str(ds.SeriesDescription),"rois":len(getattr(ds,"StructureSetROISequence",[])),
          "referenced_images":len(refs),"contour_min_lps":points.min(0).tolist(),

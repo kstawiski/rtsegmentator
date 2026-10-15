@@ -1,0 +1,43 @@
+{
+  "task": "sct_gm_sc_7t_t2star",
+  "result": "passed",
+  "verified_at": "2026-08-13",
+  "runtime": "Spinal Cord Toolbox 7.3",
+  "model": "model_7t_multiclass_gm_sc_unet2d r20211012",
+  "model_url": "https://github.com/ivadomed/model_seg_gm-wm_t2star_7t_unet3d-multiclass/releases/tag/r20211012",
+  "checkpoint_sha256": "09fe88e3e688657362011062f6bfa0babb29df9c08131092de81eed72d89b814",
+  "fixture": "OpenNeuro ds004906 v2.4.0 sub-03 acq-CoV 7T cervical-spine T2-star (CC0)",
+  "fixture_url": "https://openneuro.org/datasets/ds004906/versions/2.4.0",
+  "fixture_sha256": "19aea9c0428cb67db7aab6e16960c6d3686cbd948ca125c06d4120464e768257",
+  "fixture_shape": [
+    392,
+    384,
+    70
+  ],
+  "fixture_spacing_mm": [
+    0.5867347121238708,
+    0.5867347121238708,
+    2.9999947547912598
+  ],
+  "reference_cord_sha256": "2ada9aeac441f9110946473876982d063d156402ef252ed8c2a490f2cd488e1d",
+  "native_cord_reference_dice": 0.775371,
+  "inference": "official SCT 7T multiclass gray-matter/spinal-cord task on CUDA",
+  "rtstruct_rois": 2,
+  "roi_names": [
+    "Spinal_Cord",
+    "Spinal_Gray_Matter"
+  ],
+  "roi_contours": {
+    "Spinal_Cord": 35,
+    "Spinal_Gray_Matter": 27
+  },
+  "referenced_images": 33,
+  "physical_roundtrip_dice": {
+    "Spinal_Cord": 1.0,
+    "Spinal_Gray_Matter": 1.0
+  },
+  "geometry_bbox_max_delta_mm": 0.0,
+  "rtstruct_bytes": 87944,
+  "rtstruct_sha256": "c76f88e4f8218abd62e8f211e32f22aa7920becbf9694f17c7c3027019260187",
+  "orientation_evidence": "orientation-validation/sct_gm_sc_7t_t2star.json"
+}

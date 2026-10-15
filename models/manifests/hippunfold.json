@@ -1,0 +1,51 @@
+{
+  "family": "HippUnfold",
+  "tasks": {
+    "hippunfold_adni_t1_subfields_mr": {
+      "checkpoint": "trained_model.3d_fullres.Task301_ADNI_T1w_successful.nnUNetTrainer.tar",
+      "checkpoint_sha256": "55be492ccc65b4fd60bdd18dde2e63c0c5676060cb950b2bbbd2fd12ea57ebf8",
+      "checkpoint_bytes": 2452807680,
+      "status": "validated",
+      "validation": "validation/hippunfold_adni_t1_subfields_mr.json",
+      "orientation_validation": "orientation-validation/hippunfold_adni_t1_subfields_mr.json"
+    },
+    "hippunfold_maguire_t2_subfields_mr": {
+      "checkpoint": "Dataset001_HippUnfoldMag.nnUNetTrainer__nnUNetPlans__3d_fullres.tar.gz",
+      "checkpoint_sha256": "ee4e28d246cb1acb86df6b99be50c66b9d762356385643092877a9723a552de7",
+      "checkpoint_bytes": 1138683578,
+      "status": "validated",
+      "image": "images/hippunfold/hippunfold-dev-v2.0.0.sif",
+      "image_sha256": "ae999f95fdf9ca7613bfc5a85987a3731cd79697bcb20276cbafd3056f94a02e",
+      "validation": "validation/hippunfold_maguire_t2_subfields_mr.json",
+      "orientation_validation": "orientation-validation/hippunfold_maguire_t2_subfields_mr.json"
+    }
+  },
+  "source": "https://github.com/khanlab/hippunfold",
+  "source_commit": "544fdb6e37eb42567b1ad3c7f4901a180bdb19b8",
+  "source_license": "Apache-2.0",
+  "checkpoint_records": [
+    "https://zenodo.org/records/15297857",
+    "https://zenodo.org/records/18432751"
+  ],
+  "t1_validation": {
+    "fixture": "HippUnfold ds002168 subject 1425 T1w converted to 256 source DICOM slices",
+    "folds": 5,
+    "labels": 16,
+    "rtstruct_rois": 16,
+    "referenced_images": 29,
+    "geometry_bbox_max_delta_mm": 0.0006,
+    "rtstruct_bytes": 299910,
+    "rtstruct_sha256": "77285ebc6ef791d749b1a71d2503467620148ac5114c862ed886963acc1d9b02"
+  },
+  "t2_validation": {
+    "fixture": "OpenNeuro ds000221 subject 010002 session 01 whole-field T2w converted to 256 source DICOM slices",
+    "folds": 5,
+    "nonempty_labels": 15,
+    "rtstruct_rois": 15,
+    "referenced_images": 29,
+    "geometry_bbox_max_delta_mm": 0.0002,
+    "rtstruct_bytes": 314042,
+    "rtstruct_sha256": "96c1bbd778bf1d55586ff7ba9ee94fd5f20d8c5285daad3d4297388df950b536"
+  },
+  "verified_at": "2026-08-13"
+}

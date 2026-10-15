@@ -1,0 +1,20 @@
+{
+  "name": "HECKTOR 2020 winning ensemble",
+  "source": "https://github.com/iantsen/hecktor",
+  "source_commit": "5ebc6774d178139b52abebbe926b4cafabe3e29d",
+  "source_license": "MIT",
+  "weights": "https://www.dropbox.com/sh/kkvqwn0bpnt1ynk/AABGNdpzTSiIKjiGV5K2ta0Na?dl=0",
+  "archive": {
+    "bytes": 696677684,
+    "sha256": "1666bad2c4355bb059a1339e6fc605f65838da5bd931139030c24ccab52d02d7"
+  },
+  "checkpoints": [
+    "s0_best_model_weights.pt", "s1_best_model_weights.pt",
+    "s2_best_model_weights.pt", "s3_best_model_weights.pt",
+    "ns0_best_model_weights.pt", "ns1_best_model_weights.pt",
+    "ns2_best_model_weights.pt", "ns3_best_model_weights.pt"
+  ],
+  "checkpoint_validation": "All eight 310-tensor state dictionaries loaded strictly after normalizing the released DataParallel module prefix.",
+  "status": "requires_patient_specific_headneck_bbox",
+  "blocker": "Published inference requires registered PET/CT and a challenge-supplied patient-specific 144 mm physical bounding box. The official challenge data page currently reports access unavailable while hospital agreements are extended."
+}

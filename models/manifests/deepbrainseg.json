@@ -1,0 +1,22 @@
+{
+  "family": "DeepBrainSeg",
+  "repository": "https://github.com/koriavinash1/DeepBrainSeg",
+  "catalog_stale_repository": "https://github.com/mobarakol/DeepBrainSeg",
+  "source_commit": "5d4f3810f1c776050b6937b6db5b7afa17527efd",
+  "release": "0.0.1",
+  "license": "MIT",
+  "checkpoints": {
+    "tumor_ABL_2D.pth.tar": "c1039a4d352a40a516be4c0d4b4f7d75fae2a123a80dc7a5a34666edc3425f12",
+    "tumor_BrainNet_3D.pth.tar": "8d63456f653c7cc5b7d7cdade81472365e26419dc13d2b96fe9fe2ab41ea1f0b",
+    "tumor_TramisuFC57_2D.pth.tar": "88504dfacfb5d0be7b041d7e6e8c563e0379f24b46a2617d1b9f4d03ac9b889f",
+    "tumor_Tramisu_FC57_3D.pth.tar": "f4ddc25c41ba45c365729fe5b7c4ec2cb92704d35ce4bbc75ef48a3afae5b578"
+  },
+  "checkpoint_acceptance": {
+    "result": "passed",
+    "loaded_state_dict_entries": [590, 166, 308, 308],
+    "runtime": "PyTorch 2.8 CUDA runtime with explicit trusted-release deserialization"
+  },
+  "input_contract": "Co-registered T1, T1ce, T2 and FLAIR MRI plus brain mask.",
+  "portal_status": "Disabled until the portal supports explicit selection/registration of four MR series.",
+  "verified_at": "2026-08-13"
+}

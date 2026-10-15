@@ -7,7 +7,9 @@ p=argparse.ArgumentParser(); p.add_argument("tasks",nargs="*"); a=p.parse_args()
 app=Path(os.environ.get("RTSEG_APP_ROOT","/app"))
 root=Path(os.environ.get("RTSEG_MODEL_ROOT","/models"))
 runtime=os.environ.get("RTSEG_RUNTIME_ROOT","/runtimes")
-fixtures=json.loads((app/"catalog/orientation-audit-fixtures.json").read_text())
+fixtures=json.loads(Path(os.environ.get("RTSEG_ORIENTATION_FIXTURES", app/"catalog/orientation-audit-fixtures.json")).read_text())
+prompt_file=Path(os.environ.get("RTSEG_ORIENTATION_PROMPTS", app/"catalog/orientation-audit-prompts.json"))
+prompts=json.loads(prompt_file.read_text()) if prompt_file.exists() else {}
 tasks=a.tasks or list(fixtures); validation=root/"orientation-validation"; validation.mkdir(exist_ok=True)
 runroot=root/"results/orientation-audit-20260812"; runroot.mkdir(parents=True,exist_ok=True)
 summary=runroot/"summary.jsonl"
@@ -17,6 +19,8 @@ for task in tasks:
     if task not in fixtures: print(f"NO_FIXTURE {task}",flush=True); continue
     job=runroot/task; shutil.rmtree(job,ignore_errors=True); (job/"output").mkdir(parents=True)
     (job/"input").symlink_to(root/"testdata"/fixtures[task],target_is_directory=True)
+    if task in prompts:
+        shutil.copy2(app/prompts[task], job/"prompt.json")
     env=os.environ.copy(); env.update(RTSEG_APP_ROOT=str(app),RTSEG_MODEL_ROOT=str(root),RTSEG_RUNTIME_ROOT=runtime)
     log=runroot/f"{task}.log"; started=time.time(); status="failed"; error=None
     try:

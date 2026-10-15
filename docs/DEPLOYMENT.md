@@ -1,100 +1,66 @@
 # Deployment
 
-## Hosts
+The supported examples are a single GPU container and a portal connected to an SSH GPU worker. Keep uploads and outputs on controlled storage. Put the portal behind authenticated TLS; the code has no user authentication or API-key enforcement.
 
-The application uses two systems:
+## Single host with local GPU
 
-1. **Portal host** — serves the WebUI on TCP port 8080 and temporarily stages uploads.
-2. **GPU worker** — runs inference and RTSTRUCT conversion through SSH.
-
-The default worker and paths are defined in `app.py`:
-
-| Setting | Default |
-|---|---|
-| `WORKER_MODE` | `ssh` (`local` runs inference in the portal environment) |
-| `SEGMENTATION_WORKER` | `worker@rtsegmentator-worker` |
-| `REMOTE_JOB_ROOT` | `/home/worker/jobs` |
-| `REMOTE_PYTHON` | `/opt/rtsegmentator/venv/bin/python` |
-| `REMOTE_RUNNER` | `/app/run_task.py` |
-| `PORTAL_DATA` | repository-local `data/` |
-| `MAX_UPLOAD_BYTES` | 8 GiB |
-| `RETENTION_HOURS` | 24 hours |
-
-Override them with environment variables when the deployment differs.
-
-## Portal host
+Use `compose.yaml`. Supply a compatible NVIDIA driver/container runtime, a model bundle and isolated runtime environments. Mount models at `/models`, runtimes at `/runtimes`, persistent jobs at `/data`, and writable temporary files at `/scratch`. Model and runtime mounts are read-only. Preserve bundle symlinks and interpreter dependencies when transferring runtimes; copying a virtual environment alone may not make it relocatable.
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+cp .env.example .env
+# Edit the bundle locations and ENABLED_EXTERNAL_MODELS.
+docker compose build
+docker compose up -d
+curl -fsS http://localhost:8080/api/v1/health
+curl -fsS http://localhost:8080/api/v1/models
 ```
 
-Install the systemd unit after adjusting its paths and account if necessary:
+The source Dockerfile is a generic CUDA image, not an export of a site-specific production image. Check the built image's imports, drivers and model runtimes before use. See the model ledger for retained input and licensing restrictions.
 
-```bash
-sudo install -m 0644 dicom-rt-portal.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now dicom-rt-portal.service
-sudo systemctl status dicom-rt-portal.service
-```
+## Portal and SSH GPU worker
 
-Verify:
+Run `compose.remote-worker.yaml` on the GPU host. Supply `SSH_AUTHORIZED_KEY` from an external environment. The example publishes SSH on port 2222. Install the portal's private SSH key and known-hosts file outside the repository. Configure the portal account's SSH alias so ordinary `ssh worker@rtsegmentator-worker` and `scp` use the correct host, port and identity; the application does not consume `WORKER_SSH_PORT` itself.
 
-```bash
-curl -fsS http://127.0.0.1:8080/api/v1/health
-```
-
-## SSH worker access
-
-Configure non-interactive key-based SSH from the portal account:
-
-```bash
-ssh worker@rtsegmentator-worker true
-```
-
-The portal copies only the selected DICOM series, job metadata and prompt data. Unselected uploaded series are not transferred.
-
-## Worker installation
-
-Create these directories on the worker:
+On the portal, set:
 
 ```text
-/home/worker/dicom-rt-seg/
-/home/worker/dicom-rt-seg/.venv/
-/home/worker/dicom-rt-jobs/
-/models/
+WORKER_MODE=ssh
+SEGMENTATION_WORKER=worker@rtsegmentator-worker
+REMOTE_JOB_ROOT=/home/worker/jobs
+REMOTE_PYTHON=/opt/rtsegmentator/venv/bin/python
+REMOTE_RUNNER=/app/run_task.py
+REMOTE_APP_ROOT=/app
+REMOTE_MODEL_ROOT=/models
+REMOTE_RUNTIME_ROOT=/runtimes
+PORTAL_DATA=/data
 ```
 
-Copy the worker runtime code:
+Start a single application process with `uvicorn app:app --host 0.0.0.0 --port 8080 --workers 1`. Generic systemd and Supervisor examples are in `dicom-rt-portal.service` and `deploy/`. The worker receives only the selected series and required paired inputs/prompts. Configure writable scratch storage on the worker. SSH environment forwarding depends on the SSH server configuration; verify the worker runtime sees the intended variables.
 
-```bash
-scp run_task.py run_*.py *.json worker@rtsegmentator-worker:/home/worker/dicom-rt-seg/
-```
+## Configuration
 
-The worker uses isolated environments for incompatible historical releases, including nnU-Net v1, current nnU-Net v2, PAM/SAT3D/SAM-Med2D, Bouget and Raidionics. Exact release-specific repairs and validation results are recorded in `EXTERNAL_MODELS.md`.
+| Variable | Behavior |
+|---|---|
+| `WORKER_MODE` | Public default `local`; also accepts `ssh`, `colab`, `auto` |
+| `PORTAL_DATA` | Job/upload root; default `data` beside `app.py`, container `/data` |
+| `RTSEG_APP_ROOT` | Runner scripts and catalogs; defaults to the script directory, examples `/app` |
+| `RTSEG_MODEL_ROOT` | Model assets; default `/models` |
+| `RTSEG_RUNTIME_ROOT` | Isolated runtimes; runner fallback is the model root, examples explicitly `/runtimes` |
+| `RTSEG_SCRATCH_ROOT` | Runner temporary storage; fallback is `runtime-homes/tmp` in the model root, examples explicitly `/scratch` |
+| `ENABLED_EXTERNAL_MODELS` | Comma-separated external tasks allowed in local mode |
+| `ENABLED_MODELS_FILE` | Additional task names, one per line; default `<PORTAL_DATA>/enabled-models.txt`; blank/comment lines ignored |
+| `CATALOG_TTL_SECONDS` | Cache lifetime, default 600; enabled-file changes also trigger refresh |
+| `PREFLIGHT_TIMEOUT_SECONDS` | Model preflight timeout, default 900 |
+| `TASK_TIME_LIMIT_SECONDS` | Local/SSH task time limit, default 43200 |
+| `TASK_STOP_GRACE_SECONDS` | Local process-tree termination grace, default 45 |
+| `MAX_UPLOAD_BYTES` | Upload limit, default 8589934592 bytes |
+| `RETENTION_HOURS` | Job/upload retention, default 24 |
+| `RTSEG_ORIENTATION_VALIDATION` | Portal fallback marker directory; default `<RTSEG_MODEL_ROOT>/orientation-validation` |
+| `RTSEG_CERR_MODERN_PYTHON` | Optional override of `<RTSEG_RUNTIME_ROOT>/envs/segmentation-modern/bin/python` |
+| `RTSEG_CERR_PROSTATE_PYTHON` | Optional override of `<RTSEG_MODEL_ROOT>/runtime-homes/cerr/env6-prostate/bin/python` |
 
-Model weights are intentionally not stored in this repository. Download them from the upstream references displayed in the WebUI and place them at the paths used by `run_task.py`.
+Check the actual catalog after deployment. A source manifest or historical validation record does not install a model, enable it, or establish clinical suitability.
 
-## TotalSegmentator
+## Updates and rollback
 
-Install the current supported TotalSegmentator release in the worker runtime. The portal queries the installed package for its complete task and structure catalog.
-
-Store the TotalSegmentator license on the worker using its CLI or another protected runtime mechanism. Never commit the key to Git or place it in the systemd unit.
-
-Confirm the installation:
-
-```bash
-/opt/rtsegmentator/venv/bin/TotalSegmentator --version
-/opt/rtsegmentator/venv/bin/totalseg_set_license --help
-```
-
-## Updating application code
-
-After changing portal code:
-
-```bash
-python3 -m py_compile app.py run_task.py run_*.py
-scp run_task.py run_*.py *.json worker@rtsegmentator-worker:/home/worker/dicom-rt-seg/
-sudo systemctl restart dicom-rt-portal.service
-systemctl is-active dicom-rt-portal.service
-```
+Keep the preceding image and configuration until the replacement passes import, health, upload and synthetic geometry checks. Wait for active jobs and uploads to finish before recreation. Retain model/runtime checksums separately. If startup or verification fails, restore the previous image/configuration and inspect retained job state. Do not overwrite the model bundle while a job is using it.

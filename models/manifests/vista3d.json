@@ -1,0 +1,20 @@
+{
+  "family": "VISTA3D / NV-Segment-CT",
+  "task": "vista3d_prompted_ct",
+  "source": "https://github.com/NVIDIA-Medtech/NV-Segment-CTMR",
+  "source_commit": "f9f5f51b589e5dc9c23c453cf5138398e4084056",
+  "research_source_commit": "d4a8fe0dbf5cb4b76c531fccca8e29c1e6f6ee45",
+  "checkpoint_source": "https://huggingface.co/nvidia/NV-Segment-CT",
+  "checkpoint_revision": "afb51518689f71e6abb367ee6301b2cd0225c66a",
+  "checkpoint": "vista3d_pretrained_model/model.pt",
+  "checkpoint_sha256": "c92bab26d00b4a5d89fa8a383900cdeb88302fd318e5e816df0bbec7106d9a1b",
+  "checkpoint_bytes": 871970895,
+  "source_license": "Apache-2.0",
+  "checkpoint_license": "NVIDIA Open Model License",
+  "input_contract": "one 3D CT DICOM series plus at least one positive point",
+  "status": "validated",
+  "validation": "validation/vista3d_prompted_ct.json",
+  "orientation_validation": "orientation-validation/vista3d_prompted_ct.json",
+  "geometry_mapping": "direct [DICOM column,row,slice] to rt-utils [row,column,slice]",
+  "verified_at": "2026-08-13"
+}

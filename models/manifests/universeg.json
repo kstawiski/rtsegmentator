@@ -1,0 +1,16 @@
+{
+  "family": "UniverSeg",
+  "task": "universeg_few_shot_2d",
+  "source": "https://github.com/JJGO/UniverSeg",
+  "source_commit": "833a0c34c65e38d675e21bd48ddec6797cc03259",
+  "checkpoint_source": "https://github.com/JJGO/UniverSeg/releases/tag/weights",
+  "checkpoint": "universeg_v1_nf64_ss64_STA.pt",
+  "checkpoint_sha256": "62c98c48c08bc05f84ed19187844d5eb7e6b7a48d2f690f2033fd8de04543884",
+  "checkpoint_bytes": 4748449,
+  "source_license": "Apache-2.0",
+  "checkpoint_license": "OpenRAIL++-M; research only",
+  "input_contract": "target 2-D image plus one or more paired 2-D support images and binary support masks, all normalized and resized to 128x128",
+  "status": "requires_support_image_mask_uploads",
+  "validation": "validation/universeg_few_shot_2d.json",
+  "verified_at": "2026-08-13"
+}

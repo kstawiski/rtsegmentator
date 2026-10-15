@@ -1,0 +1,52 @@
+{
+  "task": "sct_lesion_ms_axial_t2",
+  "result": "passed",
+  "verified_at": "2026-08-13",
+  "runtime": "Spinal Cord Toolbox 7.3",
+  "model": "model_seg_ms_sc_lesion_bavaria_quebec_nnunet r20241111",
+  "model_url": "https://github.com/ivadomed/model-seg-ms-axial-t2w/releases/tag/r20241111",
+  "checkpoint_sha256": "0829551c7fb7e6c1829e5fe2fcea9c107f4ba01b92585563fe6f12426c594af5",
+  "fixture": "Mendeley Data ydkrtmygjp v1, patient 51 contiguous axial T2 PNG slices 15-20, CC BY 4.0",
+  "fixture_url": "https://data.mendeley.com/datasets/ydkrtmygjp/1",
+  "fixture_doi": "10.17632/ydkrtmygjp.1",
+  "fixture_sha256": "3851aa07ed9a9c8e2540751a655aea986b2f2d215c26afca58eb52bfe8fda411",
+  "reference_lesion_sha256": "ed41419222b1dcf9f2de6134aedfdfb2fbb785eeb35a36f314eba8926a5ee82b",
+  "fixture_geometry_limitation": "The public PNG release lacks original patient-space metadata. Generated DICOM uses 1 mm in-plane spacing and the published 4 mm slice thickness; overlap is valid in the released pixel grid, while RTSTRUCT testing validates the generated DICOM geometry only.",
+  "reference_overlap": {
+    "Spinal_Cord": {
+      "predicted_voxels": 849,
+      "reference_voxels": 852,
+      "intersection_voxels": 829,
+      "dice": 0.974721,
+      "precision": 0.976443,
+      "recall": 0.973005
+    },
+    "MS_Lesion": {
+      "predicted_voxels": 123,
+      "reference_voxels": 268,
+      "intersection_voxels": 118,
+      "dice": 0.603581,
+      "precision": 0.95935,
+      "recall": 0.440299
+    }
+  },
+  "inference": "official SCT task on CUDA",
+  "rtstruct_rois": 2,
+  "roi_names": [
+    "MS_Lesion",
+    "Spinal_Cord"
+  ],
+  "roi_contours": {
+    "MS_Lesion": 3,
+    "Spinal_Cord": 7
+  },
+  "referenced_images": 6,
+  "physical_roundtrip_dice": {
+    "MS_Lesion": 1.0,
+    "Spinal_Cord": 1.0
+  },
+  "geometry_bbox_max_delta_mm": 0.0,
+  "rtstruct_bytes": 7044,
+  "rtstruct_sha256": "b704e1ba4ad82be55dd5c5784a59beb98d9116173bbe35293a15802eddfe4fb0",
+  "orientation_evidence": "orientation-validation/sct_lesion_ms_axial_t2.json"
+}

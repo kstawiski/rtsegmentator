@@ -1,0 +1,32 @@
+{
+  "task": "sct_lesion_ms",
+  "result": "passed",
+  "orientation_fix": "direct_column_row_slice_mapping",
+  "structure_set_label": "sct_lesion_ms",
+  "structure_set_name": "RTSEG: sct_lesion_ms",
+  "series_description": "RTSEG: sct_lesion_ms",
+  "rois": 1,
+  "referenced_images": 3,
+  "contour_min_lps": [
+    -166.0,
+    -119.0,
+    0.0
+  ],
+  "contour_max_lps": [
+    -159.0,
+    -112.0,
+    8.0
+  ],
+  "source_origin_min_lps": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "source_origin_max_lps": [
+    0.0,
+    0.0,
+    20.0
+  ],
+  "artifact_bytes": 3560,
+  "artifact_sha256": "305d38d9fa1381984039f85a122c701dd0fbd821174142c9113ccd578aa9828e"
+}

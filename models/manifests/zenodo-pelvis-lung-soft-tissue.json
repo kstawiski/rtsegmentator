@@ -1,6 +1,6 @@
 {
   "verified_at": "2026-08-11",
-  "storage_root": "/umed-projekty/RTsegmentator-private/model-bundle-v2",
+  "storage_root": "/models",
   "archives": {
     "adaptive_male_pelvis": {"record": "15746134", "file": "Prostate_MRL_nnUNetTrainerNoMirroring_3d_fullres.zip", "md5": "992df6b5f42bf23856917420d94ef60f"},
     "kidney_dixon": {"record": "15328218", "file": "nnunet_kidneys_v2.zip", "md5": "6d7daff04abeb4cf19af9889f03a7308", "status": "installed_requires_four_registered_dixon_series"},

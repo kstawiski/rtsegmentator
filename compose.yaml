@@ -7,11 +7,22 @@ services:
     environment:
       WORKER_MODE: local
       PORTAL_DATA: /data
-      RETENTION_HOURS: "24"
+      RETENTION_HOURS: ${RETENTION_HOURS:-24}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-8589934592}
+      ENABLED_EXTERNAL_MODELS: ${ENABLED_EXTERNAL_MODELS:-}
+      ENABLED_MODELS_FILE: /data/enabled-models.txt
+      CATALOG_TTL_SECONDS: ${CATALOG_TTL_SECONDS:-600}
+      PREFLIGHT_TIMEOUT_SECONDS: ${PREFLIGHT_TIMEOUT_SECONDS:-900}
+      TASK_TIME_LIMIT_SECONDS: ${TASK_TIME_LIMIT_SECONDS:-43200}
+      TASK_STOP_GRACE_SECONDS: ${TASK_STOP_GRACE_SECONDS:-45}
+      RTSEG_APP_ROOT: /app
+      RTSEG_SCRATCH_ROOT: /scratch
       RTSEG_MODEL_ROOT: /models
       RTSEG_RUNTIME_ROOT: /runtimes
     volumes:
       - rtsegmentator-data:/data
+      - rtsegmentator-scratch:/scratch
+      - totalsegmentator-home:/root/.totalsegmentator
       - ${RTSEG_MODEL_BUNDLE:-./models}:/models:ro
       - ${RTSEG_RUNTIME_BUNDLE:-./runtimes}:/runtimes:ro
     deploy:
@@ -25,3 +36,5 @@ services:
 
 volumes:
   rtsegmentator-data:
+  rtsegmentator-scratch:
+  totalsegmentator-home:

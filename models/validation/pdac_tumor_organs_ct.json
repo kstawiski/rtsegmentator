@@ -1,8 +1,7 @@
 {
   "artifact_bytes": 1965332,
-  "artifact_sha256": "810ff353a0b8b08dfba0387fc64827b8c0d53ad38d673a88b75cc3d9b5132cfa",
   "contour_sets": 9,
-  "fixture": "287173-ct-abdomen-dicom",
+  "fixture": "Private acceptance fixture; identifier withheld. Reproduction requires an external fixture map.",
   "model": "Task102_PDACStudent lowres plus 3d_cascade_fullres five-fold ensemble",
   "referenced_images": 139,
   "rois": 9,

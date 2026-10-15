@@ -1,0 +1,25 @@
+{
+  "name": "MultiTalent V1 Task100",
+  "source": "https://github.com/MIC-DKFZ/MultiTalent",
+  "source_commit": "0bc7b2c32e31cb00008354f2420b65b85ef09578",
+  "record": "https://zenodo.org/records/8297767",
+  "license": "Other (non-commercial); constituent dataset terms also apply",
+  "archive": {
+    "name": "Task100_MultiTalent.zip",
+    "bytes": 4634439232,
+    "md5": "a86617d4c71ef7b97d9eaf931df390cd"
+  },
+  "checkpoints": {
+    "unet_all": {
+      "bytes": 234985721,
+      "sha256": "03851e77590fcd89b96320b666068971a484593ee948573feae6f88dc3c43fd0"
+    },
+    "resenc_all": {
+      "bytes": 593677811,
+      "sha256": "506b91701e0957d10b67c0375275053a1f4364d3febe81289f34b5a1237bb775"
+    }
+  },
+  "runtime": "Publisher MultiTalent V1 source in isolated nnU-Net V1/PyTorch 2.5.1+cu124 environment",
+  "output_contract": "47 independent overlapping binary heads exported as separate RTSTRUCT ROIs",
+  "acceptance": "Both all-data architectures passed H100 inference, source-reference validation, model-specific DICOM identity and strict direct-mapping orientation validation on the public MSD spleen CT fixture."
+}

@@ -1,0 +1,18 @@
+{
+  "task": "hippunfold_adni_t1_subfields_mr",
+  "result": "passed",
+  "verified_at": "2026-08-13",
+  "source_commit": "544fdb6e37eb42567b1ad3c7f4901a180bdb19b8",
+  "fixture": "HippUnfold ds002168 subject 1425 T1w; 256 generated source DICOM slices",
+  "inference": "official HippUnfold v1.5.3 workflow; ADNI_T1w_v1 five-fold nnU-Net ensemble on CPU",
+  "prediction_shape": [192, 256, 256],
+  "prediction_labels": 16,
+  "prediction_sha256": "d9760d2452eb93b4bc2056276837991817c1f277cc87077437d2b5d85d2cd47b",
+  "rtstruct_rois": 16,
+  "referenced_images": 29,
+  "geometry_mapping": "direct [DICOM column,row,slice] to rt-utils [row,column,slice]",
+  "geometry_bbox_max_delta_mm": 0.0006,
+  "rtstruct_bytes": 299910,
+  "rtstruct_sha256": "77285ebc6ef791d749b1a71d2503467620148ac5114c862ed886963acc1d9b02",
+  "orientation_evidence": "orientation-validation/hippunfold_adni_t1_subfields_mr.json"
+}

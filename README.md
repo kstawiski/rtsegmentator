@@ -1,90 +1,56 @@
 # DICOM RT Segmentation Portal
 
-Research portal for uploading DICOM image series, selecting compatible GPU segmentation models, and downloading the results as validated DICOM RT Structure Set (`RTSTRUCT`) files.
+Upload DICOM CT, MR or PET series, select compatible segmentation models, and download RTSTRUCT contours checked against the source images. Run the portal with a local GPU or an SSH GPU worker.
 
-The WebUI can run inference in the same GPU container or send jobs over SSH to a dedicated GPU worker. Uploads are assessed locally before transfer: invalid files are ignored, distinct DICOM series are separated, and the user explicitly chooses one series and compatible models.
-
-> **Research use only.** Model outputs require clinical review and are not suitable for unattended treatment-planning decisions.
+> **Research use only.** Review every contour before clinical use. Technical execution and geometry checks do not establish clinical accuracy or manuscript readiness.
 
 ## Features
 
-- CT, MR and PET DICOM ingestion and series-level inspection.
-- Modality-aware model selection. `total` and `total_mr` are never selected together.
-- Current TotalSegmentator task catalog obtained from the installed worker version.
-- External lymph-node, tumour and CTV models with descriptions, output structures, validation status and upstream references.
-- Interactive slice viewer for PAM, SAT3D and SAM-Med2D point/box prompts.
-- PET models can require a co-referenced CT series.
-- Strict RTSTRUCT acceptance checks against the selected source series.
-- Serialized GPU job execution and process-group termination.
-- Per-job temporary-data cleanup so model processes release VRAM after completion.
+- Separate uploaded studies into image series before selecting models. PET1 ISRT tasks require a CT in the same Study and Frame of Reference.
+- Upload folders, extensionless DICOM files and ZIP archives. Resumable upload sessions accept chunks up to 32 MiB and report upload progress.
+- Discover TotalSegmentator tasks from the installed runtime and external tasks from committed catalogs. Catalog results are cached; stale results remain available during a background refresh.
+- Select prompted models through the slice viewer or the assessed-upload API. Each model retains its input contract and limitation text.
+- Run serialized GPU jobs with progress, retries using retained input, and per-task time limits. Timeout handling stops the runner and its process tree.
+- Use read-only model bundles. CADS and selected nnU-Net v1 pipelines create writable directory mirrors in each job while linking immutable model files.
+- Filter TotalSegmentator auxiliary labels against the task label map before RTSTRUCT export.
+- Convert masks with direct source-grid row/column mapping. Verify source references, physical bounds and a contour-to-mask round trip; gate external tasks on orientation evidence.
+- Crop axial CT and matching RTSTRUCTs for prostate SBRT on CPU. The standalone tool selects PTV*/CTV* contours with a default 150 mm superior/inferior margin. Optional local `total` postprocessing selects the prostate ROI. The crop keeps pixel data and creates matching new Study, Frame, Series and SOP UIDs by default.
 
-The live catalog currently exposes 81 tasks. Models without reproducible weights, required metadata, authoritative label mappings or required paired inputs remain visible but disabled with a precise blocker status.
+The captured deployment catalog contains 253 tasks, 182 enabled. These are snapshot counts, not guarantees for a fresh installation. The installed TotalSegmentator version, model assets, enabled list and orientation markers determine `/api/v1/models`. Disabled models remain visible with their restrictions.
 
-## Architecture
-
-```text
-Browser :8080
-    |
-    v
-FastAPI portal host
-  - upload assessment
-  - DICOM series selection
-  - prompt capture
-  - job history/download
-    |
-    | SSH/SCP
-    v
-GPU worker
-  - DICOM -> geometry-preserving NIfTI
-  - model-specific preprocessing/inference
-  - mask -> RTSTRUCT
-  - strict DICOM validation
-```
-
-## Repository layout
-
-- `app.py` — FastAPI application and WebUI.
-- `run_task.py` — worker-side model dispatcher.
-- `run_*.py` — compatibility and inference wrappers for external releases.
-- `convert_validate_rtstruct.py` — mask conversion and strict RTSTRUCT validation.
-- `dicom_series_to_nifti.py` — geometry-preserving DICOM conversion.
-- `labels/` and `*-labels.json` — explicit output-label mappings.
-- `EXTERNAL_MODELS.md` — model integration and validation evidence ledger.
-- `docs/DEPLOYMENT.md` — host and worker deployment procedure.
-- `docs/OPERATIONS.md` — operation, validation, privacy and troubleshooting.
-
-Model weights, patient images, generated jobs, virtual environments and license keys are deliberately excluded from Git.
-
-## Quick start with Docker and NVIDIA GPU
+## Quick start: local GPU container
 
 ```bash
+cp .env.example .env
+# Set RTSEG_MODEL_BUNDLE and RTSEG_RUNTIME_BUNDLE to your licensed local assets.
 docker compose build
 docker compose up -d
 curl -fsS http://localhost:8080/api/v1/health
 ```
 
-Open `http://localhost:8080`. This runs the WebUI and worker together with `WORKER_MODE=local`. See [Containers and offline deployment](docs/CONTAINERS.md) for a separate GPU server and air-gapped installation.
+Open `http://localhost:8080`. Configure authenticated TLS before accepting medical data. The application does not enforce user identity or `RTSEG_API_KEY`.
 
-## Local application development
+Model weights, runtimes, licenses and patient images are excluded from the source tree. The base image is not a complete external-model installation. See [deployment](docs/DEPLOYMENT.md) and [containers](docs/CONTAINERS.md) for mounts and SSH configuration.
 
-For local application development:
+## Local development and checks
+
+Use Python 3.11 or newer:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-WORKER_MODE=local .venv/bin/uvicorn app:app --host 0.0.0.0 --port 8080
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m py_compile *.py scripts/*.py
+.venv/bin/pytest -q
+WORKER_MODE=local .venv/bin/uvicorn app:app --host 127.0.0.1 --port 8080
 ```
 
-The local runtime must contain the model environments and artifacts documented in `EXTERNAL_MODELS.md`. Set `WORKER_MODE=ssh` for a separately managed worker.
+CPU tests use synthetic images. Inference needs the separate model/runtime bundle and compatible GPU software. Colab and automatic fallback code are retained for compatibility; the documented deployment examples use local or SSH workers.
 
-## Automation
+## Source and documentation
 
-The stable automation surface is `/api/v1`, with interactive documentation at `/api/docs`. It supports model discovery, multipart DICOM submission, job polling, health checks, and result download. See [API](docs/API.md).
-
-## Documentation
-
-- [Deployment](docs/DEPLOYMENT.md)
-- [Containers and offline deployment](docs/CONTAINERS.md)
-- [Automation API](docs/API.md)
-- [Operations and safety](docs/OPERATIONS.md)
-- [External-model validation ledger](EXTERNAL_MODELS.md)
+- `app.py`: WebUI, API, upload sessions, cached catalog and job lifecycle.
+- `run_task.py`, `run_*.py`: dispatch and model-specific inference wrappers.
+- `convert_validate_rtstruct.py`, `convert_masks_validate_rtstruct.py`, `rtstruct_roundtrip.py`: direct conversion and geometry checks, including overlapping masks.
+- `crop_prostate_sbrt.py`: standalone CPU crop tool.
+- `catalog/`, `labels/`, `models/manifests/`, `models/patches/`: task definitions, labels and upstream compatibility records.
+- [API](docs/API.md), [operations](docs/OPERATIONS.md), [model ledger](EXTERNAL_MODELS.md), [public release checklist](docs/PUBLIC_RELEASE_CHECKLIST.md).

@@ -1,6 +1,6 @@
-# External lymph-node model integration ledger
+# External model integration ledger
 
-This ledger distinguishes automatic models from prompted tools and records whether a release can be reproduced. Every assessed model is visible in the portal catalog; only models that passed inference and DICOM RTSTRUCT validation are selectable.
+This ledger distinguishes automatic models from prompted tools and records whether a release can be reproduced. The records below describe historical integration runs. Current selection depends on runtime preflight, orientation evidence and the enabled-model policy. Research use only; execution and geometry results do not establish clinical accuracy.
 
 ## Spinal Cord Toolbox 7.3 (2026-08-13)
 
@@ -41,6 +41,65 @@ This ledger distinguishes automatic models from prompted tools and records wheth
   Its anomaly output is retained as `Anomaly_Candidate`; it is not presented as
   a definitive tumour, lesion diagnosis, GTV or CTV.
 
+## FastSurferVINN (2026-08-13)
+
+- The official stable source and all three VINN view checkpoints are installed
+  on NFS. The shared CUDA runtime needs only a small NFS-hosted `h5py` overlay.
+- `fastsurfervinn_t1_mr` ran axial, coronal and sagittal inference on the H100,
+  emitted 95 non-empty cortical/subcortical labels, and produced a 1,704,354-byte
+  RTSTRUCT referencing 77 selected-series images.
+- The wrapper requests native orientation, converts the upstream MGZ result to
+  NIfTI without changing its affine, and nearest-neighbour restores labels to the
+  original DICOM grid. Model-specific identity and strict orientation audits passed.
+- The model expects a whole-head T1-weighted MRI. Outputs are research anatomy
+  labels and do not define glioma, metastasis, GTV or CTV boundaries.
+
+## TractSeg 2.10 (2026-08-13)
+
+- Official source and all nine public pretrained archives are installed and
+  checksum-indexed on NFS (1.3 GB total).
+- The released peaks fixture ran successfully through the official CUDA path:
+  all 72 tract channels were non-empty with 237,552 foreground voxels.
+- The portal entry remains disabled with status
+  `requires_diffusion_peaks_or_dwi_gradients`. TractSeg requires a 9-channel
+  CSD/bedpostX peaks NIfTI, or raw 4D DWI plus matching b-values and b-vectors.
+  A selected scalar 3D DICOM series cannot satisfy that contract, so no false
+  RTSTRUCT acceptance is claimed.
+
+## BraTS Toolkit legacy ensemble (2026-08-13)
+
+- Official source commit `86e7fa89b48e965b6c23151931f88e074930f75e` is
+  installed on NFS. All legacy image artifacts are stored under
+  `images/brats-toolkit`; model preflight requires every one before reporting
+  the family installed.
+- The MIC-DKFZ image is an intact 2018 CUDA 9/PyTorch 0.4 environment. Its
+  embedded CUDA kernels cannot execute on the H100, although the runtime sees
+  the device. A documented compatibility patch maps its released checkpoint to
+  CPU and makes the otherwise read-only `/params` tree writable through an NFS
+  bind mount.
+- Released fold-0 inference on `Brats18_TCIA10_639_1` passed. Output shape and
+  affine exactly matched the 240x240x155 source, with labels 1, 2 and 4 all
+  non-empty (103,221; 79,248; and 1,009 voxels respectively). Output SHA-256 is
+  `ca13836cbeda6fff78546985dabf62fc9f0b37b75c5e6af381b8a1661d642150`.
+- This is not selectable: all toolkit algorithms require skull-stripped,
+  co-registered FLAIR, T1, T1c and T2 NIfTI inputs in SRI-24 space. The portal
+  currently selects one DICOM series, so silently substituting or guessing the
+  other channels would be unsafe.
+
+## CEREBRUM-7T and DeepBrainSeg (2026-08-13)
+
+- CEREBRUM-7T source and its included 14.9 MB HDF5 checkpoint are installed and
+  checksum-indexed. The published inference performs voxelwise z-scoring using
+  training-cohort mean and standard-deviation volumes, but those two volumes are
+  absent from the repository/release. The model is therefore visible with the
+  precise `missing_voxelwise_training_normalization` blocker; invented scalar
+  normalization is not accepted as reproduction.
+- The catalog's stale `mobarakol/DeepBrainSeg` URL was corrected to the actual
+  `koriavinash1/DeepBrainSeg` upstream. Source, BraTS fixtures and all four 0.0.1
+  checkpoints are on NFS; all four state dictionaries load successfully in the
+  current PyTorch runtime. It remains input-contract blocked because inference
+  requires registered T1, T1ce, T2 and FLAIR volumes plus a brain mask.
+
 | Release | Input | Download state | Execution state |
 |---|---|---|---|
 | HNLNL 2D+3D ensemble | H&N planning CT | Complete 2D+3D five-fold release downloaded | **PASS; PORTAL ENABLED:** found and isolated a 516-slice 1.5-mm planning H&N CT. The exact portal branch was smoke-tested through all ten folds, probability-level 2D+3D averaging, published component postprocessing, RTSTRUCT serialization and cleanup. All 20 classes were nonempty and the strictly valid 20-ROI RTSTRUCT references 125 source images; the multi-gigabyte temporary probabilities were removed afterward. The exact numeric label order was recovered from `LevelNameList` in the paper's Europe PMC `DataSheet_2.zip` supplement: Ia, bilateral Ib/II/III/IVa/IVb/V, VIa/VIb/VIIa, and bilateral VIIb/VIII. |
@@ -50,7 +109,7 @@ This ledger distinguishes automatic models from prompted tools and records wheth
 | ISRT PET fusion variants | registered planning CT + PET1, optionally PET2 | All 36 weights downloaded; four PET1-only ablation ensembles portal-integrated | **TECHNICAL PASS, DOMAIN WARNING:** same-Frame-of-Reference CT/PSMA-PET with BQML converted to SUVbw×1000. PET1 early/deform (48,177 voxels), early/rigid (13,996), late/deform (21,746), and late/rigid (29,898) each produced a valid one-ROI RTSTRUCT. The fixture lacks a distinct planning CT, so the AC CT was supplied for both CT channels; it is also outside the pediatric Hodgkin/FDG domain. The PET1+PET2 releases remain input-blocked because no longitudinal PET2 is available |
 | Pediatric thoracic lymphoma | contrast CT | Full nnU-Net v1 export downloaded, MD5 verified, extracted, and portal-integrated | **PASS:** nonempty mask; valid one-ROI RTSTRUCT references 192 source images. Tested source is low-dose AC CT rather than pediatric contrast CT, so protocol warning is shown |
 | SegRap 2023 Task 2 | paired noncontrast + contrast H&N CT | All five folds downloaded | **TECHNICAL PASS, INPUT WARNING:** the wrapper was repaired to use TotalSegmentator 2.17 for body cropping (upstream silently continued after its pinned TotalSegmentator failed). All five folds produced GTVp 34,720 and GTVnd 536 voxels; valid 2-ROI RTSTRUCT/56 refs. Only one appropriate planning H&N CT was available, so it was deliberately duplicated into native and contrast channels; this validates execution/geometry but not paired-contrast clinical performance |
-| UWLAIR HNTS-MRG | pre/mid-RT T2 MRI | Full 28.5 GB, 20-model Dropbox ensemble downloaded, integrity-tested, and extracted | **PASS:** public HNTS-MRG24 patient 101. Pre-RT produced GTVp 3,529 and GTVn 21,767 voxels; valid 2-ROI RTSTRUCT/33 refs. Mid-RT produced GTVn 15,327 voxels; valid 1-ROI RTSTRUCT/29 refs. The single-series pre-RT 10-model ensemble is portal-integrated as `uwlair_hntsmrg_pre_t2`; visible portal job `20260808-033023-7e5739f9` completed with GTVp/GTVn RTSTRUCT and HTTP download. The source fixture is NIfTI-only, so RTSTRUCT geometry was validated against explicitly synthetic, geometry-faithful MR DICOM references. Mid-RT remains validation-only because it requires paired pre-RT image/mask registration inputs, not one selected series |
+| UWLAIR HNTS-MRG | pre/mid-RT T2 MRI | Full 28.5 GB, 20-model Dropbox ensemble downloaded, integrity-tested, and extracted | **PASS:** public HNTS-MRG24 patient 101. Pre-RT produced GTVp 3,529 and GTVn 21,767 voxels; valid 2-ROI RTSTRUCT/33 refs. Mid-RT produced GTVn 15,327 voxels; valid 1-ROI RTSTRUCT/29 refs. The single-series pre-RT 10-model ensemble is portal-integrated as `uwlair_hntsmrg_pre_t2`; a portal job completed with GTVp/GTVn RTSTRUCT and HTTP download. The source fixture is NIfTI-only, so RTSTRUCT geometry was validated against explicitly synthetic, geometry-faithful MR DICOM references. Mid-RT remains validation-only because it requires paired pre-RT image/mask registration inputs, not one selected series |
 | WltyBY HNTS-MRG | T2 MRI | Source cloned; all five Task 1 and all five Task 2 weights downloaded and reconstructed into runnable nnU-Net exports | **PASS:** public HNTS-MRG24 patient 101. Task 1 produced GTVp 3,252 and GTVn 21,322 voxels; valid 2-ROI RTSTRUCT/32 refs. Task 2 (mid-RT T2 + registered pre-RT T2 + registered pre-RT mask) produced GTVn 13,311 voxels; valid 1-ROI RTSTRUCT/27 refs. RTSTRUCT geometry was tested against synthetic, geometry-faithful MR DICOM references because the public source is NIfTI/MHA only |
 | elitap HNTS-MRG | T2 MRI | Source cloned; pre-RT and mid-RT checkpoints downloaded | **PASS:** pre-RT produced GTVp 2,982 and GTVn 22,897 voxels (valid 2-ROI RTSTRUCT/33 refs); mid-RT produced GTVn 13,738 voxels (valid 1-ROI RTSTRUCT/27 refs). The repository omitted the checkpoint's required `3d_fullres_oversample_4c` plan, recovered exactly from checkpoint metadata. Geometry was tested against synthetic DICOM references because the public fixture is NIfTI/MHA only |
 | STU-Net HNTS-MRG | T2 MRI | Both Task 1 B and S release checkpoints downloaded and deserialized successfully | **REPRODUCTION BLOCKED BY RELEASE PACKAGING:** repository contains only raw nnU-Net-v1 training checkpoints. It omits task plans/properties, preprocessing configuration, inference wrapper, fold/export metadata, and a compatible trained-model directory; these cannot be recovered from either checkpoint. The generic STU-Net repository supplies architecture code but not the HNTS task preprocessing. Running with invented plans would not validate the released models and was intentionally rejected |
@@ -64,11 +123,11 @@ This ledger distinguishes automatic models from prompted tools and records wheth
 | CompAI LNQ Model 7 | thoracic CT | GitLab source and exact 249 MB LFS checkpoint downloaded; Apache-2.0 | **PASS; PORTAL ENABLED:** release-specific lung normalization and Model 7 checkpoint produced 494 candidate voxels in standalone validation. The exact portal branch was then smoke-tested on the 735-slice CT: TotalSegmentator lung cropping, custom nnU-Net preprocessing, inference, full-geometry restoration and strict RTSTRUCT conversion all passed, yielding one ROI with 76 source-image references. PyTorch 2.6 release-checkpoint loading is handled explicitly and temporary data are cleaned. |
 | DBDMP LNQ | CT | Source and 298 MB Google Drive checkpoint downloaded | **PASS; PORTAL ENABLED:** deeper inspection found that public `crop2lung` assigns z/y/x voxel indices directly as an x/y/z physical origin—twice and without spacing/direction. The repaired geometry-preserving implementation on the 735-slice whole-body CT produced 44,550 raw foreground voxels, of which 44,524 met the release intensity gate and 44,271 survived official component refinement. The strictly valid RTSTRUCT has one ROI and 64 referenced CT images. PyTorch 2.6 checkpoint loading was also made explicit for this trusted release. The checkpoint names an unavailable trainer (`nnUNetTrainer_LNQ4Tversky3`), so the compatible VNetv2 implementation is selected from its documented inference export. |
 | WCODE-PIA LNQ | CT | Source cloned | Weights are distributed through Baidu; download/access remains blocked outside that service |
-| LN-Seg-FM variants | H&N CT | Source plus 4.5 GB Google Drive weights for original nnU-Net, ResEnc-M, ResEnc-L, and SwinUNETR downloaded | **PASS:** all four fold-0 automatic checkpoints ran on the 516-slice planning H&N CT and produced nonempty visible-node masks: original 2,649, ResEnc-M 5,881, ResEnc-L 2,561, and SwinUNETR 4,033 voxels. Each produced a valid one-ROI RTSTRUCT referencing respectively 51, 61, 60, and 89 source images. All four are portal-integrated; visible job `20260808-031258-ee4f8383` completed and returned four downloadable RTSTRUCTs. The Swin release required its documented nnU-Net 2.5.1/MonAI 1.3.0 runtime, isolated from the shared environment. These are visible-node candidate contours, not named elective neck levels |
-| PAM | CT/MR/PET + user prompt | Source plus both public checkpoints downloaded; portal-integrated | **PASS:** interactive DICOM slice viewer supplies a positive point or 2D box. On HNTS-MRG24 T2 MR, PAM propagated 83,487 foreground voxels over 51 slices. A geometry bug in the upstream tutorial was corrected by restoring origin and direction, and the resulting one-ROI RTSTRUCT passed strict validation. Visible portal job `20260808-213322-38be1945` completed and is downloadable. |
+| LN-Seg-FM variants | H&N CT | Source plus 4.5 GB Google Drive weights for original nnU-Net, ResEnc-M, ResEnc-L, and SwinUNETR downloaded | **PASS:** all four fold-0 automatic checkpoints ran on the 516-slice planning H&N CT and produced nonempty visible-node masks: original 2,649, ResEnc-M 5,881, ResEnc-L 2,561, and SwinUNETR 4,033 voxels. Each produced a valid one-ROI RTSTRUCT referencing respectively 51, 61, 60, and 89 source images. All four are portal-integrated; visible job (private job identifier withheld) completed and returned four downloadable RTSTRUCTs. The Swin release required its documented nnU-Net 2.5.1/MonAI 1.3.0 runtime, isolated from the shared environment. These are visible-node candidate contours, not named elective neck levels |
+| PAM | CT/MR/PET + user prompt | Source plus both public checkpoints downloaded; portal-integrated | **PASS:** interactive DICOM slice viewer supplies a positive point or 2D box. On HNTS-MRG24 T2 MR, PAM propagated 83,487 foreground voxels over 51 slices. A geometry bug in the upstream tutorial was corrected by restoring origin and direction, and the resulting one-ROI RTSTRUCT passed strict validation. A portal job completed and is downloadable. |
 | BiomedParse v1/v2 | text-prompted CT/MR/PET | Source cloned | Hugging Face repository now approval-gated (HTTP 401); weights unavailable to worker |
-| SAT3D | CT/MR/PET + 3D prompt | Source plus model and critic checkpoints downloaded | **PASS; PORTAL ENABLED:** repaired the public release's stale `build_sam3D_swin` alias, isolated its optional `timm`/`torchvision` dependency issue, and added prompt-centred 128³ inference with positive/negative point support. A T2 H&N MRI WebUI job produced 25,017 foreground voxels across 27 slices and a strictly valid one-ROI RTSTRUCT with 27 referenced source images (`20260808-224038-0de553c2`). Requires at least one positive 3D point. |
-| SAM-Med2D | CT/MR/PET slices + box/point prompts | Source plus 2.56 GB official checkpoint downloaded; portal-integrated | **PASS, SLICE-WISE:** fixed the upstream eager torchvision/NMS dependency and PyTorch 2.6+ checkpoint-loading incompatibility. A box on MR slice 41 produced 1,720 foreground pixels and a valid one-ROI/one-referenced-image RTSTRUCT. Visible portal job `20260808-214200-0392c6a5` completed. The portal explicitly states that users must prompt every desired slice; no unvalidated 3D propagation is implied. |
+| SAT3D | CT/MR/PET + 3D prompt | Source plus model and critic checkpoints downloaded | **PASS; PORTAL ENABLED:** repaired the public release's stale `build_sam3D_swin` alias, isolated its optional `timm`/`torchvision` dependency issue, and added prompt-centred 128³ inference with positive/negative point support. A T2 H&N MRI WebUI job produced 25,017 foreground voxels across 27 slices and a strictly valid one-ROI RTSTRUCT with 27 referenced source images. Requires at least one positive 3D point. |
+| SAM-Med2D | CT/MR/PET slices + box/point prompts | Source plus 2.56 GB official checkpoint downloaded; portal-integrated | **PASS, SLICE-WISE:** fixed the upstream eager torchvision/NMS dependency and PyTorch 2.6+ checkpoint-loading incompatibility. A box on MR slice 41 produced 1,720 foreground pixels and a valid one-ROI/one-referenced-image RTSTRUCT. A portal job completed. The portal explicitly states that users must prompt every desired slice; no unvalidated 3D propagation is implied. |
 
 ## Local modality fixtures
 
@@ -371,6 +430,78 @@ An empty candidate-detection mask is reported as “no candidates detected”; c
   upstream inference requires sagittal 2D cine-MRI plus an explicit first-frame
   target mask and returns a temporal MHA mask sequence, whereas the portal's
   current contract is a static DICOM series producing RTSTRUCT.
+- MedSAM2 source and all six public WangLab checkpoints are stored on NFS. The
+  FLARE25 RECIST CT-lesion checkpoint loads strictly and is portal-integrated
+  for a positive/negative point set or 2-D box on one axial seed slice. On the
+  released FLARE23 public fixture, box propagation scored Dice 0.9098 and
+  single-point propagation scored Dice 0.9073. The exact DICOM branch on MSD
+  lung case 53 produced a one-ROI RTSTRUCT referencing 92 source images with
+  zero physical bounding-box delta. The model is restricted to research and
+  education use, and every propagated lesion contour requires review.
+- The separate ImprintLab Medical-SAM2 GPL release and its official 38.9M-
+  parameter tiny checkpoint are also installed. All 468 checkpoint tensors
+  load strictly. Box propagation ran on the public FLARE lesion technical
+  fixture (Dice 0.4613, explicitly out of its BTCV domain), and the complete
+  DICOM branch produced a one-ROI RTSTRUCT referencing 73 source images with
+  zero physical bounding-box delta. It remains clearly distinguished from the
+  higher-performing WangLab CT-lesion checkpoint in the model picker.
+- nnInteractive 2.5.1 source commit
+  `bbe12fdccc876cb2d4e0a47133811e362608e000` and the official v1.0 fold-0
+  checkpoint are installed on NFS. The checkpoint SHA-256 is
+  `b3ac4421f85457bbd1aa0d87f5e67bcb7bc8e2ce6b824b6ac45077cc5d630ea9`
+  and its model license is CC BY-NC-SA 4.0 (distinct from the Apache-2.0
+  source license). A positive point on the public MNI T1 fixture produced a
+  non-empty source-grid mask and a strictly valid, orientation-audited
+  RTSTRUCT with model-specific DICOM identity. The portal supports positive
+  and negative points and the checkpoint's required 2-D box interaction.
+- VISTA3D/NV-Segment-CT source commit
+  `f9f5f51b589e5dc9c23c453cf5138398e4084056` and Hugging Face revision
+  `afb51518689f71e6abb367ee6301b2cd0225c66a` are installed on NFS. The
+  871,970,895-byte checkpoint has SHA-256
+  `c92bab26d00b4a5d89fa8a383900cdeb88302fd318e5e816df0bbec7106d9a1b`.
+  A positive-point run on the public MSD spleen CT fixture produced a non-empty
+  3-D mask and a one-ROI RTSTRUCT referencing 18 source images; strict
+  orientation validation passed. The runner records and applies a one-line
+  MONAI 1.6 tensor compatibility repair without modifying upstream source.
+- VoxTell source commit `8ef0332aec5d5dff925d6f6370386c00334b57ab`
+  and Hugging Face revision `0809ac94c5ed594198bf4e85d63245cf222464d7`
+  are installed on NFS with the official v1.1 checkpoint, its 14,194-label
+  embedding bank, and the Qwen3-Embedding-4B fallback for unseen free text.
+  The prompt `spleen` produced 101,225 foreground voxels on the public MSD
+  fixture and a one-ROI RTSTRUCT referencing 19 source images. Direct
+  source-grid conversion matched the ROI physical bounding box exactly.
+- SegVol source commit `5768c9795794a327a2629ce7f137ab03d5ea8378`
+  and Hugging Face revision `516701d5bef430604a13f5db7ce896149d075663`
+  are installed on NFS. Its 723,726,667-byte checkpoint has SHA-256
+  `500f2758a8f989339b2b2baf09a819169bc87549795193d3cfe505726ac0b399`.
+  The exact released MONAI 0.9 architecture loads all 180,890,064 parameters;
+  a documented one-line seed-range repair makes MONAI 0.9 compatible with
+  NumPy 2 without changing model computation. Text-prompted `spleen` inference
+  achieved Dice 0.9801 on the publisher's fixture. The same prompt on the MSD
+  DICOM fixture produced a one-ROI RTSTRUCT referencing 18 source images with
+  zero per-ROI physical bounding-box delta. Text, point and 3-D box prompts are
+  exposed by the portable runner.
+- UniverSeg source commit `833a0c34c65e38d675e21bd48ddec6797cc03259`
+  and its sole official release checkpoint are installed on NFS. The
+  4,748,449-byte OpenRAIL++-M research checkpoint has SHA-256
+  `62c98c48c08bc05f84ed19187844d5eb7e6b7a48d2f690f2033fd8de04543884`;
+  all 1,182,785 parameters load strictly. With 64 support image-mask pairs it
+  achieved Dice 0.9101 for label 1 on the publisher-linked OASIS fixture. The
+  model is visible but disabled because its class is defined by uploaded 2-D
+  support images and masks, an input type the current portal does not accept.
+  Reusing a fixed unrelated support set would not implement few-shot contouring.
+- HippUnfold source commit `544fdb6e37eb42567b1ad3c7f4901a180bdb19b8`
+  and both catalog checkpoint releases are staged on NFS. The ADNI T1 archive
+  is 2,452,807,680 bytes (SHA-256
+  `55be492ccc65b4fd60bdd18dde2e63c0c5676060cb950b2bbbd2fd12ea57ebf8`)
+  and contains all five nnU-Net-v1 folds. The Maguire T2 archive is
+  1,138,683,578 bytes (SHA-256
+  `ee4e28d246cb1acb86df6b99be50c66b9d762356385643092877a9723a552de7`)
+  and contains all five nnU-Net-v2 folds. Both are visible as acceptance-pending
+  until the matching development runtime produces native-space subfields and
+  a strictly validated, orientation-audited RTSTRUCT. Limited-field T2 input
+  may require a separately registered T1 series and must not be treated as a
+  valid single-series case.
 - HD-GLIO-AUTO source and checksum-verified v2 checkpoint are installed, and
   its published inference code confirms a
   mandatory native T1, post-contrast T1, T2 and FLAIR input set. The pipeline
@@ -385,3 +516,41 @@ An empty candidate-detection mask is reported as “no candidates detected”; c
   referencing 44 source images. The other eleven models remain visible as an
   installed family while their FLAIR, SUV PET, derived-mask, atlas-orientation,
   or eyes-masking contracts are implemented and tested.
+- MultiTalent V1 source commit
+  `0bc7b2c32e31cb00008354f2420b65b85ef09578` and the complete official
+  Zenodo Task100 archive are installed on NFS. The 4,634,439,232-byte archive
+  matches publisher MD5 `a86617d4c71ef7b97d9eaf931df390cd` and contains
+  standard U-Net and residual-encoder checkpoints for all five folds plus the
+  all-data checkpoints. The release implements 47 independent, overlapping
+  dataset-specific heads, not the newer repository branch's 117-class claim.
+  The standard and residual all-data checkpoints have SHA-256
+  `03851e77590fcd89b96320b666068971a484593ee948573feae6f88dc3c43fd0`
+  and `506b91701e0957d10b67c0375275053a1f4364d3febe81289f34b5a1237bb775`.
+  Both loaded and ran on the H100. Their overlap-preserving RTSTRUCTs contained
+  47 and 44 non-empty ROIs respectively, referenced all 51 source CT images,
+  had zero per-ROI physical bounding-box delta, and carry distinct model names
+  in StructureSetLabel, StructureSetName and SeriesDescription. The Zenodo
+  record is non-commercial and the constituent public datasets may impose
+  additional terms.
+- HECKTOR 2020 winning-solution source commit
+  `5ebc6774d178139b52abebbe926b4cafabe3e29d` and all eight official PET/CT
+  ensemble checkpoints are installed on NFS. The 696,677,684-byte Dropbox
+  archive has SHA-256
+  `1666bad2c4355bb059a1339e6fc605f65838da5bd931139030c24ccab52d02d7`.
+  After removing the publisher's DataParallel `module.` prefix where present,
+  every 310-tensor state dictionary loads strictly into the released
+  `FastSmoothSENormDeepUNet_supervision_skip_no_drop` architecture. The family
+  remains disabled because published inference requires registered PET and CT
+  plus a patient-specific 144 mm physical head-and-neck bounding box. That
+  bounding-box CSV is part of the HECKTOR challenge data, whose official page
+  currently says access cannot be granted while hospital agreements are being
+  extended. Guessing a crop or running a pelvic PET fixture would not prove
+  valid inference.
+
+## Source synchronization and interpretation of evidence
+
+The source now includes cached catalogs, resumable uploads, per-task process-tree termination, read-only bundle mirrors, TotalSegmentator auxiliary-label filtering and the CPU prostate SBRT crop tool. Direct source-grid RTSTRUCT conversion and independent physical round-trip checks replace the earlier orientation workaround. See [operations](docs/OPERATIONS.md) for limits and configuration.
+
+The captured deployment returned 253 tasks, 182 enabled. These counts describe that installation; fresh installations must pass their own preflight and orientation gates. All model-specific warnings and numerical results above are retained. Private fixture/job identifiers and private artifact hashes are withheld without relabeling the associated measurements as public-fixture validation. Public fixture maps and external private override configuration are documented in [operations](docs/OPERATIONS.md).
+
+The dated SCT statements above describe successive historical states. Current task definitions are in `catalog/sct.json`, with additional recorded validation in `models/validation/`. Neither a copied marker nor this source synchronization establishes clinical or manuscript readiness.

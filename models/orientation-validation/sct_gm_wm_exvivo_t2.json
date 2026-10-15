@@ -1,0 +1,32 @@
+{
+  "task": "sct_gm_wm_exvivo_t2",
+  "result": "passed",
+  "orientation_fix": "direct_column_row_slice_mapping",
+  "structure_set_label": "sct_gm_wm_exvivo",
+  "structure_set_name": "RTSEG: sct_gm_wm_exvivo_t2",
+  "series_description": "RTSEG: sct_gm_wm_exvivo_t2",
+  "rois": 2,
+  "referenced_images": 69,
+  "contour_min_lps": [
+    -3.28125,
+    -2.53125,
+    -12.5625
+  ],
+  "contour_max_lps": [
+    3.28125,
+    2.15625,
+    12.9375
+  ],
+  "source_origin_min_lps": [
+    5.90625,
+    5.90625,
+    -12.9375
+  ],
+  "source_origin_max_lps": [
+    5.90625,
+    5.90625,
+    12.9375
+  ],
+  "artifact_bytes": 108814,
+  "artifact_sha256": "7fa522417285c4cc241e86b32664fbb05b72dd4473edba34a6614d0e83f0c6dd"
+}

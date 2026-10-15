@@ -1,0 +1,32 @@
+{
+  "task": "medical_sam3_3d_prompted",
+  "result": "passed",
+  "orientation_fix": "direct_column_row_slice_mapping",
+  "structure_set_label": "medical_sam3_3d_",
+  "structure_set_name": "RTSEG: medical_sam3_3d_prompted",
+  "series_description": "RTSEG: medical_sam3_3d_prompted",
+  "rois": 1,
+  "referenced_images": 8,
+  "contour_min_lps": [
+    274.125,
+    132.28125,
+    110.0
+  ],
+  "contour_max_lps": [
+    356.203125,
+    268.546875,
+    145.0
+  ],
+  "source_origin_min_lps": [
+    407.203125,
+    407.203125,
+    0.0
+  ],
+  "source_origin_max_lps": [
+    407.203125,
+    407.203125,
+    250.0
+  ],
+  "artifact_bytes": 44104,
+  "artifact_sha256": "88f02a997a1c46a950c7d4bae3f9a9829373a9e0a172c61660b7d17954f5fed0"
+}

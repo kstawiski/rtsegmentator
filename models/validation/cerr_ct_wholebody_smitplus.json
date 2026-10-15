@@ -1,0 +1,11 @@
+{
+  "verified_at": "2026-08-14",
+  "result": "passed",
+  "task": "cerr_ct_wholebody_smitplus",
+  "model": "CERR CT_WHOLEBODY_SMITplus CT_WHOLEBODY_15_15_15.pt",
+  "fixture": "Private acceptance fixture; identifier withheld. Reproduction requires an external fixture map.",
+  "gate": "H100-compatible SMIT+ inference; all 46 output classes non-empty; exact physical voxel roundtrip for every ROI; source SOP references and model-specific DICOM identity",
+  "evidence": "orientation-validation/cerr_ct_wholebody_smitplus.json",
+  "roundtrip_dice": 1.0,
+  "rois": 46
+}

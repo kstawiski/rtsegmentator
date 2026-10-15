@@ -1,0 +1,12 @@
+{
+  "verified_at": "2026-08-14",
+  "result": "passed",
+  "task": "hnlnl_2d3d",
+  "model": "HNLNL nnU-Net v1 2-D/3-D ensemble",
+  "fixture": "Retained 516-slice clinical head-and-neck CT acceptance case",
+  "gate": "Non-empty output for all 20 nodal-level labels; direct source-grid RTSTRUCT conversion; exact physical voxel roundtrip; source SOP references and model-specific DICOM identity",
+  "evidence": "orientation-validation/hnlnl_2d3d.json",
+  "roundtrip_dice": 1.0,
+  "rois": 20,
+  "referenced_images": 125
+}

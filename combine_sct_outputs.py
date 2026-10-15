@@ -23,7 +23,8 @@ if len(imgs)==1 and multiclass:
 else:
     data=np.zeros(shape, dtype=np.uint16); labels={}
     for idx,(f,img) in enumerate(zip(files,imgs),1):
-        key=re.sub(r"^prediction_?|\.nii(?:\.gz)?$", "", f.name).strip("_")
+        key=re.sub(r"\.nii(?:\.gz)?$", "", f.name)
+        key=re.sub(r"^prediction_?", "", key).strip("_")
         label=next((v for k,v in names.items() if k.lower() in key.lower()), None)
         if label is None and len(files)==1 and len(set(names.values()))==1:
             label=next(iter(names.values()))

@@ -9,6 +9,8 @@ WorkingDirectory=/opt/rtsegmentator
 Environment=SEGMENTATION_WORKER=worker@rtsegmentator-worker
 Environment=WORKER_MODE=ssh
 Environment=PYTHONUNBUFFERED=1
+Environment=PORTAL_DATA=/data
+EnvironmentFile=-/etc/rtsegmentator/portal.env
 ExecStart=/opt/rtsegmentator/.venv/bin/uvicorn app:app --host 0.0.0.0 --port 8080 --workers 1
 Restart=on-failure
 RestartSec=5

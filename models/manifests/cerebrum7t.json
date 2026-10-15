@@ -1,0 +1,15 @@
+{
+  "family": "CEREBRUM-7T",
+  "repository": "https://github.com/rockNroll87q/cerebrum7t",
+  "source_commit": "9ab44c20b782da642342021dcf72825093944414",
+  "license": "MIT",
+  "checkpoint": {
+    "trained_model/model_trained.h5": {
+      "bytes": 14918384,
+      "sha256": "9c282e97d861af44b5f43fa03e1c68b4f0d8fa3c16a4f6ccff7a4235bd27cfe8"
+    }
+  },
+  "input_contract": "One 256x352x224 preprocessed 7T T1 MRI and matching voxelwise training-cohort mean/std volumes.",
+  "portal_status": "Disabled: the checkpoint is public, but its required _T1w_average_subject.nii.gz and _T1w_stdDev_subject.nii.gz normalization volumes are absent from the source/release.",
+  "verified_at": "2026-08-13"
+}

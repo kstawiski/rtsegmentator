@@ -1,0 +1,21 @@
+{
+  "task": "medlsam_structseg_han_oars",
+  "result": "passed_with_research_quality_warning",
+  "verified_at": "2026-08-13",
+  "checkpoint_loading": "Released MedLAM and MedSAM ViT-B checkpoints loaded strictly with no missing or unexpected parameters",
+  "fixture": "StructSeg2019 HaN_OAR case 50, held out from fixed support cases 1, 2 and 3",
+  "localized_brainstem_bbox_iou": 0.816,
+  "localized_brainstem_boundary_mean_error_mm": 1.488,
+  "segmentation_nonempty_classes": 22,
+  "segmentation_mean_dice_22_classes": 0.41593786045568204,
+  "brainstem_dice": 0.7324724071674338,
+  "prediction_sha256": "228b888f289cb7b955d5a6ebbf8700075feaa2a0e419255547e64e9b5fdcf04e",
+  "dicom_fixture": "private head CT, 142 source slices",
+  "dicom_fixture_nonempty_classes": 22,
+  "rtstruct_rois": 22,
+  "referenced_images": 83,
+  "geometry_bbox_max_delta_mm": 0.0,
+  "rtstruct_bytes": 993980,
+  "warning": "Accuracy varies substantially by structure on this held-out case; the model is exposed for research pre-contouring only and every contour requires review. Mandible and spinal-cord results were particularly weak on this fixture.",
+  "orientation_evidence": "orientation-validation/medlsam_structseg_han_oars.json"
+}

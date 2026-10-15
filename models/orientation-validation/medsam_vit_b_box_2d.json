@@ -1,0 +1,32 @@
+{
+  "task": "medsam_vit_b_box_2d",
+  "result": "passed",
+  "orientation_fix": "direct_column_row_slice_mapping",
+  "structure_set_label": "medsam_vit_b_box",
+  "structure_set_name": "RTSEG: medsam_vit_b_box_2d",
+  "series_description": "RTSEG: medsam_vit_b_box_2d",
+  "rois": 1,
+  "referenced_images": 1,
+  "contour_min_lps": [
+    283.6875,
+    139.453125,
+    130.0
+  ],
+  "contour_max_lps": [
+    353.8125,
+    266.953125,
+    130.0
+  ],
+  "source_origin_min_lps": [
+    407.203125,
+    407.203125,
+    0.0
+  ],
+  "source_origin_max_lps": [
+    407.203125,
+    407.203125,
+    250.0
+  ],
+  "artifact_bytes": 12654,
+  "artifact_sha256": "1fe41daf767ebb4b40a429d11479e1e4452d465e5d6906584da57f1cebac08e8"
+}

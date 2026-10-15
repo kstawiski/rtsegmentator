@@ -1,0 +1,32 @@
+{
+  "task": "sam_med3d_turbo_prompted",
+  "result": "passed",
+  "orientation_fix": "direct_column_row_slice_mapping",
+  "structure_set_label": "sam_med3d_turbo_",
+  "structure_set_name": "RTSEG: sam_med3d_turbo_prompted",
+  "series_description": "RTSEG: sam_med3d_turbo_prompted",
+  "rois": 1,
+  "referenced_images": 16,
+  "contour_min_lps": [
+    270.140625,
+    208.78125,
+    95.0
+  ],
+  "contour_max_lps": [
+    347.4375,
+    266.953125,
+    170.0
+  ],
+  "source_origin_min_lps": [
+    407.203125,
+    407.203125,
+    0.0
+  ],
+  "source_origin_max_lps": [
+    407.203125,
+    407.203125,
+    250.0
+  ],
+  "artifact_bytes": 59242,
+  "artifact_sha256": "f0f853d0369bb082d06b2ae6dd665aba197119bd80f47b48cac29db1974417e0"
+}

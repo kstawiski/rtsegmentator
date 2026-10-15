@@ -1,0 +1,11 @@
+{
+  "verified_at": "2026-08-14",
+  "result": "passed",
+  "task": "cerr_ct_heart_substructures_smit",
+  "model": "CERR CT_HeartSubstruct_SMIT model_final_feb10_2026.pt",
+  "fixture": "Private acceptance fixture; identifier withheld. Reproduction requires an external fixture map.",
+  "gate": "H100-compatible SMIT inference; nine non-empty RTSTRUCT ROIs; exact physical voxel roundtrip for every ROI; source SOP references and model-specific DICOM identity",
+  "evidence": "orientation-validation/cerr_ct_heart_substructures_smit.json",
+  "roundtrip_dice": 1.0,
+  "rois": 9
+}

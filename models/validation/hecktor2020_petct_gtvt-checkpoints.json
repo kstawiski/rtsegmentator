@@ -1,0 +1,48 @@
+{
+  "result": "passed",
+  "architecture": "FastSmoothSENormDeepUNet_supervision_skip_no_drop",
+  "input_channels": 2,
+  "classes": 2,
+  "checkpoints": [
+    {
+      "checkpoint": "ns0_best_model_weights.pt",
+      "tensors": 310,
+      "bytes": 87085097
+    },
+    {
+      "checkpoint": "ns1_best_model_weights.pt",
+      "tensors": 310,
+      "bytes": 87085097
+    },
+    {
+      "checkpoint": "ns2_best_model_weights.pt",
+      "tensors": 310,
+      "bytes": 87080615
+    },
+    {
+      "checkpoint": "ns3_best_model_weights.pt",
+      "tensors": 310,
+      "bytes": 87085097
+    },
+    {
+      "checkpoint": "s0_best_model_weights.pt",
+      "tensors": 310,
+      "bytes": 87085097
+    },
+    {
+      "checkpoint": "s1_best_model_weights.pt",
+      "tensors": 310,
+      "bytes": 87085097
+    },
+    {
+      "checkpoint": "s2_best_model_weights.pt",
+      "tensors": 310,
+      "bytes": 87085097
+    },
+    {
+      "checkpoint": "s3_best_model_weights.pt",
+      "tensors": 310,
+      "bytes": 87085097
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "family": "Medical-SAM3",
+  "task": "medical_sam3_3d_prompted",
+  "source": "https://github.com/AIM-Research-Lab/Medical-SAM3",
+  "source_commit": "4164d261b5a8c9fc1015a2e21537280a19c972c5",
+  "checkpoint_source": "https://huggingface.co/ChongCong/Medical-SAM3",
+  "checkpoint": "checkpoint_3D.pt",
+  "checkpoint_sha256": "6e40bbaa739ac44e3e47dc6355ef6dedc560a30411377ad891f8af9e6df0dbd6",
+  "checkpoint_bytes": 10306235253,
+  "additional_public_checkpoints": ["checkpoint_2D.pt", "checkpoint_3D_checkpoint8.pt"],
+  "source_license": "SAM License (repository LICENSE)",
+  "hugging_face_model_card_license_field": "MIT",
+  "input_contract": "one 3-D image, a medical text concept, and a 2-D box on the center slice of an eight-slice window",
+  "status": "validated_research",
+  "validation": "validation/medical_sam3_3d_prompted.json",
+  "orientation_validation": "orientation-validation/medical_sam3_3d_prompted.json",
+  "verified_at": "2026-08-13"
+}

@@ -32,16 +32,28 @@ aliases={
  "ISRT-PET1-early-rigid-RTSTRUCT.dcm":"isrt_pet1_early_rigid",
  "ISRT-PET1-late-deform-RTSTRUCT.dcm":"isrt_pet1_late_deform",
  "ISRT-PET1-late-rigid-RTSTRUCT.dcm":"isrt_pet1_late_rigid",
+ "HNLNL-unmapped-RTSTRUCT.dcm":"hnlnl_2d3d",
+ "inguinal-v1-RTSTRUCT.dcm":"lnq_inguinal_v1",
+ "abdominopelvic-v1-RTSTRUCT.dcm":"lnq_abdominopelvic_v1",
+ "axillary-v1-RTSTRUCT.dcm":"lnq_axillary_v1",
+ "mediastinal-v1-RTSTRUCT.dcm":"lnq_mediastinal_v1",
+ "CompAI-Model7-RTSTRUCT.dcm":"compai_lnq",
+ "pam-hntsmrg24-RTSTRUCT.dcm":"pam_prompted",
+ "sat3d-hntsmrg24-RTSTRUCT.dcm":"sat3d_prompted",
+ "sam-med2d-hntsmrg24-RTSTRUCT.dcm":"sam_med2d_prompted",
  "ensemble-RTSTRUCT.dcm":None,
  "RTSTRUCT.dcm":None,
 }
+if os.environ.get("RTSEG_LEGACY_ARTIFACT_ALIASES"):
+    aliases.update(json.loads(Path(os.environ["RTSEG_LEGACY_ARTIFACT_ALIASES"]).read_text()))
+raidionics_result_dir=os.environ.get("RTSEG_RAIDIONICS_RESULT_DIR", "raidionics")
 for f in (root/"results").rglob("*RTSTRUCT.dcm"):
     if destination in f.parents: continue
     task=aliases.get(f.name,f.name.removesuffix("_RTSTRUCT.dcm"))
     if f.name=="ensemble-RTSTRUCT.dcm" and "isrt-ct" in f.parts:
         task={"resunet":"isrt_ct_resunet","segresnet":"isrt_ct_segresnet","swinunetr":"isrt_ct_swinunetr"}.get(f.parent.name)
     if f.name=="RTSTRUCT.dcm":
-        task="raidionics_mediastinal_lymphnodes" if "raidionics-miednice" in f.parts else "pediatric_thoracic_lymphoma" if "lymphoma" in f.parts else None
+        task="raidionics_mediastinal_lymphnodes" if raidionics_result_dir in f.parts else "pediatric_thoracic_lymphoma" if "lymphoma" in f.parts else None
     if task in tasks and (task not in artifacts or f.stat().st_mtime>artifacts[task].stat().st_mtime): artifacts[task]=f
 
 for task, source_rt in sorted(artifacts.items()):

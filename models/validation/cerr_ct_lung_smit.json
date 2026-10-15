@@ -1,0 +1,11 @@
+{
+  "verified_at": "2026-08-14",
+  "result": "passed",
+  "task": "cerr_ct_lung_smit",
+  "model": "CERR CT_Lung_SMIT model_Mhub.pt",
+  "fixture": "MSD Task06 lung_053 DICOM reconstruction",
+  "gate": "H100-compatible SMIT inference; non-empty RTSTRUCT; exact physical voxel roundtrip; source SOP references and model-specific DICOM identity",
+  "evidence": "orientation-validation/cerr_ct_lung_smit.json",
+  "roundtrip_dice": 1.0,
+  "positive_voxels": 295045
+}

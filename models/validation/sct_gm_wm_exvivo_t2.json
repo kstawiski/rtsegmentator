@@ -1,0 +1,42 @@
+{
+  "task": "sct_gm_wm_exvivo_t2",
+  "result": "passed",
+  "verified_at": "2026-08-13",
+  "runtime": "Spinal Cord Toolbox 7.3",
+  "model": "model_seg_exvivo_gm-wm_t2_unet2d-multichannel-softseg r20210401_v2",
+  "model_url": "https://github.com/ivadomed/model_seg_exvivo_gm-wm_t2_unet2d-multichannel-softseg/releases/tag/r20210401_v2",
+  "checkpoint_sha256": "d2b535d6d91861bd767b511d01b7cc2bf874bff72b20d5de05c9c417c979bb5b",
+  "fixture": "DRCMR A1 first b0, public ex-vivo vervet cervical spinal-cord diffusion MRI",
+  "fixture_url": "https://www.drcmr.dk/DIGdata/SpinalCord/A1.zip",
+  "fixture_sha256": "99095365c97a099a3171446fd51f08020a74e9e7eb652a441c05fa3da65b3f7e",
+  "fixture_shape": [
+    64,
+    64,
+    70
+  ],
+  "fixture_spacing_mm": [
+    0.1875,
+    0.1875,
+    0.375
+  ],
+  "fixture_limitation": "Fixture is non-human and has no manual tissue mask; acceptance proves executable inference, anatomically plausible non-empty nested tissue outputs by visual review, and exact geometry conversion, not human accuracy.",
+  "inference": "official SCT ex-vivo T2 gray/white-matter task on CUDA; continuous SoftSeg outputs thresholded at >0.5",
+  "rtstruct_rois": 2,
+  "roi_names": [
+    "Spinal_Gray_Matter",
+    "Spinal_White_Matter"
+  ],
+  "roi_contours": {
+    "Spinal_Gray_Matter": 33,
+    "Spinal_White_Matter": 105
+  },
+  "referenced_images": 69,
+  "physical_roundtrip_dice": {
+    "Spinal_Gray_Matter": 1.0,
+    "Spinal_White_Matter": 1.0
+  },
+  "geometry_bbox_max_delta_mm": 0.0,
+  "rtstruct_bytes": 108814,
+  "rtstruct_sha256": "7fa522417285c4cc241e86b32664fbb05b72dd4473edba34a6614d0e83f0c6dd",
+  "orientation_evidence": "orientation-validation/sct_gm_wm_exvivo_t2.json"
+}

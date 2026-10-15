@@ -1,0 +1,17 @@
+{
+  "family": "MedLSAM",
+  "task": "medlsam_structseg_han_oars",
+  "source": "https://github.com/openmedlab/MedLSAM",
+  "source_commit": "4144407eeb99213dba34dd5540278e26b1d76ea7",
+  "checkpoint_source": "https://drive.google.com/drive/folders/1GqAznZVmDiMvCNk4GoE4sSa6oN-Yh8bF",
+  "medlam_checkpoint_sha256": "cc53418d46f90eae1ddde4a71a5cb3ed474a2bb9b86edebdc79255c9792a5aae",
+  "medlam_checkpoint_bytes": 60288645,
+  "medsam_checkpoint_sha256": "34b34b78c1d18cb8c6bf84cf9c00e135d6d6c965699f3c0e31ef1bc9dcb5be74",
+  "medsam_checkpoint_bytes": 375049145,
+  "support_dataset": "StructSeg2019 head-and-neck OAR support set",
+  "support_archive_sha256": "99966571eec06aa843a5312eb6386bd05292483177e483f8d05dfe6e4f127ad4",
+  "input_contract": "one head-and-neck CT series; fixed support cases 1, 2 and 3; 22 released StructSeg OAR labels",
+  "status": "validated_research",
+  "validation": "validation/medlsam_structseg_han_oars.json",
+  "verified_at": "2026-08-13"
+}

@@ -1,0 +1,18 @@
+{
+  "task": "medical_sam2_prompted_ct",
+  "result": "passed_with_domain_warning",
+  "verified_at": "2026-08-13",
+  "checkpoint_loading": "All 468 tensors and 38,946,242 parameters loaded strictly into the released tiny Medical-SAM2 video predictor",
+  "technical_fixture": "WangLab FLARE23 CT lesion public fixture used only to verify prompt propagation; not the ImprintLab BTCV training domain",
+  "technical_fixture_prediction_voxels": 3031,
+  "technical_fixture_dice": 0.4612909712447215,
+  "prediction_sha256": "8cd72671c666f3aba392a0592ab230ee140ffef0f6de03d3b294ce25e561fe3f",
+  "dicom_fixture": "MSD Task06 lung case 53",
+  "rtstruct_rois": 1,
+  "referenced_images": 73,
+  "geometry_bbox_max_delta_mm": 0.0,
+  "rtstruct_bytes": 701160,
+  "rtstruct_sha256": "910e5325aaf8c7b78d6241208b3028324e346948600a1cf37d50a736e463de0b",
+  "warning": "The out-of-domain lesion fixture had substantially lower Dice than WangLab MedSAM2. This release is exposed only as a reviewed research contour proposal.",
+  "orientation_evidence": "orientation-validation/medical_sam2_prompted_ct.json"
+}

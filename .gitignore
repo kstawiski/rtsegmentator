@@ -63,3 +63,12 @@ SHA256SUMS
 .DS_Store
 .idea/
 .vscode/
+
+# Exclude operational backups
+*.bak*
+*.pre-*
+
+# Public orientation metadata only; no image/model payloads.
+!models/orientation-validation/
+models/orientation-validation/*
+!models/orientation-validation/*.json

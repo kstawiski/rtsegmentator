@@ -1,0 +1,12 @@
+{
+  "task": "sam_med3d_turbo_prompted",
+  "result": "passed_with_single_click_accuracy_warning",
+  "verified_at": "2026-08-13",
+  "checkpoint_loading": "All released tensors and 100,509,616 parameters loaded strictly into build_sam3D_vit_b_ori",
+  "technical_fixture": "publisher-provided AMOS validation toy case amos_0013, spleen label 1",
+  "technical_fixture_truth_voxels": 94546,
+  "technical_fixture_prediction_voxels": 9954,
+  "technical_fixture_dice": 0.18579904306220096,
+  "warning": "A single positive point selected a subset of the intended spleen. Treat output as a research contour proposal requiring review and additional corrective prompts.",
+  "orientation_evidence": "orientation-validation/sam_med3d_turbo_prompted.json"
+}

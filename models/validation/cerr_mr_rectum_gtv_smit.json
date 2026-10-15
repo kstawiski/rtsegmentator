@@ -1,0 +1,12 @@
+{
+  "verified_at": "2026-08-14",
+  "result": "passed",
+  "task": "cerr_mr_rectum_gtv_smit",
+  "model": "CERR MR_Rectum_GTV_SMIT model_final.pt",
+  "fixture": "TCGA-READ TCGA-BM-6198 axial T2 HASTE rectal MRI, CC BY 3.0",
+  "gate": "H100-compatible upstream inference; non-empty GTV output; exact physical voxel roundtrip; source SOP references and model-specific DICOM identity",
+  "evidence": "orientation-validation/cerr_mr_rectum_gtv_smit.json",
+  "roundtrip_dice": 1.0,
+  "rois": 1,
+  "clinical_note": "Acceptance proves execution and DICOM geometry only; this external thick-slice fixture does not establish clinical contour accuracy."
+}

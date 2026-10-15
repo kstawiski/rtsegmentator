@@ -1,0 +1,23 @@
+{
+  "family": "FastSurferVINN",
+  "repository": "https://github.com/Deep-MI/FastSurfer",
+  "source_branch": "stable",
+  "source_commit": "cdfccea89e6c2bdbd6a2abb3f033f2e618a54538",
+  "license": "Apache-2.0",
+  "checkpoints": {
+    "aparc_vinn_axial_v2.0.0.pkl": {"bytes": 22399769, "sha256": "81ab25ccbfc432cc41fb6089d11ff2a45b5a88e659092096cb1e067269f806b8"},
+    "aparc_vinn_coronal_v2.0.0.pkl": {"bytes": 22399783, "sha256": "73813957e83ec99d2c4e22f7854308916ec276d66ab7ed8ef8bf3998ba05e289"},
+    "aparc_vinn_sagittal_v2.0.0.pkl": {"bytes": 22375598, "sha256": "edae6262d69526fea39a019f2dfd8df75eb705f8f025b9b97166e3e17b917414"}
+  },
+  "runtime": "Shared CUDA segmentation runtime plus NFS-hosted h5py 3.16 overlay",
+  "verified_at": "2026-08-13",
+  "acceptance": {
+    "task": "fastsurfervinn_t1_mr",
+    "fixture": "TemplateFlow MNI152 T1 converted to geometry-faithful research DICOM",
+    "nonempty_rois": 95,
+    "referenced_images": 77,
+    "rtstruct_bytes": 1704354,
+    "rtstruct_sha256": "c25277947b5319c9c71a2beaa3d2badb9ee86f74cd3c7d66e02bc78de627ecbb",
+    "orientation": "passed"
+  }
+}

@@ -1,0 +1,15 @@
+--- /code/predict_patient.py
++++ /code/predict_patient_cpu.py
+@@
+-            return next(self.parameters()).device.index
++            return "cpu"
+@@
+-        self.device = 0
++        self.device = "cpu"
+@@
+-        saved_model = torch.load(fname)
++        saved_model = torch.load(fname, map_location="cpu")
+@@
+-    for fold in range(5):
++    # Acceptance smoke test only. The five released folds remain installed.
++    for fold in range(1):

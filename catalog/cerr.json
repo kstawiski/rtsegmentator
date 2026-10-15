@@ -1,0 +1,109 @@
+{
+  "cerr_ct_lung_smit": {
+    "modality": "CT",
+    "runner": "smit",
+    "upstream_model": "CT_Lung_SMIT",
+    "checkpoint": "weights/cerr/CT_Lung_SMIT/trained_weights/model_Mhub.pt",
+    "description": "CERR SMIT lung-cancer segmentation model for thoracic CT",
+    "structures": "Primary lung tumor",
+    "clinical_tag_ids": ["lung_cancer"],
+    "labels": {"1": "Lung_Tumor"},
+    "reference": "https://github.com/cerr/CT_Lung_SMIT"
+  },
+  "cerr_ct_hn_smit": {
+    "modality": "CT",
+    "runner": "smit",
+    "upstream_model": "CT_HN_SMIT",
+    "checkpoint": "weights/cerr/CT_HN_SMIT/trained_weights/CT_HN_15_15_15.pt",
+    "description": "CERR 17-channel SMIT head-and-neck CT model",
+    "structures": "Sixteen upstream numeric head-and-neck classes; the public repository does not publish their names",
+    "clinical_tag_ids": ["head_neck_cancer"],
+    "labels": {"1":"HN_Class_01","2":"HN_Class_02","3":"HN_Class_03","4":"HN_Class_04","5":"HN_Class_05","6":"HN_Class_06","7":"HN_Class_07","8":"HN_Class_08","9":"HN_Class_09","10":"HN_Class_10","11":"HN_Class_11","12":"HN_Class_12","13":"HN_Class_13","14":"HN_Class_14","15":"HN_Class_15","16":"HN_Class_16"},
+    "reference": "https://github.com/cerr/CT_HN_SMIT"
+  },
+  "cerr_ct_heart_substructures_smit": {
+    "modality": "CT",
+    "runner": "smit",
+    "upstream_model": "CT_HeartSubstruct_SMIT",
+    "checkpoint": "weights/cerr/CT_HeartSubstruct_SMIT/model_weights/model_final_feb10_2026.pt",
+    "description": "CERR SMIT cardiac-substructure model for thoracic CT",
+    "structures": "Aorta, pulmonary artery and vein, superior and inferior vena cava, atria and ventricles",
+    "labels": {"1":"Aorta","2":"Pulmonary_Artery","3":"Pulmonary_Vein","4":"Superior_Vena_Cava","5":"Inferior_Vena_Cava","6":"Right_Atrium","7":"Right_Ventricle","8":"Left_Atrium","9":"Left_Ventricle"},
+    "reference": "https://github.com/cerr/CT_HeartSubstruct_SMIT"
+  },
+  "cerr_ct_wholebody_smitplus": {
+    "modality": "CT",
+    "runner": "smit",
+    "upstream_model": "CT_WHOLEBODY_SMITplus",
+    "checkpoint": "weights/cerr/CT_WHOLEBODY_SMITplus/trained_weights/CT_WHOLEBODY_15_15_15.pt",
+    "description": "CERR 47-channel SMIT+ whole-body CT segmentation model",
+    "structures": "Forty-six upstream numeric whole-body classes; the public repository does not publish their names",
+    "labels": {"1":"WholeBody_Class_01","2":"WholeBody_Class_02","3":"WholeBody_Class_03","4":"WholeBody_Class_04","5":"WholeBody_Class_05","6":"WholeBody_Class_06","7":"WholeBody_Class_07","8":"WholeBody_Class_08","9":"WholeBody_Class_09","10":"WholeBody_Class_10","11":"WholeBody_Class_11","12":"WholeBody_Class_12","13":"WholeBody_Class_13","14":"WholeBody_Class_14","15":"WholeBody_Class_15","16":"WholeBody_Class_16","17":"WholeBody_Class_17","18":"WholeBody_Class_18","19":"WholeBody_Class_19","20":"WholeBody_Class_20","21":"WholeBody_Class_21","22":"WholeBody_Class_22","23":"WholeBody_Class_23","24":"WholeBody_Class_24","25":"WholeBody_Class_25","26":"WholeBody_Class_26","27":"WholeBody_Class_27","28":"WholeBody_Class_28","29":"WholeBody_Class_29","30":"WholeBody_Class_30","31":"WholeBody_Class_31","32":"WholeBody_Class_32","33":"WholeBody_Class_33","34":"WholeBody_Class_34","35":"WholeBody_Class_35","36":"WholeBody_Class_36","37":"WholeBody_Class_37","38":"WholeBody_Class_38","39":"WholeBody_Class_39","40":"WholeBody_Class_40","41":"WholeBody_Class_41","42":"WholeBody_Class_42","43":"WholeBody_Class_43","44":"WholeBody_Class_44","45":"WholeBody_Class_45","46":"WholeBody_Class_46"},
+    "reference": "https://github.com/cerr/CT_WHOLEBODY_SMITplus"
+  },
+  "cerr_mr_rectum_gtv_smit": {
+    "modality": "MR",
+    "runner": "smit",
+    "upstream_model": "MR_Rectum_GTV_SMIT",
+    "checkpoint": "weights/cerr/MR_Rectum_GTV_SMIT/model_final.pt",
+    "description": "CERR SMIT rectal gross-tumor-volume model for MRI",
+    "structures": "Rectal gross tumor volume",
+    "clinical_tag_ids": ["colorectal_cancer"],
+    "labels": {"1":"Rectal_GTV"},
+    "reference": "https://github.com/cerr/MR_Rectum_GTV_SMIT"
+  },
+  "cerr_mr_hn_nodule_smit": {
+    "modality": "MR",
+    "runner": "smit",
+    "upstream_model": "MR_HN_Nodule_SMIT",
+    "checkpoint": "weights/cerr/MR_HN_Nodule_SMIT/trained_weights/MRI_HN_nodule.pt",
+    "description": "CERR SMIT head-and-neck nodule model for MRI",
+    "structures": "Head-and-neck nodule or lesion candidate",
+    "clinical_tag_ids": ["head_neck_cancer"],
+    "labels": {"1":"Head_Neck_Nodule"},
+    "reference": "https://github.com/cerr/MR_HN_Nodule_SMIT"
+  },
+  "cerr_ct_lung_oar_mrrn": {
+    "modality": "CT", "runner": "legacy_mrrn", "upstream_model": "CT_LungOAR_incrMRRN",
+    "checkpoint": "weights/cerr/CT_LungOAR_incrMRRN/model/seg_best_net_Seg_A.pth",
+    "description": "CERR incremental-MRRN thoracic OAR model", "structures": "Left and right lungs, heart, esophagus, spinal cord and proximal bronchial tree",
+    "labels": {"1":"Lung_Left","2":"Lung_Right","3":"Heart","4":"Esophagus","5":"Spinal_Cord","6":"Proximal_Bronchial_Tree"},
+    "reference": "https://github.com/cerr/CT_LungOAR_incrMRRN"
+  },
+  "cerr_ct_hn_oars": {
+    "modality": "CT", "runner": "legacy", "upstream_model": "CT_HeadAndNeck_OARs",
+    "checkpoint": "weights/cerr/CT_HeadAndNeck_OARs/models",
+    "description": "CERR multi-network head-and-neck OAR package", "structures": "Masseters, medial pterygoids, larynx, pharyngeal constrictor, parotids, submandibular glands, mandible, spinal cord, brainstem and oral cavity",
+    "blocked_status": "acceptance_incomplete_on_private_planning_ct:_whole_scan_produced_all_8_self_attention_oars_but_pharyngeal_constrictor_was_empty_and_only_2_of_4_chewing_labels_were_nonempty;_head_crop_failed_because_larynx_was_empty;_requires_modality_matched_positive_hn_rt_ct_fixture_before_enablement", "reference": "https://github.com/cerr/CT_HeadAndNeck_OARs"
+  },
+  "cerr_ct_cardiac_deeplab": {
+    "modality": "CT", "runner": "legacy", "upstream_model": "CT_cardiac_structures_deeplab",
+    "checkpoint": "weights/cerr/CT_cardiac_structures_deeplab/model",
+    "description": "CERR DeepLab cardiac-structure model", "structures": "Heart and cardiac structures defined by the upstream package",
+    "blocked_status": "acceptance_failed_four_of_five_component_networks_returned_empty_masks_on_both_private_planning_ct_and_msd_lung_ct;_heart_network_returned_only_labels_2_and_9;_upstream_public_metadata_does_not_define_a_safe_complete_output_mapping",
+    "reference": "https://github.com/cerr/CT_cardiac_structures_deeplab"
+  },
+  "cerr_mr_prostate_deeplab": {
+    "modality": "MR", "runner": "legacy_prostate", "upstream_model": "MR_Prostate_Deeplab",
+    "checkpoint": "weights/cerr/MR_Prostate_Deeplab/model/frozen_inference_graph.pb",
+    "description": "CERR DeepLab prostate radiotherapy model for axial T2-weighted HFS MRI", "structures": "Bladder, prostate CTV, penile bulb, rectum, Foley urethra, rectal spacer and large bowel",
+    "labels": {"1":"Bladder","2":"Prostate_CTV","3":"Penile_Bulb","4":"Rectum","5":"Urethra_Foley","6":"Rectal_Spacer","7":"Large_Bowel"},
+    "clinical_tag_ids": ["prostate_cancer"], "reference": "https://github.com/cerr/MR_Prostate_Deeplab"
+  },
+  "cerr_mri_pancreas_context": {
+    "modality": "MR", "runner": "unavailable", "upstream_model": "MRI_Pancreas_Fullshot_AnatomicCtxShape",
+    "description": "CERR full-shot anatomical-context pancreas MRI model; source is mirrored but the official weight and runtime links return HTTP 404",
+    "structures": "Pancreas or pancreatic-region target", "clinical_tag_ids": ["pancreatic_cancer"],
+    "blocked_status": "official_weight_and_runtime_urls_http_404", "reference": "https://github.com/cerr/MRI_Pancreas_Fullshot_AnatomicCtxShape"
+  },
+  "cerr_ct_lung_oar_smitplus": {
+    "modality": "CT", "runner": "unavailable", "upstream_model": "CT_Lung_OAR_SMITplus",
+    "description": "CERR installer entry whose upstream GitHub repository is not publicly cloneable", "structures": "Thoracic OAR set",
+    "blocked_status": "upstream_repository_not_public", "reference": "https://github.com/cerr/CT_Lung_OAR_SMITplus"
+  },
+  "cerr_mr_brainmets_smitplus": {
+    "modality": "MR", "runner": "unavailable", "upstream_model": "MR_BrainMets_SMITplus",
+    "description": "CERR installer entry whose upstream GitHub repository is not publicly cloneable", "structures": "Brain metastases",
+    "clinical_tag_ids": ["brain_metastases"], "blocked_status": "upstream_repository_not_public", "reference": "https://github.com/cerr/MR_BrainMets_SMITplus"
+  }
+}

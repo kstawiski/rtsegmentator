@@ -1,0 +1,23 @@
+{
+  "task": "sct_spine",
+  "result": "passed",
+  "verified_at": "2026-08-13",
+  "runtime": "Spinal Cord Toolbox 7.3 / TotalSpineSeg r20251124",
+  "model": "model_seg_spine_contrast_agnostic two-stage nnU-Net",
+  "model_url": "https://github.com/neuropoly/totalspineseg/releases/tag/r20251124",
+  "step1_checkpoint_sha256": "4a340eeb6eb8061672995cfb131b8e2c3384d6a54a01146d7f86f1994ab6b106",
+  "step2_checkpoint_sha256": "4fb8967ea775647f5220f8b12902cf5fcd36c3786ffb549adf2f6ddb1075d105",
+  "fixture": "SCT PAM50 T2 template converted to 991 source MR DICOM slices",
+  "fixture_shape": [141, 141, 991],
+  "fixture_spacing_mm": [0.5, 0.5, 0.5],
+  "inference": "official SCT spine task with vertebral labeling on CUDA",
+  "native_output_selected": "prediction_totalspineseg_all.nii.gz",
+  "rtstruct_rois": 42,
+  "output_summary": "Spinal cord, spinal canal, C1-L2 vertebrae and C2-C3 through L1-L2 discs present in this fixture",
+  "referenced_images": 988,
+  "geometry_mapping": "direct [DICOM column,row,slice] to rt-utils [row,column,slice]",
+  "geometry_bbox_max_delta_mm": 0.0,
+  "rtstruct_bytes": 14355704,
+  "rtstruct_sha256": "dd5b55e648285a850c8322955db05d1aaf3e0bf2c5dbbcd98627febbfbff5936",
+  "orientation_evidence": "orientation-validation/sct_spine.json"
+}

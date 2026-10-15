@@ -1,0 +1,22 @@
+{
+  "family": "SAM-Med3D",
+  "task": "sam_med3d_turbo_prompted",
+  "source": "https://github.com/uni-medical/SAM-Med3D",
+  "source_commit": "f3de1fa10da98e46f49f176773d2b1e306ba131f",
+  "checkpoint_source": "https://huggingface.co/blueyo0/SAM-Med3D",
+  "checkpoint": "sam_med3d_turbo.pth",
+  "checkpoint_sha256": "899a46d04d3b70f723282ceb489149373558bf0aaba389a346f5ab57da5cdd3c",
+  "checkpoint_bytes": 402163626,
+  "checkpoint_parameters": 100509616,
+  "additional_downloaded_checkpoints": [
+    {"name": "sam_med3d_turbo_bbox_init.pth", "sha256": "d35b00784fc6858e2b0cb9b85ddd1b18d6f3131bc8177415d7d118b9db7325df", "bytes": 402165394},
+    {"name": "sam_med3d_turbo_cvpr_alldata.pth", "sha256": "f50686b508c95d289c3df2b9777981fad873c6803433e44fd2c36e90f51a6fac", "bytes": 402171007},
+    {"name": "sam_med3d_turbo_cvpr_coreset.pth", "sha256": "11520a8f5adf1ef331c5858400138cc7f6eed65584bdd44e0f325fda5d1e0640", "bytes": 402143240}
+  ],
+  "source_license": "Apache-2.0",
+  "input_contract": "one 3-D image plus positive and optional negative 3-D points; a box is converted to its centre point",
+  "status": "validated_research",
+  "validation": "validation/sam_med3d_turbo_prompted.json",
+  "orientation_validation": "orientation-validation/sam_med3d_turbo_prompted.json",
+  "verified_at": "2026-08-13"
+}

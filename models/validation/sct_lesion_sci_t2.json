@@ -1,0 +1,20 @@
+{
+  "task": "sct_lesion_sci_t2",
+  "result": "passed",
+  "verified_at": "2026-08-13",
+  "runtime": "Spinal Cord Toolbox 7.3",
+  "model": "model_seg_sci_multiclass_sc_lesion_nnunet r20240729",
+  "model_url": "https://github.com/ivadomed/model_seg_sci/releases/download/r20240729/model_SCIsegV2_r20240729.zip",
+  "checkpoint_sha256": "66700ce47db6d66352f6b226f06f7a15ca8bf15dea2e3435d968f645dd7ef22d",
+  "fixture": "SCT bundled t2_fake_lesion.nii.gz testing scan converted to 99 source MR DICOM slices",
+  "fixture_shape": [29, 99, 99],
+  "fixture_spacing_mm": [0.8, 0.8, 0.8],
+  "inference": "official SCT lesion_sci_t2 task on CUDA with overlapping masks preserved",
+  "rtstruct_rois": 2,
+  "roi_names": ["SCI_Lesion", "Spinal_Cord"],
+  "referenced_images": 96,
+  "geometry_bbox_max_delta_mm": 0.0001,
+  "rtstruct_bytes": 123100,
+  "rtstruct_sha256": "84fc853e4667c76fb761be8cd1c7b382fa16acac4af9575e87c801701d5fd67b",
+  "orientation_evidence": "orientation-validation/sct_lesion_sci_t2.json"
+}

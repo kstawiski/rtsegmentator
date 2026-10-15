@@ -7,24 +7,32 @@ import re
 import secrets
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import threading
 import time
+import tarfile
 import zipfile
 from pathlib import Path
 
 import pydicom
 import numpy as np
 from PIL import Image
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, Response
+import asyncio
+import fcntl
+from contextlib import contextmanager
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
+from fastapi.responses import FileResponse, HTMLResponse, Response, JSONResponse
+from starlette.concurrency import run_in_threadpool
+
+from crop_prostate_sbrt import NoSelectedROIError, crop_ct_rtstruct, discover_dicom
 
 BASE = Path(os.environ.get("PORTAL_DATA", Path(__file__).parent / "data"))
 WORKER = os.environ.get("SEGMENTATION_WORKER", "worker@rtsegmentator-worker")
-WORKER_MODE = os.environ.get("WORKER_MODE", "ssh").lower()
-if WORKER_MODE not in {"local", "ssh"}:
-    raise RuntimeError("WORKER_MODE must be 'local' or 'ssh'")
+WORKER_MODE = os.environ.get("WORKER_MODE", "local").lower()
+if WORKER_MODE not in {"local", "ssh", "colab", "auto"}:
+    raise RuntimeError("WORKER_MODE must be 'local', 'ssh', 'colab', or 'auto'")
 REMOTE_BASE = os.environ.get("REMOTE_JOB_ROOT", "/home/worker/jobs")
 REMOTE_PYTHON = os.environ.get("REMOTE_PYTHON", "/opt/rtsegmentator/venv/bin/python")
 REMOTE_RUNNER = os.environ.get("REMOTE_RUNNER", "/app/run_task.py")
@@ -33,14 +41,30 @@ REMOTE_MODEL_ROOT = os.environ.get("REMOTE_MODEL_ROOT", "/models")
 REMOTE_RUNTIME_ROOT = os.environ.get("REMOTE_RUNTIME_ROOT", REMOTE_MODEL_ROOT)
 LOCAL_PYTHON = os.environ.get("LOCAL_PYTHON", sys.executable)
 LOCAL_RUNNER = os.environ.get("LOCAL_RUNNER", str(Path(__file__).parent / "run_task.py"))
+COLAB_CLI = os.environ.get("COLAB_CLI", "colab")
+COLAB_GPU = os.environ.get("COLAB_GPU", "T4")
+COLAB_AUTH = os.environ.get("COLAB_AUTH", "oauth2")
+COLAB_ORCHESTRATOR = os.environ.get("COLAB_ORCHESTRATOR", "worker").lower()
+if COLAB_ORCHESTRATOR not in {"direct", "worker", "nfs"}:
+    raise RuntimeError("COLAB_ORCHESTRATOR must be 'direct', 'worker', or 'nfs'")
+COLAB_EXTERNAL_TASKS = {name.strip() for name in os.environ.get(
+    "COLAB_EXTERNAL_TASKS", "lungmask_r231").split(",") if name.strip()}
+GPU_RELEASE_COMMAND = os.environ.get("GPU_RELEASE_COMMAND", "")
+GPU_RELEASE_TIMEOUT = int(os.environ.get("GPU_RELEASE_TIMEOUT", "90"))
 MAX_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(8 * 1024**3)))
 RETENTION_HOURS = int(os.environ.get("RETENTION_HOURS", "24"))
 ENABLED_EXTERNAL_MODELS = {name.strip() for name in os.environ.get("ENABLED_EXTERNAL_MODELS", "").split(",") if name.strip()}
+ENABLED_MODELS_FILE = Path(os.environ.get("ENABLED_MODELS_FILE", str(BASE / "enabled-models.txt")))
+CATALOG_TTL_SECONDS = int(os.environ.get("CATALOG_TTL_SECONDS", "600"))
+PREFLIGHT_TIMEOUT_SECONDS = int(os.environ.get("PREFLIGHT_TIMEOUT_SECONDS", "900"))
+TASK_TIME_LIMIT_SECONDS = int(os.environ.get("TASK_TIME_LIMIT_SECONDS", str(12 * 3600)))
+TASK_STOP_GRACE_SECONDS = int(os.environ.get("TASK_STOP_GRACE_SECONDS", "45"))
 BASE.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="DICOM RT Segmentation Portal", version="1.0.0",
               docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json")
 queue_lock = threading.Lock()
+metadata_lock = threading.Lock()
 
 FALLBACK_TASKS = ["total", "total_mr", "total_v3", "body", "body_mr", "vertebrae_mr", "lung_vessels", "lung_vessels_LEGACY", "cerebral_bleed", "hip_implant", "coronary_arteries", "coronary_arteries_LEGACY", "pleural_pericard_effusion", "head_glands_cavities", "head_muscles", "headneck_bones_vessels", "headneck_muscles", "liver_vessels", "liver_segments", "liver_segments_mr", "liver_lesions", "liver_lesions_mr", "oculomotor_muscles", "lung_nodules", "kidney_cysts", "breasts", "ventricle_parts", "tissue_types", "tissue_types_mr", "tissue_4_types", "brain_structures", "vertebrae_body", "face", "thigh_shoulder_muscles", "thigh_shoulder_muscles_mr", "appendicular_bones", "appendicular_bones_mr", "aortic_sinuses", "heartchambers_highres", "trunk_cavities", "brain_aneurysm"]
 EXTERNAL_TASKS = {
@@ -172,6 +196,10 @@ for _name, _details in NNUNET_V1_TASKS.items():
     EXTERNAL_TASKS[_name] = {k: v for k, v in _details.items()
                              if k not in {"task", "configuration", "trainer", "plans", "labels", "disable_tta"}}
 
+MULTITALENT_V1_TASKS = json.loads((Path(__file__).parent / "catalog/multitalent-v1.json").read_text())
+for _name, _details in MULTITALENT_V1_TASKS.items():
+    EXTERNAL_TASKS[_name] = {k: v for k, v in _details.items() if k != "model_folder"}
+
 MONAI_BUNDLE_TASKS = json.loads((Path(__file__).parent / "catalog/monai-bundles.json").read_text())
 for _name, _details in MONAI_BUNDLE_TASKS.items():
     EXTERNAL_TASKS[_name] = {k: v for k, v in _details.items()
@@ -205,11 +233,24 @@ for _name, _details in ANTSPYNET_TASKS.items():
 SCT_TASKS = json.loads((Path(__file__).parent / "catalog/sct.json").read_text())
 for _name, _details in SCT_TASKS.items():
     EXTERNAL_TASKS[_name] = {k: v for k, v in _details.items()
-                             if k not in {"sct_task", "output_names", "multiclass_labels", "labels_file", "label_vert"}}
+                             if k not in {"sct_task", "output_names", "multiclass_labels", "labels_file", "label_vert", "output_glob", "preserve_overlaps"}}
 
 GOUHFI_TASKS = json.loads((Path(__file__).parent / "catalog/gouhfi.json").read_text())
 for _name, _details in GOUHFI_TASKS.items():
     EXTERNAL_TASKS[_name] = {k: v for k, v in _details.items() if k not in {"mode", "lut"}}
+
+FASTSURFER_TASKS = json.loads((Path(__file__).parent / "catalog/fastsurfer.json").read_text())
+for _name, _details in FASTSURFER_TASKS.items():
+    EXTERNAL_TASKS[_name] = _details
+
+CERR_TASKS = json.loads((Path(__file__).parent / "catalog/cerr.json").read_text())
+for _name, _details in CERR_TASKS.items():
+    EXTERNAL_TASKS[_name] = {
+        key: value for key, value in _details.items()
+        if key not in {"runner", "upstream_model", "checkpoint", "labels"}
+    }
+    if _details.get("blocked_status"):
+        EXTERNAL_TASKS[_name]["enabled"] = False
 
 LUNGMASK_TASKS = {
     "lungmask_r231": ("R231", "Right and left lungs, robust to dense pathology"),
@@ -258,11 +299,125 @@ EXTERNAL_TASKS["siam_v3_head_mr_ct"] = {
     "structures": "Gray and white matter, CSF, deep nuclei, hippocampus, dura, vessels, skull, head and anomaly candidates",
     "reference": "https://github.com/romainVala/SIAM",
 }
+EXTERNAL_TASKS["medlsam_structseg_han_oars"] = {
+    "modality": "CT",
+    "description": "MedLSAM fixed-support StructSeg head-and-neck OAR research pre-contouring; held-out accuracy varied substantially by structure and every contour requires review",
+    "structures": "22 head-and-neck OARs including brainstem, eyes, lenses, optic apparatus, temporal lobes, pituitary, parotids, ears, TMJs, spinal cord and mandible",
+    "reference": "https://github.com/openmedlab/MedLSAM",
+    "status": "validated",
+    "clinical_tag_ids": ["head_neck_cancer", "brain_metastases", "glioblastoma_glioma"],
+}
 
 # Audited releases that must remain visible even when they cannot safely be
 # submitted yet.  This prevents "not in the picker" from being mistaken for
 # "not assessed" and gives users the exact upstream model and output meaning.
 INFORMATIONAL_MODELS = {
+    "medical_sam3_3d_prompted": {"modality":"CT", "modalities":["CT","MR","PT"],
+        "enabled":True, "licensed":True, "prompt":"text_and_box", "status":"validated_research",
+        "clinical_tag_ids":["lung_cancer","prostate_cancer","bladder_cancer","glioblastoma_glioma","brain_metastases","head_neck_cancer","breast_cancer","liver_cancer","pancreatic_cancer","kidney_cancer","colorectal_cancer","cervical_cancer","lymphoma","spine_tumors","neuroendocrine_tumors","sarcoma_soft_tissue","whole_body_metastatic"],
+        "structures":"One medical text-concept and box-selected object over the released eight-slice 3-D window",
+        "description":"Official Medical-SAM3 full 3-D checkpoint and bundled SAM3 implementation. It uses the publisher's eight-frame train/evaluation protocol centered on a boxed seed slice. Public MSD spleen acceptance achieved Dice 0.967 across all eight output slices.",
+        "reference":"https://huggingface.co/ChongCong/Medical-SAM3"},
+    "sam_med3d_original_unreleased": {"modality":"CT", "modalities":["CT","MR","PT"],
+        "enabled":False, "status":"original_checkpoint_not_released",
+        "clinical_tag_ids":["lung_cancer","prostate_cancer","bladder_cancer","glioblastoma_glioma","brain_metastases","head_neck_cancer","breast_cancer","liver_cancer","pancreatic_cancer","kidney_cancer","colorectal_cancer","cervical_cancer","lymphoma","spine_tumors","neuroendocrine_tumors","sarcoma_soft_tissue","whole_body_metastatic"],
+        "structures":"Class-agnostic 3-D point-prompted object segmentation",
+        "description":"The catalog's original SAM-Med3D entry has no separately published checkpoint in the official repository or Hugging Face model. Upstream now exposes only SAM-Med3D Turbo and its CVPR/bounding-box variants; Turbo is installed as a separate validated task.",
+        "reference":"https://github.com/uni-medical/SAM-Med3D"},
+    "medsam_vit_b_box_2d": {"modality":"CT", "modalities":["CT","MR","PT"],
+        "enabled":True, "licensed":True, "prompt":"box", "status":"validated_slice_wise",
+        "clinical_tag_ids":["lung_cancer","prostate_cancer","bladder_cancer","glioblastoma_glioma","brain_metastases","head_neck_cancer","breast_cancer","liver_cancer","pancreatic_cancer","kidney_cancer","colorectal_cancer","cervical_cancer","lymphoma","spine_tumors","neuroendocrine_tumors","sarcoma_soft_tissue","whole_body_metastatic"],
+        "structures":"One box-selected 2-D object contour on the explicitly prompted slice",
+        "description":"Official MedSAM ViT-B box-prompted model. It runs only on the explicitly boxed slice and does not propagate through a volume. The Zenodo checkpoint passed strict loading and achieved Dice 0.954 on a held-out MSD spleen slice before DICOM RTSTRUCT geometry acceptance.",
+        "reference":"https://zenodo.org/records/10689643"},
+    "sam_med3d_turbo_prompted": {"modality":"CT", "modalities":["CT","MR","PT"],
+        "enabled":True, "licensed":True, "prompt":"points_or_box", "status":"validated_research",
+        "clinical_tag_ids":["lung_cancer","prostate_cancer","bladder_cancer","glioblastoma_glioma","brain_metastases","head_neck_cancer","breast_cancer","liver_cancer","pancreatic_cancer","kidney_cancer","colorectal_cancer","cervical_cancer","lymphoma","spine_tumors","neuroendocrine_tumors","sarcoma_soft_tissue","whole_body_metastatic"],
+        "structures":"One point-prompted 3-D organ, tumour, lesion or other object",
+        "description":"Official 100.5M-parameter SAM-Med3D Turbo checkpoint. A positive 3-D point selects the object; a submitted box is converted to its 3-D centre point. The public AMOS fixture passed strict checkpoint loading and inference, followed by source-grid DICOM RTSTRUCT validation.",
+        "reference":"https://huggingface.co/blueyo0/SAM-Med3D"},
+    "universeg_few_shot_2d": {"modality":"CT", "modalities":["CT","MR","PT"],
+        "enabled":False, "status":"requires_support_image_mask_uploads",
+        "clinical_tag_ids":["lung_cancer","prostate_cancer","bladder_cancer","glioblastoma_glioma","brain_metastases","head_neck_cancer","breast_cancer","liver_cancer","pancreatic_cancer","kidney_cancer","colorectal_cancer","cervical_cancer","lymphoma","spine_tumors","neuroendocrine_tumors","sarcoma_soft_tissue","whole_body_metastatic"],
+        "structures":"Class defined at inference by one or more paired 2-D support images and binary masks",
+        "description":"The official 1.18M-parameter UniverSeg checkpoint is installed and passed strict state loading plus 64-shot OASIS inference (Dice 0.910). It remains disabled because every submitted task requires user-provided support image-mask examples; the portal currently accepts only a target DICOM series and spatial/text prompts, so silently substituting unrelated examples would change the requested class.",
+        "reference":"https://github.com/JJGO/UniverSeg"},
+    "segvol_prompted_ct": {"modality":"CT", "enabled":True, "licensed":True,
+        "prompt":"text_points_or_box", "status":"validated",
+        "clinical_tag_ids":["lung_cancer","prostate_cancer","bladder_cancer","head_neck_cancer","breast_cancer","liver_cancer","pancreatic_cancer","kidney_cancer","colorectal_cancer","cervical_cancer","lymphoma","spine_tumors","sarcoma_soft_tissue","whole_body_metastatic"],
+        "structures":"One text-, point-, or 3-D-box-selected CT organ, tumour, lesion or other object",
+        "description":"Official SegVol CT foundation model supporting more than 200 reported categories. The released checkpoint passed exact MONAI 0.9 state loading and H100 text-prompted inference on its public fixture (spleen Dice 0.980), followed by direct source-grid RTSTRUCT geometry acceptance.",
+        "reference":"https://huggingface.co/BAAI/SegVol"},
+    "medsam2_ct_lesion_prompted": {"modality":"CT", "enabled":True, "licensed":True,
+        "prompt":"points_or_box", "status":"validated_research",
+        "clinical_tag_ids":["lung_cancer","prostate_cancer","bladder_cancer","head_neck_cancer","breast_cancer","liver_cancer","pancreatic_cancer","kidney_cancer","colorectal_cancer","cervical_cancer","lymphoma","spine_tumors","sarcoma_soft_tissue","whole_body_metastatic"],
+        "structures":"One point- or box-prompted 3-D CT lesion",
+        "description":"Official MedSAM2 CT lesion model with forward and reverse volumetric propagation. Research/education use only; prompts must be placed on one axial seed slice.",
+        "reference":"https://huggingface.co/wanglab/MedSAM2"},
+    "medical_sam2_prompted_ct": {"modality":"CT", "enabled":True, "licensed":True,
+        "prompt":"points_or_box", "status":"validated_research",
+        "clinical_tag_ids":["lung_cancer","prostate_cancer","bladder_cancer","head_neck_cancer","breast_cancer","liver_cancer","pancreatic_cancer","kidney_cancer","colorectal_cancer","cervical_cancer","lymphoma","spine_tumors","sarcoma_soft_tissue","whole_body_metastatic"],
+        "structures":"One point- or box-prompted 3-D CT object",
+        "description":"ImprintLab Medical-SAM2 prompt-propagation checkpoint. Research use only; technical fixture accuracy was substantially below the WangLab CT-lesion checkpoint.",
+        "reference":"https://github.com/ImprintLab/Medical-SAM2"},
+    "voxtell_v1_1_text_prompted": {"modality":"CT", "modalities":["CT","MR","PT"],
+        "enabled":True, "licensed":True, "prompt":"text", "status":"validated",
+        "clinical_tag_ids":["lung_cancer","prostate_cancer","bladder_cancer","glioblastoma_glioma","brain_metastases","head_neck_cancer","breast_cancer","liver_cancer","pancreatic_cancer","kidney_cancer","colorectal_cancer","cervical_cancer","lymphoma","spine_tumors","neuroendocrine_tumors","sarcoma_soft_tissue","whole_body_metastatic"],
+        "structures":"One free-text-selected 3-D anatomical structure, tumour or lesion",
+        "description":"Official VoxTell v1.1 free-text 3-D segmentation model for CT, MRI and PET. The prompt ‘spleen’ passed H100 inference, direct source-grid RTSTRUCT conversion and per-ROI physical-geometry validation on the public MSD fixture.",
+        "reference":"https://huggingface.co/mrokuss/VoxTell"},
+    "vista3d_prompted_ct": {"modality":"CT", "enabled":True, "licensed":True,
+        "prompt":"points", "status":"validated",
+        "clinical_tag_ids":["lung_cancer","prostate_cancer","bladder_cancer","head_neck_cancer","breast_cancer","liver_cancer","pancreatic_cancer","kidney_cancer","colorectal_cancer","cervical_cancer","lymphoma","spine_tumors","sarcoma_soft_tissue","whole_body_metastatic"],
+        "structures":"One point-prompted 3-D organ, tumour, lesion or other object",
+        "description":"Official NV-Segment-CT/VISTA3D point-prompted model. It passed H100 inference, source-grid RTSTRUCT conversion and strict orientation acceptance on the public MSD spleen CT fixture.",
+        "reference":"https://huggingface.co/nvidia/NV-Segment-CT"},
+    "nninteractive_v1_prompted": {"modality":"CT", "modalities":["CT","MR","PT"], "licensed":True,
+        "enabled":True, "prompt":"points_or_box", "status":"validated",
+        "clinical_tag_ids":["lung_cancer","prostate_cancer","bladder_cancer","glioblastoma_glioma","brain_metastases","head_neck_cancer","breast_cancer","liver_cancer","pancreatic_cancer","kidney_cancer","colorectal_cancer","cervical_cancer","lymphoma","spine_tumors","neuroendocrine_tumors","sarcoma_soft_tissue","whole_body_metastatic"],
+        "structures":"One prompt-selected 3-D organ, tumour, lymph node or other object",
+        "description":"Official nnInteractive v1.0 class-agnostic model using positive/negative points or a 2-D box. The CC BY-NC-SA 4.0 checkpoint passed H100 inference, source-grid RTSTRUCT conversion and strict orientation acceptance.",
+        "reference":"https://github.com/MIC-DKFZ/nnInteractive"},
+    "hippunfold_adni_t1_subfields_mr": {"modality":"MR", "enabled":True,
+        "status":"validated",
+        "clinical_tag_ids":["glioblastoma_glioma","brain_metastases"],
+        "structures":"Bilateral hippocampal subfields, dentate gyrus, stratum radiatum/lacunosum/moleculare and cyst labels",
+        "description":"HippUnfold whole-brain T1 workflow using the released five-fold ADNI checkpoint. All five folds produced 16 bilateral subfield labels on the public ds002168 fixture; direct source-grid RTSTRUCT conversion matched every ROI physical bounding box within 0.001 mm.",
+        "reference":"https://zenodo.org/records/15297857"},
+    "hippunfold_maguire_t2_subfields_mr": {"modality":"MR", "enabled":True,
+        "status":"validated",
+        "clinical_tag_ids":["glioblastoma_glioma","brain_metastases"],
+        "structures":"Bilateral hippocampal subfields, dentate gyrus, stratum radiatum/lacunosum/moleculare and cyst labels",
+        "description":"HippUnfold T2 workflow using the released five-fold Maguire nnU-Net v2 checkpoint. All five folds completed on a public whole-field OpenNeuro T2 scan; 15 non-empty bilateral subfield labels were exported to RTSTRUCT with source-grid geometry matching within 0.0002 mm. Limited-field T2 scans may still require a registered T1 series.",
+        "reference":"https://zenodo.org/records/18432751"},
+    "cerebrum7t_t1_mr": {"modality":"MR", "enabled":False, "status":"missing_voxelwise_training_normalization",
+        "structures":"Gray matter, basal ganglia, white matter, ventricles, cerebellum and brainstem",
+        "description":"The official source and 14.9 MB trained HDF5 model are installed. Inference requires 256x352x224 7T T1 MRI plus voxelwise training-cohort mean and standard-deviation volumes named in the release metadata; those normalization volumes are not included in the repository or model release, so substituting scalar normalization would not reproduce the model.",
+        "reference":"https://github.com/rockNroll87q/cerebrum7t"},
+    "deepbrainseg_brats_four_sequence_mr": {"modality":"MR", "enabled":False, "status":"requires_four_registered_mr_series",
+        "structures":"Whole tumor, tumor core and active/enhancing tumor constituents",
+        "description":"The corrected official source repository, all four release checkpoints and BraTS fixtures are installed; all checkpoint state dictionaries load in the current CUDA runtime. The model requires co-registered T1, post-contrast T1, T2 and FLAIR volumes plus brain masking, while the portal currently selects one DICOM series.",
+        "reference":"https://github.com/koriavinash1/DeepBrainSeg"},
+    "hecktor2020_petct_gtvt": {"modality":"PT", "requires_ct":True, "enabled":False,
+        "status":"requires_patient_specific_headneck_bbox",
+        "clinical_tag_ids":["head_neck_cancer"],
+        "structures":"Combined head-and-neck gross tumor volume (GTVt) foreground within the supplied 144 mm challenge bounding box",
+        "description":"The official source and all eight PET/CT ensemble checkpoints are installed and load strictly. Published inference requires registered PET and CT plus a patient-specific 144x144x144 mm physical bounding box supplied separately by HECKTOR. The challenge dataset and bounding boxes are currently access-restricted, and inferring an arbitrary crop would violate the model contract.",
+        "reference":"https://github.com/iantsen/hecktor"},
+    "totalsegmentator2d_projection_ct": {"modality":"CT", "enabled":False,
+        "status":"projection_only_no_volumetric_rtstruct",
+        "clinical_tag_ids":["lung_cancer","prostate_cancer","bladder_cancer","head_neck_cancer","breast_cancer","liver_cancer","pancreatic_cancer","kidney_cancer","colorectal_cancer","cervical_cancer","lymphoma","spine_tumors","sarcoma_soft_tissue","whole_body_metastatic"],
+        "structures":"117 anatomy classes on a coronal CT intensity projection",
+        "description":"Official TotalSegmentator2D v2 source and all five checkpoint groups (cardiac, muscles, organs, ribs and vertebrae) are installed. Offline composite H100 inference passed on the publisher fixture and produced all 117 segment channels. The result has one voxel across the anterior-posterior axis and encodes projected occupancy, so it cannot be reconstructed into patient-specific 3-D contours or a geometrically valid RTSTRUCT.",
+        "reference":"https://github.com/risc-mi/totalsegmentator2D"},
+    "brats_toolkit_legacy_ensemble_mr": {"modality":"MR", "enabled":False, "status":"requires_four_registered_preprocessed_mr_series",
+        "structures":"BraTS whole tumor, tumor core and enhancing tumor candidate segmentations from eight legacy algorithms",
+        "description":"The official BraTS Toolkit source and its eight downloadable legacy algorithm images are preserved on NFS. Each algorithm expects skull-stripped, co-registered FLAIR, T1, post-contrast T1 and T2 NIfTI volumes in SRI-24 space; the portal currently selects one DICOM series and therefore cannot satisfy or safely reconstruct this input contract.",
+        "reference":"https://github.com/BrainLesion/BraTS-Toolkit"},
+    "tractseg_dwi_peaks": {"modality":"MR", "enabled":False, "status":"requires_diffusion_peaks_or_dwi_gradients",
+        "structures":"72 white-matter tract bundle masks",
+        "description":"All nine official TractSeg 2.10 pretrained weight sets and source are installed and the released 9-channel peaks fixture passed all-72-bundle inference. The portal currently selects one scalar 3D DICOM series and cannot safely supply a 4D CSD/bedpostX peaks volume or raw DWI with matched b-values/b-vectors.",
+        "reference":"https://github.com/MIC-DKFZ/TractSeg"},
     "sct_tumor_edema_cavity_t1_t2": {"modality":"MR", "enabled":False, "status":"requires_registered_t1_t2_spine_mr",
         "structures":"Spinal cord tumor, edema and cavity",
         "description":"The official SCT 7.3 source and checkpoint are installed. This task requires separate co-registered T1- and T2-weighted spine-MR volumes in a fixed two-channel contract; the current portal selects one DICOM series.",
@@ -420,14 +575,15 @@ IMAGE_MODALITIES = {"CT", "MR", "PT"}
 CLINICAL_TAGS = json.loads((Path(__file__).parent / "catalog/clinical-tags.json").read_text())
 ORIENTATION_VALIDATION = Path(os.environ.get(
     "RTSEG_ORIENTATION_VALIDATION",
-    "/models/orientation-validation"))
+    str(Path(os.environ.get("RTSEG_MODEL_ROOT", "/models")) / "orientation-validation")))
 
 def clinical_tags(item: dict) -> list[dict[str, str]]:
     """Return curated disease-site discovery tags; tags describe usefulness, not model indication."""
     searchable = " ".join(str(item.get(key, "")) for key in ("name", "description", "structures")).lower()
+    explicit = set(item.get("clinical_tag_ids", []))
     return [{"id": tag_id, "label": rule["label"]}
             for tag_id, rule in CLINICAL_TAGS.items()
-            if any(term.lower() in searchable for term in rule["terms"])]
+            if tag_id in explicit or any(term.lower() in searchable for term in rule["terms"])]
 
 def task_modality(name: str) -> str:
     # TotalSegmentator currently has CT and MR task families. PET-capable
@@ -440,27 +596,66 @@ HTML = r'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport
 <style>.site-tag{display:inline-block;border-radius:999px;padding:2px 7px;margin:4px 3px 0 0;background:#eef2ff;color:#384aa3;font-size:.7rem}.model-filter{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0}.model-filter select,.model-filter input{padding:9px;border:1px solid #b9c6d6;border-radius:7px;background:white;min-width:230px}</style>
 <h1>DICOM RT Segmentation</h1><p class="sub">Local or remote GPU inference · validated RTSTRUCT output</p>
 <div class="warn"><b>Research use only.</b> TotalSegmentator is not a medical device. Review every contour before clinical use. Uploaded studies may contain PHI and are deleted automatically after 24 hours.</div>
-<div class="card"><h2>1. Upload and inspect locally</h2><form id="uploadForm"><div class="drop">Select DICOM files or ZIP archives. Nothing is sent to the GPU worker during inspection.<br><input id="files" name="files" type="file" multiple accept=".dcm,.zip,application/dicom,application/zip" required></div><p><button id="inspect">Inspect upload</button></p></form><div id="assessment"></div></div>
+<div class="card"><h2>1. Upload and inspect locally</h2><form id="uploadForm"><div class="drop" id="dropZone"><b>Drag DICOM files, a DICOM folder or ZIP archives here</b>, or choose them below. Files without a .dcm extension are fine. Nothing is sent to the GPU worker during inspection.<br><br><label>Files or ZIP: <input id="files" type="file" multiple></label> &nbsp; <label>Folder: <input id="folder" type="file" webkitdirectory multiple></label><div id="selection" class="sub" style="margin-top:8px">No files selected.</div></div><p><button id="inspect">Inspect upload</button></p><div id="uploadProgress" hidden><progress id="uploadBar" max="100" value="0" style="width:100%;height:18px"></progress><div id="uploadText" class="sub"></div></div></form><div id="assessment"></div></div>
 <div id="clinicalTools" class="model-filter" hidden><label>Useful for tumor site <select id="clinicalFilter"><option value="">All tumor sites</option></select></label><label>Find model <input id="modelSearch" type="search" placeholder="Name, output, or tag"></label><small>Tags indicate potential planning usefulness, not that a model segments the tumor.</small></div>
-<form id="modelForm" class="card" hidden><h2>2. Select one detected series</h2><div id="series"></div><h2>3. Select compatible models</h2><p><button type="button" id="all">Select all available for modality</button> <button type="button" id="none">Clear</button></p><div id="tasks" class="tasks">Loading model catalog…</div><div id="promptPanel" class="card" hidden><h3>Interactive prompt</h3><div id="promptGuidance" class="prompt-help"></div><p>Choose a slice and prompt type, then click the image. The portal builds <code>[column, row, slice]</code> coordinates automatically; you normally do not need to edit the JSON. A box is made with two clicks on the same slice.</p><div><input id="promptSlice" type="range" min="0" max="0" value="0" style="width:75%"> <span id="promptSliceLabel">slice 0</span></div><p><select id="promptMode"><option value="positive">Positive point (inside target)</option><option value="negative">Negative point (exclude area)</option><option value="box">Box corners</option></select> <button type="button" id="clearPrompt">Clear prompt</button></p><img id="promptImage" alt="Selected DICOM slice" style="max-width:512px;width:100%;cursor:crosshair;border:1px solid #8392a8"><details><summary>Advanced: inspect or edit prompt JSON</summary><label>Prompt JSON<br><textarea name="prompt_json" id="promptJson" rows="6" style="width:100%"></textarea></label><pre>{"positive_points":[[256,240,84]],"negative_points":[[310,240,84]],"box":null,"text":"lymph node"}</pre></details></div><p id="modelNote"><small><code>total</code> is selected for CT and <code>total_mr</code> for MR. PET1 ISRT tasks require a CT series in the same Study and Frame of Reference; it is paired automatically and unmatched PET is rejected before transfer. Disabled entries remain visible with their exact validation or upstream-blocker status.</small></p><button id="submit">Queue selected series</button></form><div class="card"><h2>Jobs</h2><div id="jobs">No jobs submitted in this browser.</div></div>
+<form id="modelForm" class="card" hidden><h2>2. Select one detected series</h2><div id="series"></div><h2>3. Select compatible models</h2><p><button type="button" id="all">Select all available for modality</button> <button type="button" id="none">Clear</button></p><div id="tasks" class="tasks">Loading model catalog…</div><div id="promptPanel" class="card" hidden><h3>Interactive prompt</h3><div id="promptGuidance" class="prompt-help"></div><p>Choose a slice and prompt type, then click the image. The portal builds <code>[column, row, slice]</code> coordinates automatically; you normally do not need to edit the JSON. A box is made with two clicks on the same slice.</p><div><input id="promptSlice" type="range" min="0" max="0" value="0" style="width:75%"> <span id="promptSliceLabel">slice 0</span></div><p><select id="promptMode"><option value="positive">Positive point (inside target)</option><option value="negative">Negative point (exclude area)</option><option value="box">Box corners</option></select> <button type="button" id="clearPrompt">Clear prompt</button></p><img id="promptImage" alt="Selected DICOM slice" style="max-width:512px;width:100%;cursor:crosshair;border:1px solid #8392a8"><details><summary>Advanced: inspect or edit prompt JSON</summary><label>Prompt JSON<br><textarea name="prompt_json" id="promptJson" rows="6" style="width:100%"></textarea></label><pre>{"positive_points":[[256,240,84]],"negative_points":[[310,240,84]],"box":null,"text":"lymph node"}</pre></details></div><p id="modelNote"><small><code>total</code> is selected for CT and <code>total_mr</code> for MR. PET1 ISRT tasks require a CT series in the same Study and Frame of Reference; it is paired automatically and unmatched PET is rejected before transfer. Disabled entries remain visible with their exact validation or upstream-blocker status.</small></p><p id="postprocessPanel" hidden><label><input id="prostatePostprocess" type="checkbox" name="postprocess" value="prostate_sbrt_crop" disabled> Crop CT + RTSTRUCT to prostate ±15 cm (prostate SBRT)</label><br><small>Optional post-processing in local worker mode. The original RTSTRUCT is also retained.</small></p><button id="submit">Queue selected series</button></form><div class="card"><h2>Tools · Cropping for prostate SBRT</h2><p>Crop CT + RTSTRUCT to 15 cm above and below all structures named PTV* or CTV* (subtraction helpers such as 'Bowel - PTV' are ignored), head–foot only. Outputs a new CT series unless original CT UIDs are kept. No segmentation or GPU is needed.</p><form id="cropForm"><div class="drop" id="cropDropZone"><b>Drag CT + RTSTRUCT files, a folder or ZIP archives here</b><br><label>Files or ZIP: <input id="cropFiles" type="file" multiple></label> <label>Folder: <input id="cropFolder" type="file" webkitdirectory multiple></label><div id="cropSelection" class="sub">No files selected.</div></div><p><label>Margin in cm <input id="cropMargin" type="number" min="0" step="any" value="15" required></label> <label><input id="cropKeepUids" type="checkbox"> Keep original CT UIDs</label></p><p><button id="cropSubmit">Crop CT + RTSTRUCT</button></p><div id="cropProgress" hidden><progress id="cropBar" max="100" value="0" style="width:100%;height:18px"></progress><div id="cropText" class="sub" role="status"></div></div></form></div><div class="card"><h2>Jobs</h2><div id="jobs">No jobs submitted in this browser.</div></div>
 <script>
 const taskbox=document.querySelector('#tasks'), jobsEl=document.querySelector('#jobs'); let ids=JSON.parse(localStorage.getItem('dicomJobs')||'[]'), uploadId=null,prompt={positive_points:[],negative_points:[],box:null,text:'lymph node'},boxCorner=null;
 function writePrompt(){document.querySelector('#promptJson').value=JSON.stringify(prompt)}
 function loadPromptSlice(){let s=document.querySelector('[name=series_key]:checked'),i=+document.querySelector('#promptSlice').value;if(!s||!uploadId)return;document.querySelector('#promptSliceLabel').textContent=`slice ${i+1}/${s.dataset.slices}`;document.querySelector('#promptImage').src=`/api/uploads/${uploadId}/preview?series_key=${encodeURIComponent(s.value)}&index=${i}&_=${Date.now()}`}
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function refreshPrompt(){let selected=[...document.querySelectorAll('[name=models]:checked')],prompted=selected.filter(x=>x.dataset.prompt),show=prompted.length>0;document.querySelector('#promptPanel').hidden=!show;if(show){let names=prompted.map(x=>x.value),notes=[];if(names.includes('pam_prompted'))notes.push('<b>PAM:</b> place one positive point inside the target, or draw a tight two-corner box. It propagates that seed through the 3D volume.');if(names.includes('sat3d_prompted'))notes.push('<b>SAT3D:</b> requires at least one positive point inside the tumour. Add negative points in nearby structures that must be excluded.');if(names.includes('sam_med2d_prompted'))notes.push('<b>SAM-Med2D:</b> use points or a box on every slice you want contoured; it does not propagate to unprompted slices.');document.querySelector('#promptGuidance').innerHTML=notes.join('<br><br>')+'<br><br><small><b>Examples:</b> positive point <code>[256,240,84]</code>; positive plus exclusion point <code>[310,240,84]</code>; box corners <code>[[210,190,84],[330,300,84]]</code>.</small>';loadPromptSlice()}}
+function refreshPrompt(){refreshPostprocess();let selected=[...document.querySelectorAll('[name=models]:checked')],prompted=selected.filter(x=>x.dataset.prompt),show=prompted.length>0;document.querySelector('#promptPanel').hidden=!show;if(show){let names=prompted.map(x=>x.value),notes=[];if(names.includes('pam_prompted'))notes.push('<b>PAM:</b> place one positive point inside the target, or draw a tight two-corner box. It propagates that seed through the 3D volume.');if(names.includes('sat3d_prompted'))notes.push('<b>SAT3D:</b> requires at least one positive point inside the tumour. Add negative points in nearby structures that must be excluded.');if(names.includes('sam_med2d_prompted'))notes.push('<b>SAM-Med2D:</b> use points or a box on every slice you want contoured; it does not propagate to unprompted slices.');if(names.includes('medsam_vit_b_box_2d'))notes.push('<b>MedSAM:</b> draw a tight box around the object on one slice. This original ViT-B release segments only that slice and does not propagate.');if(names.includes('medical_sam3_3d_prompted'))notes.push('<b>Medical-SAM3:</b> draw a tight box on one seed slice and set <code>text</code> to the medical concept (for example <code>spleen</code> or <code>lung lesions</code>). It predicts the publisher-defined eight-slice window.');if(names.includes('sam_med3d_turbo_prompted'))notes.push('<b>SAM-Med3D Turbo:</b> place a positive point well inside the desired 3-D object; optional negative points suppress adjacent anatomy. A box is interpreted as its 3-D centre point.');if(names.includes('medsam2_ct_lesion_prompted'))notes.push('<b>MedSAM2:</b> place positive/negative points or draw a tight 2-D box on one axial lesion slice. The CT-lesion checkpoint propagates that prompt in both slice directions.');if(names.includes('medical_sam2_prompted_ct'))notes.push('<b>Medical-SAM2:</b> place points or a tight 2-D box on one axial object slice. This distinct ImprintLab release propagates through the volume.');if(names.includes('nninteractive_v1_prompted'))notes.push('<b>nnInteractive:</b> place a positive point inside the desired 3-D object, optionally add exclusion points, or draw a tight 2-D box on one slice.');if(names.includes('vista3d_prompted_ct'))notes.push('<b>VISTA3D:</b> place at least one positive point inside the desired CT object; optional negative points suppress nearby anatomy.');if(names.includes('segvol_prompted_ct'))notes.push('<b>SegVol:</b> provide an anatomy/lesion text description, positive and optional negative points, or a 3-D box. Text and spatial prompts may be combined.');if(names.includes('voxtell_v1_1_text_prompted'))notes.push('<b>VoxTell:</b> edit the advanced prompt JSON and set <code>text</code> to one anatomical structure, tumour, lesion or clinical description. Points and boxes are ignored.');document.querySelector('#promptGuidance').innerHTML=notes.join('<br><br>')+'<br><br><small><b>Examples:</b> positive point <code>[256,240,84]</code>; box corners <code>[[210,190,84],[330,300,84]]</code>; text <code>"spleen"</code>.</small>';loadPromptSlice()}}
+function refreshPostprocess(){let selected=!!document.querySelector('[name=models][value="total"]:checked'),box=document.querySelector('#prostatePostprocess');document.querySelector('#postprocessPanel').hidden=!selected;box.disabled=!selected;if(!selected)box.checked=false}
 function isMrTask(n){return n.endsWith('_mr')||n.includes('_mr_')||n==='brain_aneurysm'} function applyModality(reset=true){let chosen=document.querySelector('[name=series_key]:checked');if(!chosen)return;let modality=chosen.dataset.modality;document.querySelectorAll('[name=models]').forEach(x=>{let compatible=x.dataset.modalities.split(',').includes(modality);x.disabled=!compatible||x.dataset.enabled!=='true';if(reset||x.disabled)x.checked=false});let d=document.querySelector(`[name=models][value="${modality==='MR'?'total_mr':modality==='CT'?'total':'__none__'}"]`);if(reset&&d&&!d.disabled)d.checked=true;document.querySelector('#submit').disabled=!document.querySelector('[name=models]:not(:disabled)');refreshPrompt()}
-function category(t){if(t.prompt)return 'Interactive prompted models';if(t.enabled===false)return 'Unavailable / pending models';if(t.name.startsWith('gouhfi_'))return 'GOUHFI — brain MRI';if(t.name.startsWith('sct_'))return 'Spinal Cord Toolbox';if(t.name.startsWith('cads_open_'))return 'CADS — open whole-body CT';if(t.name.startsWith('universal_model_'))return 'UniversalModel — organs and tumours';if(t.name.startsWith('pycad_'))return 'PYCAD Model Zoo';if(t.name.startsWith('isrt_'))return 'Involved-site radiotherapy (CTV)';if(t.name.startsWith('moose_'))return 'MOOSE — clinical CT';if(t.name.startsWith('mrannotator_')||['mrsegmentator','mrsegmentator_body_comp','mrisegmentator','vibesegmentator'].includes(t.name))return 'Packaged broad MRI models';if(t.name==='totalspineseg')return 'Spine models';if(t.name.startsWith('lungmask_'))return 'Lung and thoracic models';if(t.name.startsWith('nnunetv1_'))return 'Legacy nnU-Net v1 model zoo';if(t.name.startsWith('bamf_')||t.name==='cervix_cbct')return 'Packaged nnU-Net v2 models';if(/ln|lymph|gtv|tumou?r|hnlnl|raidionics|pediatric/.test(t.name+' '+(t.description||'')))return 'Lymph nodes and tumours';return `TotalSegmentator — ${t.modality}`}
+function category(t){if(t.prompt)return 'Interactive prompted models';if(t.enabled===false)return 'Unavailable / pending models';if(t.name.startsWith('gouhfi_'))return 'GOUHFI — brain MRI';if(t.name.startsWith('sct_'))return 'Spinal Cord Toolbox';if(t.name.startsWith('cads_open_'))return 'CADS — open whole-body CT';if(t.name.startsWith('universal_model_'))return 'UniversalModel — organs and tumours';if(t.name.startsWith('multitalent_'))return 'MultiTalent — multi-dataset CT';if(t.name.startsWith('pycad_'))return 'PYCAD Model Zoo';if(t.name.startsWith('isrt_'))return 'Involved-site radiotherapy (CTV)';if(t.name.startsWith('moose_'))return 'MOOSE — clinical CT';if(t.name.startsWith('mrannotator_')||['mrsegmentator','mrsegmentator_body_comp','mrisegmentator','vibesegmentator'].includes(t.name))return 'Packaged broad MRI models';if(t.name==='totalspineseg')return 'Spine models';if(t.name.startsWith('lungmask_'))return 'Lung and thoracic models';if(t.name.startsWith('nnunetv1_'))return 'Legacy nnU-Net v1 model zoo';if(t.name.startsWith('bamf_')||t.name==='cervix_cbct')return 'Packaged nnU-Net v2 models';if(/ln|lymph|gtv|tumou?r|hnlnl|raidionics|pediatric/.test(t.name+' '+(t.description||'')))return 'Lymph nodes and tumours';return `TotalSegmentator — ${t.modality}`}
+const baseCategory=category;category=t=>t.name.startsWith('fastsurfer')?'FastSurfer — brain MRI':baseCategory(t);
 let modelCatalog=[];
 function renderCatalog(){let selected=new Set([...document.querySelectorAll('[name=models]:checked')].map(x=>x.value)),site=document.querySelector('#clinicalFilter').value,q=document.querySelector('#modelSearch').value.trim().toLowerCase(),visible=modelCatalog.filter(t=>(!site||(t.clinical_tags||[]).some(x=>x.id===site))&&(!q||[t.name,t.description,t.structures,...(t.clinical_tags||[]).map(x=>x.label)].join(' ').toLowerCase().includes(q))),groups={};visible.forEach(t=>(groups[category(t)]??=[]).push(t));taskbox.innerHTML=visible.length?Object.entries(groups).map(([group,tasks])=>`<section class="task-group"><h3>${esc(group)} <small>(${tasks.length})</small></h3><table class="model-table"><thead><tr><th class="pick">Use</th><th class="name">Model</th><th class="output">Purpose / output</th><th class="status-col">Status</th></tr></thead><tbody>${tasks.map(t=>`<tr class="${t.enabled===false?'unavailable':''}"><td class="pick"><input aria-label="Select ${esc(t.name)}" type="checkbox" name="models" value="${esc(t.name)}" data-modality="${esc(t.modality)}" data-modalities="${esc((t.modalities||[t.modality]).join(','))}" data-enabled="${t.enabled!==false}" data-prompt="${esc(t.prompt||'')}" ${selected.has(t.name)?'checked':''}></td><td class="name"><b>${esc(t.name)}</b>${t.licensed?' 🔑':''}${t.reference?`<br><small><a href="${esc(t.reference)}" target="_blank" rel="noopener">Reference ↗</a></small>`:''}<br>${(t.clinical_tags||[]).map(x=>`<span class="site-tag">${esc(x.label)}</span>`).join('')}</td><td class="output"><small>${esc(t.description||'')}${t.structures?`<br><b>Output:</b> ${esc(t.structures)}`:''}</small></td><td><span class="badge ${t.enabled!==false?'ready':''}">${esc(t.enabled===false?(t.status||'unavailable'):(t.status||'available'))}</span></td></tr>`).join('')}</tbody></table></section>`).join(''):'<p style="padding:12px">No models match this tumor site and search.</p>';document.querySelectorAll('[name=models]').forEach(x=>x.onchange=refreshPrompt);applyModality(false)}
 fetch('/api/tasks').then(r=>r.json()).then(x=>{modelCatalog=x.tasks;let f=document.querySelector('#clinicalFilter'),tools=document.querySelector('#clinicalTools');f.innerHTML='<option value="">All tumor sites</option>'+x.clinical_tags.map(t=>`<option value="${esc(t.id)}">${esc(t.label)}</option>`).join('');document.querySelector('#modelForm h2:nth-of-type(2)').after(tools);tools.hidden=false;f.onchange=renderCatalog;document.querySelector('#modelSearch').oninput=renderCatalog;renderCatalog()});
 document.querySelector('#all').onclick=()=>{document.querySelectorAll('[name=models]:not(:disabled)').forEach(x=>x.checked=true);refreshPrompt()}; document.querySelector('#none').onclick=()=>{document.querySelectorAll('[name=models]').forEach(x=>x.checked=false);refreshPrompt()};
 document.querySelector('#promptSlice').oninput=loadPromptSlice;document.querySelector('#clearPrompt').onclick=()=>{prompt={positive_points:[],negative_points:[],box:null,text:'lymph node'};boxCorner=null;writePrompt()};document.querySelector('#promptImage').onclick=e=>{let s=document.querySelector('[name=series_key]:checked'),r=e.target.getBoundingClientRect(),p=[Math.max(0,Math.min(+s.dataset.cols-1,Math.round((e.clientX-r.left)/r.width*+s.dataset.cols))),Math.max(0,Math.min(+s.dataset.rows-1,Math.round((e.clientY-r.top)/r.height*+s.dataset.rows))),+document.querySelector('#promptSlice').value],m=document.querySelector('#promptMode').value;if(m==='box'){if(!boxCorner)boxCorner=p;else{if(boxCorner[2]!==p[2]){alert('Both box corners must be on the same slice');return}prompt.box=[boxCorner,p];boxCorner=null}}else prompt[m+'_points'].push(p);writePrompt()};writePrompt();
-document.querySelector('#uploadForm').onsubmit=async e=>{e.preventDefault();let b=document.querySelector('#inspect');b.disabled=true;b.textContent='Uploading and inspecting…';try{let r=await fetch('/api/uploads',{method:'POST',body:new FormData(e.target)}),x=await r.json();if(!r.ok)throw Error(x.detail||'Inspection failed');uploadId=x.upload_id;document.querySelector('#assessment').innerHTML=`<b>${x.series.length} valid series detected.</b> ${x.ignored} invalid or non-image file(s) will be ignored.`;document.querySelector('#series').innerHTML=x.series.map((s,i)=>`<label class="task" style="display:block"><input type="radio" name="series_key" value="${s.key}" data-modality="${s.modality}" data-slices="${s.slices}" data-rows="${s.rows}" data-cols="${s.columns}" ${i===0?'checked':''}> <b>${s.modality}</b> · ${s.slices} slices · ${s.rows}×${s.columns} · ${s.description||'No series description'} <small>${s.series_uid}</small></label>`).join('');document.querySelectorAll('[name=series_key]').forEach(x=>x.onchange=()=>{applyModality();let s=document.querySelector('[name=series_key]:checked');document.querySelector('#promptSlice').max=+s.dataset.slices-1;document.querySelector('#promptSlice').value=Math.floor(+s.dataset.slices/2);loadPromptSlice()});document.querySelector('#modelForm').hidden=false;let s=document.querySelector('[name=series_key]:checked');document.querySelector('#promptSlice').max=+s.dataset.slices-1;document.querySelector('#promptSlice').value=Math.floor(+s.dataset.slices/2);applyModality()}catch(x){alert(x.message)}finally{b.disabled=false;b.textContent='Inspect upload'}};
+const uploadForms={seg:{files:[],filesId:'files',folderId:'folder',selectionId:'selection',dropId:'dropZone',progressId:'uploadProgress',barId:'uploadBar',textId:'uploadText',afterUpload:'Upload complete. Inspecting DICOM series on the server…'},crop:{files:[],filesId:'cropFiles',folderId:'cropFolder',selectionId:'cropSelection',dropId:'cropDropZone',progressId:'cropProgress',barId:'cropBar',textId:'cropText',afterUpload:'Upload complete. Queueing CPU cropping…'}};
+function fmtMB(n){return (n/1048576).toFixed(1)+' MB'}
+function setSelection(files,key='seg'){let c=uploadForms[key];c.files=files.filter(f=>f);let total=c.files.reduce((a,f)=>a+f.size,0);document.getElementById(c.selectionId).textContent=c.files.length?`${c.files.length} file(s) selected · ${fmtMB(total)}`:'No files selected.'}
+async function entryFiles(entry){if(!entry)return[];if(entry.isFile)return new Promise(res=>entry.file(f=>res([f]),()=>res([])));if(entry.isDirectory){let reader=entry.createReader(),all=[];for(;;){let batch=await new Promise(res=>reader.readEntries(res,()=>res([])));if(!batch.length)break;for(const x of batch)all=all.concat(await entryFiles(x))}return all}return[]}
+['dragenter','dragover','drop'].forEach(t=>window.addEventListener(t,e=>e.preventDefault()));
+function bindUpload(key){let c=uploadForms[key];document.getElementById(c.filesId).onchange=e=>setSelection([...e.target.files],key);document.getElementById(c.folderId).onchange=e=>setSelection([...e.target.files],key);let z=document.getElementById(c.dropId);z.addEventListener('dragover',e=>{e.preventDefault();z.style.background='#eef5ff'});z.addEventListener('dragleave',()=>{z.style.background=''});z.addEventListener('drop',async e=>{e.preventDefault();z.style.background='';let items=[...(e.dataTransfer.items||[])],files=[],entries=items.map(i=>i.webkitGetAsEntry?i.webkitGetAsEntry():null).filter(Boolean),plain=[...(e.dataTransfer.files||[])];for(const en of entries)files=files.concat(await entryFiles(en));if(!files.length)files=plain;setSelection(files,key)})}bindUpload('seg');bindUpload('crop');
+function uploadStatus(text,error=false,key='seg'){let c=uploadForms[key];document.getElementById(c.progressId).hidden=false;let t=document.getElementById(c.textId);t.textContent=text;t.style.color=error?'#b42318':''}
+const uploadSleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function uploadRequest(url,options={},keepGoing=()=>true){
+  for(let attempt=0;;attempt++){
+    if(!keepGoing())throw Error('Upload stopped');
+    let res,body;
+    try{res=await fetch(url,options);let text=await res.text();try{body=JSON.parse(text)}catch(_){body={detail:text||('HTTP '+res.status)}}}
+    catch(error){if(attempt>=5)throw Error('Network error during upload. Check the connection and try again.');await uploadSleep(1000*2**attempt);continue}
+    if(res.status===409&&Number.isInteger(body.expected_offset))return {status:409,body};
+    if(res.ok)return {status:res.status,body};
+    if((res.status===408||res.status===429||(res.status>=500&&res.status<=504)||(res.status>=520&&res.status<=524))&&attempt<5){await uploadSleep(1000*2**attempt);continue}
+    throw Error(body.detail||('HTTP '+res.status));
+  }
+}
+async function uploadSession(key='seg'){
+  let c=uploadForms[key],files=[...c.files],bar=document.getElementById(c.barId),t0=Date.now(),ack=files.map(()=>0),total=files.reduce((n,f)=>n+f.size,0),next=0,stopped=false;
+  bar.value=0;uploadStatus('Starting upload…',false,key);
+  let created=(await uploadRequest('/api/upload-sessions',{method:'POST'})).body,limit=created.max_request_bytes;
+  if(!Number.isSafeInteger(limit)||limit<=0)throw Error('Invalid upload chunk limit');
+  let base='/api/upload-sessions/'+encodeURIComponent(created.session_id);
+  function progress(i,n){ack[i]=Math.max(ack[i],n);let loaded=ack.reduce((a,b)=>a+b,0),pct=total?Math.floor(100*loaded/total):100,secs=(Date.now()-t0)/1000,rate=loaded/Math.max(secs,0.001),left=rate>0?(total-loaded)/rate:0;bar.value=pct;uploadStatus(`Uploading ${fmtMB(loaded)} of ${fmtMB(total)} (${pct}%) · ${fmtMB(rate)}/s`+(pct<100?(left<60?` · about ${Math.max(1,Math.ceil(left))} s left`:` · about ${Math.ceil(left/60)} min left`):''),false,key)}
+  async function worker(){try{while(!stopped&&next<files.length){let i=next++,f=files[i],offset=0,resumes=0;do{let end=Math.min(f.size,offset+limit),res=await uploadRequest(`${base}/files/${i}?name=${encodeURIComponent(f.name)}&offset=${offset}&size=${f.size}`,{method:'PUT',body:f.slice(offset,end)},()=>!stopped),n=res.status===409?res.body.expected_offset:res.body.received;
+    if(!Number.isSafeInteger(n)||n<0||n>f.size)throw Error('Invalid server upload offset');
+    if(res.status===409){if(++resumes>5)throw Error('Upload offset could not be reconciled')}else{if(n!==end)throw Error('Incomplete chunk acknowledgement');resumes=0}
+    offset=n;if(!stopped)progress(i,n);
+  }while(!stopped&&offset<f.size)}}catch(error){stopped=true;throw error}}
+  await Promise.all(Array.from({length:Math.min(4,files.length)},()=>worker()));
+  bar.value=100;uploadStatus(c.afterUpload,false,key);return base;
+}
+async function assessSession(){let base=await uploadSession();await uploadRequest(base+'/assess',{method:'POST'});for(;;){await uploadSleep(1000);let x=(await uploadRequest(base)).body;if(x.status==='ready')return x.result;if(x.status==='failed')throw Error(x.error||'Inspection failed')}}
+document.querySelector('#cropForm').onsubmit=async e=>{e.preventDefault();let b=document.querySelector('#cropSubmit');b.disabled=true;try{if(!uploadForms.crop.files.length)throw Error('Select CT + RTSTRUCT files, a folder or ZIP first.');let margin=Number(document.querySelector('#cropMargin').value);if(!Number.isFinite(margin)||margin<0)throw Error('Margin must be finite and non-negative.');let base=await uploadSession('crop'),fd=new FormData();fd.append('margin_mm',String(margin*10));fd.append('keep_uids',String(document.querySelector('#cropKeepUids').checked));let x=(await uploadRequest(base+'/prostate-sbrt-crop',{method:'POST',body:fd})).body;ids.unshift(x.id);localStorage.setItem('dicomJobs',JSON.stringify(ids.slice(0,30)));uploadStatus('CPU crop queued. Follow progress and download in Jobs below.',false,'crop');poll()}catch(x){uploadStatus(x.message,true,'crop')}finally{b.disabled=false}};
+document.querySelector('#uploadForm').onsubmit=async e=>{e.preventDefault();let b=document.querySelector('#inspect');b.disabled=true;b.textContent='Uploading…';try{if(!uploadForms.seg.files.length)throw Error('Select DICOM files, a DICOM folder or a ZIP archive first.');let x=await assessSession();uploadId=x.upload_id;uploadStatus('Upload and inspection complete.');document.querySelector('#assessment').innerHTML=`<b>${x.series.length} valid series detected.</b> ${x.ignored} invalid or non-image file(s) will be ignored.`;document.querySelector('#series').innerHTML=x.series.map((s,i)=>`<label class="task" style="display:block"><input type="radio" name="series_key" value="${s.key}" data-modality="${s.modality}" data-slices="${s.slices}" data-rows="${s.rows}" data-cols="${s.columns}" ${i===0?'checked':''}> <b>${s.modality}</b> · ${s.slices} slices · ${s.rows}×${s.columns} · ${s.description||'No series description'} <small>${s.series_uid}</small></label>`).join('');document.querySelectorAll('[name=series_key]').forEach(x=>x.onchange=()=>{applyModality();let s=document.querySelector('[name=series_key]:checked');document.querySelector('#promptSlice').max=+s.dataset.slices-1;document.querySelector('#promptSlice').value=Math.floor(+s.dataset.slices/2);loadPromptSlice()});document.querySelector('#modelForm').hidden=false;let s=document.querySelector('[name=series_key]:checked');document.querySelector('#promptSlice').max=+s.dataset.slices-1;document.querySelector('#promptSlice').value=Math.floor(+s.dataset.slices/2);applyModality()}catch(x){uploadStatus(x.message,true);alert(x.message)}finally{b.disabled=false;b.textContent='Inspect upload'}};
 document.querySelector('#modelForm').onsubmit=async e=>{e.preventDefault();let b=document.querySelector('#submit');b.disabled=true;b.textContent='Queueing…';try{let fd=new FormData(e.target);let r=await fetch(`/api/uploads/${uploadId}/start`,{method:'POST',body:fd}),x=await r.json();if(!r.ok)throw Error(x.detail||'Could not start job');ids.unshift(x.id);localStorage.setItem('dicomJobs',JSON.stringify(ids.slice(0,30)));document.querySelector('#modelForm').hidden=true;document.querySelector('#assessment').textContent='Selected series queued; unselected files were deleted.';poll()}catch(x){alert(x.message)}finally{b.disabled=false;b.textContent='Queue selected series'}};
 function formatBytes(n){if(!Number.isFinite(n))return '';let u=['B','KiB','MiB','GiB'],i=0;while(n>=1024&&i<u.length-1){n/=1024;i++}return `${n.toFixed(i?1:0)} ${u[i]}`}
 async function retryJob(id){let r=await fetch(`/api/jobs/${encodeURIComponent(id)}/retry`,{method:'POST'}),x=await r.json();if(!r.ok)alert(x.detail||'Retry failed');poll()}
-async function poll(){try{let r=await fetch('/api/jobs'),x=await r.json();ids=x.jobs.map(j=>j.id)}catch(e){}let rows=[];for(const id of ids){try{let r=await fetch('/api/jobs/'+id),j=await r.json(),busy=['queued','transferring','processing','retrieving'].includes(j.status),pct=Number.isFinite(j.progress)?j.progress:null,elapsed=busy?Math.max(0,Math.round((Date.now()/1000-(j.updated||j.created||Date.now()/1000)))):0,bar=busy||pct!==null?`<div class="progress-track"><div class="progress-bar ${pct===null?'active':''}" style="${pct!==null?`width:${pct}%`:''}"></div></div>`:'',transfer=j.status==='transferring'&&j.total_bytes?`<small>${formatBytes(j.transferred_bytes||0)} / ${formatBytes(j.total_bytes)} · ${pct||0}%</small>`:busy?`<small>Active · status updated ${elapsed}s ago</small>`:'';rows.push(`<div class="job"><span class="status">${esc(j.status)}</span> · ${esc(id)}<br><small>${j.models.map(esc).join(', ')}</small>${j.detail?`<div>${esc(j.detail)}</div>`:''}${bar}${transfer}${j.error?`<div class="error">${esc(j.error)}</div>`:''}${j.status==='failed'?`<p><button type="button" onclick="retryJob('${esc(id)}')">Retry using retained input</button></p>`:''}${j.status==='complete'?`<p><a href="/api/jobs/${encodeURIComponent(id)}/download"><button>Download RTSTRUCT ZIP</button></a></p>`:''}</div>`)}catch(e){}}jobsEl.innerHTML=rows.join('')||'No server jobs yet.'}poll();setInterval(poll,4000);
+async function poll(){try{let r=await fetch('/api/jobs'),x=await r.json();ids=x.jobs.map(j=>j.id)}catch(e){}let rows=[];for(const id of ids){try{let r=await fetch('/api/jobs/'+id),j=await r.json(),busy=['queued','transferring','processing','retrieving'].includes(j.status),pct=Number.isFinite(j.progress)?j.progress:null,elapsed=busy?Math.max(0,Math.round((Date.now()/1000-(j.updated||j.created||Date.now()/1000)))):0,bar=busy||pct!==null?`<div class="progress-track"><div class="progress-bar ${pct===null?'active':''}" style="${pct!==null?`width:${pct}%`:''}"></div></div>`:'',transfer=j.status==='transferring'&&j.total_bytes?`<small>${formatBytes(j.transferred_bytes||0)} / ${formatBytes(j.total_bytes)} · ${pct||0}%</small>`:busy?`<small>Active · status updated ${elapsed}s ago</small>`:'';rows.push(`<div class="job"><span class="status">${esc(j.status)}</span> · ${esc(id)}<br><small>${j.models.map(esc).join(', ')}</small>${j.detail?`<div>${esc(j.detail)}</div>`:''}${bar}${transfer}${j.error?`<div class="error">${esc(j.error)}</div>`:''}${j.status==='failed'?`<p><button type="button" onclick="retryJob('${esc(id)}')">Retry using retained input</button></p>`:''}${j.status==='complete'?`<p><a href="/api/jobs/${encodeURIComponent(id)}/download"><button>${j.tool?'Download CT + RTSTRUCT ZIP':'Download RTSTRUCT ZIP'}</button></a></p>`:''}</div>`)}catch(e){}}jobsEl.innerHTML=rows.join('')||'No server jobs yet.'}poll();setInterval(poll,4000);
 </script></body></html>'''
 
 def metadata(job: Path) -> dict:
@@ -468,7 +663,14 @@ def metadata(job: Path) -> dict:
     except Exception: raise HTTPException(404, "Job not found")
 
 def save_metadata(job: Path, **changes):
-    data = metadata(job); data.update(changes); data["updated"] = time.time(); (job / "job.json").write_text(json.dumps(data, indent=2))
+    with metadata_lock:
+        target = job / "job.json"
+        data = json.loads(target.read_text())
+        data.update(changes)
+        data["updated"] = time.time()
+        incoming = job / "job.json.incoming"
+        incoming.write_text(json.dumps(data, indent=2))
+        incoming.replace(target)
 
 def transfer_to_worker(job: Path, source: Path, destination: str):
     """Copy one archive while publishing rsync's real byte progress."""
@@ -495,6 +697,72 @@ def transfer_to_worker(job: Path, source: Path, destination: str):
     save_metadata(job, progress=100, transferred_bytes=total,
                   detail="Transfer complete; preparing worker input")
 
+def proc_stat(pid: int):
+    """(state, parent pid, start time) of a process from /proc, or None once it is gone."""
+    try:
+        fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+        return fields[0], int(fields[1]), fields[19]
+    except (OSError, IndexError, ValueError):
+        return None
+
+def process_tree(root: int) -> dict[int, str]:
+    """Live processes descended from root, root included, mapped to their start times."""
+    children, starts = {}, {}
+    for entry in os.listdir("/proc"):
+        stat = proc_stat(int(entry)) if entry.isdigit() else None
+        if stat and stat[0] != "Z":
+            children.setdefault(stat[1], []).append(int(entry))
+            starts[int(entry)] = stat[2]
+    tree, frontier = {}, [root]
+    while frontier:
+        pid = frontier.pop()
+        if pid in starts and pid not in tree:
+            tree[pid] = starts[pid]
+            frontier.extend(children.get(pid, []))
+    return tree
+
+def stop_process_tree(process: subprocess.Popen):
+    """Stop a task runner and every process it started.
+
+    run_task.py answers SIGTERM by stopping its model's process group. The model runs in its own session, so killing
+    the runner alone would leave the model on the GPU. Whatever is still alive after the grace period is killed from
+    a snapshot of the tree taken before the signal; start times guard against reused pids."""
+    tree = process_tree(process.pid)
+    process.terminate()
+    try:
+        process.wait(timeout=TASK_STOP_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        pass
+    for pid, started in tree.items():
+        stat = proc_stat(pid)
+        if stat and stat[0] != "Z" and stat[2] == started:
+            for survivor in process_tree(pid):
+                try: os.kill(survivor, signal.SIGKILL)
+                except ProcessLookupError: pass
+    if process.poll() is None:
+        process.kill()
+    process.wait()
+
+# Runs on the worker: SIGTERM to the run_task.py process whose arguments match this job.
+REMOTE_STOP_SCRIPT = """
+import os, signal, sys
+for pid in filter(str.isdigit, os.listdir("/proc")):
+    try:
+        argv = open(f"/proc/{pid}/cmdline", "rb").read().split(b"\\0")[:-1]
+    except OSError:
+        continue
+    if [arg.decode(errors="replace") for arg in argv[1:]] == sys.argv[1:]:
+        os.kill(int(pid), signal.SIGTERM)
+"""
+
+def stop_remote_task(remote: str, task: str):
+    """Stop this job's run_task.py on the worker; killing the local ssh client would leave it running there."""
+    command = shlex.join([REMOTE_PYTHON, "-c", REMOTE_STOP_SCRIPT, REMOTE_RUNNER, remote, task])
+    try:
+        subprocess.run(["ssh", WORKER, command], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
 def run_worker_task(job: Path, remote: str, task: str, index: int, total: int):
     """Run inference while keeping the portal heartbeat visibly current."""
     detail = f"Running {task} ({index}/{total})"
@@ -508,9 +776,10 @@ def run_worker_task(job: Path, remote: str, task: str, index: int, total: int):
                                     REMOTE_PYTHON, REMOTE_RUNNER, remote, task],
                                    stdout=output, stderr=subprocess.STDOUT, text=True)
         while process.poll() is None:
-            if time.monotonic() - started > 12 * 3600:
-                process.kill()
-                raise subprocess.TimeoutExpired(process.args, 12 * 3600)
+            if time.monotonic() - started > TASK_TIME_LIMIT_SECONDS:
+                stop_remote_task(remote, task)
+                stop_process_tree(process)
+                raise subprocess.TimeoutExpired(process.args, TASK_TIME_LIMIT_SECONDS)
             save_metadata(job, status="processing", detail=detail, progress=None,
                           model_index=index, model_total=total)
             time.sleep(5)
@@ -524,15 +793,18 @@ def run_local_task(job: Path, task: str, index: int, total: int):
     started = time.monotonic()
     with log.open("w") as output:
         environment = os.environ.copy()
-        environment.setdefault("RTSEG_APP_ROOT", str(Path(LOCAL_RUNNER).parent))
-        environment.setdefault("RTSEG_MODEL_ROOT", "/models")
-        environment.setdefault("RTSEG_RUNTIME_ROOT", environment["RTSEG_MODEL_ROOT"])
-        process = subprocess.Popen([LOCAL_PYTHON, LOCAL_RUNNER, str(job), task], env=environment,
+        worker_local = WORKER_MODE == "auto"
+        runner = REMOTE_RUNNER if worker_local else LOCAL_RUNNER
+        python = REMOTE_PYTHON if worker_local else LOCAL_PYTHON
+        environment.setdefault("RTSEG_APP_ROOT", REMOTE_APP_ROOT if worker_local else str(Path(runner).parent))
+        environment.setdefault("RTSEG_MODEL_ROOT", REMOTE_MODEL_ROOT if worker_local else "/models")
+        environment.setdefault("RTSEG_RUNTIME_ROOT", REMOTE_RUNTIME_ROOT if worker_local else environment["RTSEG_MODEL_ROOT"])
+        process = subprocess.Popen([python, runner, str(job), task], env=environment,
                                    stdout=output, stderr=subprocess.STDOUT, text=True)
         while process.poll() is None:
-            if time.monotonic() - started > 12 * 3600:
-                process.kill()
-                raise subprocess.TimeoutExpired(process.args, 12 * 3600)
+            if time.monotonic() - started > TASK_TIME_LIMIT_SECONDS:
+                stop_process_tree(process)
+                raise subprocess.TimeoutExpired(process.args, TASK_TIME_LIMIT_SECONDS)
             save_metadata(job,status="processing",detail=detail,progress=None,
                           model_index=index,model_total=total)
             time.sleep(5)
@@ -540,15 +812,282 @@ def run_local_task(job: Path, task: str, index: int, total: int):
         raise RuntimeError(log.read_text(errors="replace")[-6000:] or
                            f"{task} exited with status {process.returncode}")
 
-def finalize_results(job: Path):
+def is_gpu_oom(exc: Exception) -> bool:
+    """Recognize GPU allocation failures without hiding unrelated model errors."""
+    message = str(exc).lower()
+    markers = ("cuda out of memory", "cuda error: out of memory", "cudnn_status_alloc_failed",
+               "cublas_status_alloc_failed", "hip out of memory", "gpu out of memory",
+               "failed to allocate cuda", "cuda_error_out_of_memory")
+    return any(marker in message for marker in markers)
+
+def gpu_memory_mb() -> tuple[int | None, int | None]:
+    """Return aggregate (free, total) GPU memory without making health depend on it."""
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.free,memory.total", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, check=True, timeout=10)
+        values = [tuple(int(value.strip()) for value in line.split(","))
+                  for line in result.stdout.splitlines() if line.strip()]
+        return sum(value[0] for value in values), sum(value[1] for value in values)
+    except Exception:
+        return None, None
+
+def release_worker_gpu(job: Path, task: str) -> None:
+    """Run an explicitly configured GPU-release hook and wait for free VRAM."""
+    if not GPU_RELEASE_COMMAND.strip():
+        raise RuntimeError("GPU release command is not configured")
+    save_metadata(job, status="processing",
+                  detail=f"Releasing local LLM GPU memory before retrying {task}",
+                  progress=None, gpu_release_attempted=True)
+    result = subprocess.run(shlex.split(GPU_RELEASE_COMMAND), capture_output=True,
+                            text=True, timeout=30)
+    combined = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
+    if result.returncode and "not running" not in combined.lower():
+        raise RuntimeError(f"Could not release worker GPU: {combined or result.returncode}")
+    deadline = time.monotonic() + GPU_RELEASE_TIMEOUT
+    last_free, total = gpu_memory_mb()
+    while time.monotonic() < deadline:
+        free, total = gpu_memory_mb()
+        if free is not None:
+            last_free = free
+            if total and free >= min(30 * 1024, int(total * 0.70)):
+                break
+        time.sleep(2)
+    save_metadata(job, detail=f"Retrying {task} on worker GPU after releasing local LLM",
+                  gpu_free_mb=last_free, gpu_total_mb=total)
+
+def colab_command(*args: str) -> list[str]:
+    return [COLAB_CLI, f"--auth={COLAB_AUTH}", *args]
+
+def run_colab_job(job: Path, tasks: list[str] | None = None, finalize: bool = True):
+    """Run a complete job in an ephemeral Colab GPU session."""
+    session = f"rtseg-{job.name[-12:]}"
+    source = Path(__file__).resolve().parent
+    app_archive = job / "colab-app.tar.gz"
+    job_archive = job / "colab-job.tar.gz"
+    result_archive = job / "colab-results.zip"
+    status_file = job / "colab-status.json"
+    save_metadata(job, status="transferring", detail=f"Provisioning Colab {COLAB_GPU} runtime", progress=0)
+    try:
+        subprocess.run(colab_command("new", "-s", session, "--gpu", COLAB_GPU), check=True, timeout=300)
+        with tarfile.open(app_archive, "w:gz") as archive:
+            for path in source.iterdir():
+                if path.name in {".git", ".venv", "data", "models", "runtimes", "__pycache__"}:
+                    continue
+                if path.is_file() or path.name in {"catalog", "labels"}:
+                    archive.add(path, arcname=f"app/{path.name}")
+        with tarfile.open(job_archive, "w:gz") as archive:
+            for name in ("input", "input_ct", "prompt.json"):
+                path = job / name
+                if path.exists(): archive.add(path, arcname=f"job/{name}")
+            job_data = metadata(job)
+            job_data["models"] = tasks or job_data["models"]
+            payload = json.dumps(job_data, indent=2).encode()
+            info = tarfile.TarInfo("job/job.json")
+            info.size = len(payload)
+            info.mtime = int(time.time())
+            archive.addfile(info, io.BytesIO(payload))
+        total = app_archive.stat().st_size + job_archive.stat().st_size
+        save_metadata(job, detail="Uploading selected series and worker code to Colab",
+                      total_bytes=total, transferred_bytes=0, progress=5)
+        subprocess.run(colab_command("upload", "-s", session, str(app_archive),
+                                     "/content/rtseg-app.tar.gz"), check=True, timeout=3600)
+        save_metadata(job, transferred_bytes=app_archive.stat().st_size, progress=15)
+        subprocess.run(colab_command("upload", "-s", session, str(job_archive),
+                                     "/content/rtseg-job.tar.gz"), check=True, timeout=3600)
+        save_metadata(job, status="processing", detail="Colab GPU segmentation in progress",
+                      transferred_bytes=total, progress=None)
+        log = job / "colab.log"
+        with log.open("w") as output:
+            subprocess.run(colab_command("exec", "-s", session, "-f",
+                                         str(source / "colab_worker.py"), "--timeout", str(12 * 3600)),
+                           check=True, timeout=12 * 3600 + 300, stdout=output,
+                           stderr=subprocess.STDOUT, text=True)
+        subprocess.run(colab_command("download", "-s", session,
+                                     "/content/rtseg-status.json", str(status_file)),
+                       check=True, timeout=300)
+        remote_status = json.loads(status_file.read_text())
+        if remote_status.get("status") != "complete":
+            raise RuntimeError(remote_status.get("error") or "Colab worker failed without an error message")
+        save_metadata(job, status="retrieving", detail="Retrieving RTSTRUCT results from Colab")
+        subprocess.run(colab_command("download", "-s", session,
+                                     "/content/rtseg-results.zip", str(result_archive)),
+                       check=True, timeout=3600)
+        with zipfile.ZipFile(result_archive) as archive:
+            for info in archive.infolist():
+                if info.is_dir() or Path(info.filename).name != info.filename or not info.filename.endswith(".dcm"):
+                    raise RuntimeError("Colab returned an unsafe or unexpected result archive")
+            archive.extractall(job / "output")
+        if finalize:
+            finalize_results(job)
+    finally:
+        app_archive.unlink(missing_ok=True)
+        job_archive.unlink(missing_ok=True)
+        result_archive.unlink(missing_ok=True)
+        status_file.unlink(missing_ok=True)
+        subprocess.run(colab_command("stop", "-s", session), timeout=60,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def run_colab_job_via_worker(job: Path, tasks: list[str] | None = None, finalize: bool = True):
+    """Stage assets from worker NFS so large models never touch portal storage."""
+    session = f"rtseg-{job.name[-12:]}"
+    remote = f"{REMOTE_BASE}/{job.name}"
+    archive = job / "selected-series.tar"
+    members = ["input", "job.json"]
+    if (job / "input_ct").is_dir(): members.append("input_ct")
+    if (job / "prompt.json").is_file(): members.append("prompt.json")
+    if tasks:
+        data = metadata(job); data["models"] = tasks
+        task_metadata = job / "colab-job.json"
+        task_metadata.write_text(json.dumps(data, indent=2))
+        members.remove("job.json"); members.append("colab-job.json")
+    try:
+        subprocess.run(["tar", "-C", str(job), "-cf", str(archive), *members], check=True, timeout=600)
+        subprocess.run(["ssh", WORKER, "mkdir", "-p", f"{remote}/input", f"{remote}/output"], check=True, timeout=30)
+        transfer_to_worker(job, archive, f"{remote}/selected-series.tar")
+        extract_command = f"tar -C {shlex.quote(remote)} -xf {shlex.quote(remote + '/selected-series.tar')}"
+        if tasks:
+            extract_command += f" && mv {shlex.quote(remote + '/colab-job.json')} {shlex.quote(remote + '/job.json')}"
+        subprocess.run(["ssh", WORKER, extract_command], check=True, timeout=600)
+        command = ["ssh", WORKER, REMOTE_PYTHON, str(Path(REMOTE_APP_ROOT) / "run_colab_remote.py"),
+                   remote, "--session", session, "--gpu", COLAB_GPU,
+                   "--app-root", REMOTE_APP_ROOT, "--model-root", REMOTE_MODEL_ROOT,
+                   "--runtime-root", REMOTE_RUNTIME_ROOT]
+        log = job / "colab.log"
+        with log.open("w") as output:
+            process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT, text=True)
+            while process.poll() is None:
+                save_metadata(job, status="processing", detail="Colab GPU segmentation orchestrated by model worker",
+                              progress=None)
+                time.sleep(10)
+        if process.returncode:
+            raise RuntimeError(log.read_text(errors="replace")[-12000:] or
+                               f"Remote Colab orchestrator exited with status {process.returncode}")
+        subprocess.run(["scp", "-q", f"{WORKER}:{remote}/output/*.dcm", str(job / "output") + "/"],
+                       check=True, timeout=3600)
+        if finalize: finalize_results(job)
+    finally:
+        archive.unlink(missing_ok=True)
+        (job / "colab-job.json").unlink(missing_ok=True)
+        subprocess.run(["ssh", WORKER, "rm", "-rf", remote], timeout=60,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def run_colab_job_on_nfs_worker(job: Path, tasks: list[str] | None = None, finalize: bool = True):
+    """Run the NFS-aware Colab orchestrator directly on the model worker."""
+    session = f"rtseg-{job.name[-12:]}"
+    if tasks:
+        data = metadata(job)
+        data["models"] = tasks
+        (job / "job.json").write_text(json.dumps(data, indent=2))
+    command = [REMOTE_PYTHON, str(Path(REMOTE_APP_ROOT) / "run_colab_remote.py"),
+               str(job), "--session", session, "--gpu", COLAB_GPU,
+               "--app-root", REMOTE_APP_ROOT, "--model-root", REMOTE_MODEL_ROOT,
+               "--runtime-root", REMOTE_RUNTIME_ROOT, "--colab", COLAB_CLI]
+    log = job / "colab-orchestrator.log"
+    progress_file = job / "colab-progress.json"
+    with log.open("w") as output:
+        process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT, text=True)
+        while process.poll() is None:
+            progress = None
+            detail = "Colab GPU segmentation orchestrated on model worker"
+            try:
+                staged = json.loads(progress_file.read_text())
+                progress = staged.get("progress")
+                detail = staged.get("detail", detail)
+            except Exception:
+                pass
+            save_metadata(job, status="processing", detail=detail, progress=progress,
+                          execution_backend="colab")
+            time.sleep(2)
+    if process.returncode:
+        raise RuntimeError(log.read_text(errors="replace")[-12000:] or
+                           f"Colab orchestrator exited with status {process.returncode}")
+    if finalize:
+        finalize_results(job)
+    progress_file.unlink(missing_ok=True)
+
+def colab_capable(task: str) -> bool:
+    """Colab has the portable TotalSegmentator runtime, not the NFS model bundle."""
+    return (task not in EXTERNAL_TASKS and task not in INFORMATIONAL_MODELS) or task in COLAB_EXTERNAL_TASKS
+
+EMPTY_PREDICTION_MARKERS = ("empty prediction: no RTSTRUCT created",
+                            "all supplied masks are empty: no RTSTRUCT created")
+
+def is_empty_prediction(exc: Exception) -> bool:
+    """True only for a model that ran to completion and segmented nothing in the series."""
+    message = str(exc)
+    return any(marker in message for marker in EMPTY_PREDICTION_MARKERS)
+
+def finalize_results(job: Path, empty=()):
     results = sorted((job / "output").glob("*.dcm"))
-    if not results:
+    empty = list(empty)
+    if not results and not empty:
         raise RuntimeError("Worker completed without producing an RTSTRUCT file")
     with zipfile.ZipFile(job/"rtstruct-results.zip","w",zipfile.ZIP_DEFLATED) as z:
-        for result in results: z.write(result,result.name)
+        nested = sorted(path for path in (job / "output").rglob("*")
+                        if path.is_file() and path.parent != job / "output")
+        for result in results + nested:
+            z.write(result, result.relative_to(job / "output").as_posix())
+        if empty:
+            z.writestr("NO_STRUCTURES_FOUND.txt",
+                       "These models ran to completion but found no structures in the selected series, "
+                       "so no RTSTRUCT was created for them:\n" + "".join(f"- {name}\n" for name in empty))
     shutil.rmtree(job/"input",ignore_errors=True)
     shutil.rmtree(job/"input_ct",ignore_errors=True)
-    save_metadata(job,status="complete",detail="RTSTRUCT files ready for download",progress=100)
+    if not results:
+        detail = f"No structures found by {', '.join(empty)}; no RTSTRUCT was created"
+    elif empty:
+        detail = f"RTSTRUCT files ready for download; no structures found by {', '.join(empty)}"
+    else:
+        detail = "RTSTRUCT files ready for download"
+    notes = metadata(job).get("postprocess_notes", [])
+    if notes: detail += "; " + "; ".join(notes)
+    save_metadata(job,status="complete",detail=detail,progress=100,no_structures_found=empty)
+
+def validate_postprocess(value: str, models: list[str]) -> list[str]:
+    if not value: return []
+    if value != "prostate_sbrt_crop": raise HTTPException(400, "Unknown postprocess value")
+    if "total" not in models: raise HTTPException(400, "prostate_sbrt_crop postprocessing requires the total model")
+    if WORKER_MODE != "local": raise HTTPException(400, "Prostate SBRT postprocessing is available only in local worker mode")
+    return [value]
+
+def note_prostate_not_cropped(job: Path, reason: str):
+    note = f"Prostate SBRT crop not performed: {reason}"
+    output = job / "output" / "prostate_sbrt_crop"; output.mkdir(parents=True, exist_ok=True)
+    (output / "NOT_CROPPED.txt").write_text(note + "\n")
+    save_metadata(job, postprocess_notes=metadata(job).get("postprocess_notes", []) + [note])
+
+def postprocess_prostate_crop(job: Path):
+    save_metadata(job, detail="Cropping total CT + RTSTRUCT to prostate ±15 cm", progress=None)
+    ct_files, _ = discover_dicom(job / "input")
+    try:
+        crop_ct_rtstruct(ct_files, [job / "output" / "total_RTSTRUCT.dcm"],
+                         job / "output" / "prostate_sbrt_crop", roi_mode="prostate",
+                         margin_mm=150, keep_uids=False)
+    except NoSelectedROIError as exc:
+        note_prostate_not_cropped(job, str(exc))
+
+def process_prostate_sbrt_crop(job: Path):
+    """CPU-only tool; deliberately independent of the segmentation queue lock."""
+    incoming = job / "rtstruct-results.zip.incoming"
+    try:
+        data = metadata(job)
+        if data.get("tool") != "prostate_sbrt_crop": raise ValueError("Unknown tool job")
+        save_metadata(job, status="processing", detail="Cropping CT + RTSTRUCT on CPU", progress=None)
+        ct_files, rt_files = discover_dicom(job / "input")
+        report = crop_ct_rtstruct(ct_files, rt_files, job / "output",
+                                  margin_mm=data.get("margin_mm", 150), keep_uids=data.get("keep_uids", False))
+        with zipfile.ZipFile(incoming, "w", zipfile.ZIP_DEFLATED) as archive:
+            for path in sorted((job / "output").rglob("*")):
+                if path.is_file(): archive.write(path, path.relative_to(job / "output").as_posix())
+        incoming.replace(job / "rtstruct-results.zip")
+        shutil.rmtree(job / "input", ignore_errors=True)
+        low, high = report["kept_z_range"]
+        detail = f"Prostate SBRT crop ready: {report['slices_kept']}/{report['slices_total']} slices, z {low:g} to {high:g} mm"
+        save_metadata(job, status="complete", detail=detail, progress=100, error=None)
+    except Exception as exc:
+        incoming.unlink(missing_ok=True)
+        save_metadata(job, status="failed", detail="Cropping failed", error=str(exc), progress=None)
 
 def safe_extract(archive: Path, destination: Path, budget: int = MAX_BYTES):
     with zipfile.ZipFile(archive) as z:
@@ -603,12 +1142,84 @@ def process(job: Path):
     with queue_lock:
         jid=job.name; remote=f"{REMOTE_BASE}/{jid}"
         try:
+            tasks_to_run = list(metadata(job)["models"])
+            if WORKER_MODE == "auto":
+                prior = metadata(job)
+                if prior.get("fallback_reason") == "gpu_oom":
+                    unsupported = [name for name in tasks_to_run if not colab_capable(name)]
+                    if unsupported:
+                        raise RuntimeError("Worker GPU previously ran out of memory, but these models are not "
+                                           f"validated for Colab: {', '.join(unsupported)}")
+                    save_metadata(job, status="transferring",
+                                  detail="Resuming Colab fallback after previously confirmed worker GPU OOM",
+                                  progress=0, execution_backend="colab")
+                    run_colab_job_on_nfs_worker(job, tasks=tasks_to_run, finalize=False)
+                    finalize_results(job)
+                    return
+                save_metadata(job, status="processing", detail="Starting segmentation on worker GPU",
+                              progress=None, execution_backend="local")
+                for index, task in enumerate(tasks_to_run, 1):
+                    before = set((job / "output").iterdir())
+                    try:
+                        run_local_task(job, task, index, len(tasks_to_run))
+                    except Exception as exc:
+                        for path in set((job / "output").iterdir()) - before:
+                            if path.is_file(): path.unlink(missing_ok=True)
+                            elif path.is_dir(): shutil.rmtree(path, ignore_errors=True)
+                        if not is_gpu_oom(exc):
+                            raise
+                        if GPU_RELEASE_COMMAND.strip():
+                            release_worker_gpu(job, task)
+                            try:
+                                run_local_task(job, task, index, len(tasks_to_run))
+                                continue
+                            except Exception as retry_exc:
+                                for path in set((job / "output").iterdir()) - before:
+                                    if path.is_file(): path.unlink(missing_ok=True)
+                                    elif path.is_dir(): shutil.rmtree(path, ignore_errors=True)
+                                if not is_gpu_oom(retry_exc):
+                                    raise
+                                exc = retry_exc
+                        remaining = tasks_to_run[index - 1:]
+                        unsupported = [name for name in remaining if not colab_capable(name)]
+                        if unsupported:
+                            raise RuntimeError("Worker GPU ran out of memory, but these remaining models are not "
+                                               f"validated for Colab: {', '.join(unsupported)}") from exc
+                        save_metadata(job, status="transferring",
+                                      detail=f"Worker GPU out of memory during {task}; escalating remaining models to Colab",
+                                      progress=0, execution_backend="colab", fallback_reason="gpu_oom")
+                        run_colab_job_on_nfs_worker(job, tasks=remaining, finalize=False)
+                        break
+                finalize_results(job)
+                return
             if WORKER_MODE == "local":
                 data=metadata(job)
-                save_metadata(job,status="processing",detail="Starting local GPU segmentation",progress=None)
+                save_metadata(job,status="processing",detail="Starting local GPU segmentation",progress=None,postprocess_notes=[])
+                empty=[]
                 for i,task in enumerate(data["models"],1):
-                    run_local_task(job, task, i, len(data["models"]))
-                finalize_results(job)
+                    try:
+                        run_local_task(job, task, i, len(data["models"]))
+                    except Exception as exc:
+                        if not is_empty_prediction(exc):
+                            raise
+                        empty.append(task)
+                        if task == "total" and "prostate_sbrt_crop" in data.get("postprocess", []):
+                            note_prostate_not_cropped(job, "total found no structures; no prostate ROI with contours")
+                    else:
+                        if task == "total" and "prostate_sbrt_crop" in data.get("postprocess", []):
+                            postprocess_prostate_crop(job)
+                finalize_results(job, empty)
+                return
+            if WORKER_MODE == "colab":
+                unsupported = [task for task in tasks_to_run if not colab_capable(task)]
+                if unsupported:
+                    raise RuntimeError(f"Models require the managed worker and cannot run in Colab: {', '.join(unsupported)}")
+                if COLAB_ORCHESTRATOR == "worker":
+                    run_colab_job_via_worker(job)
+                elif COLAB_ORCHESTRATOR == "nfs":
+                    run_colab_job_on_nfs_worker(job)
+                else:
+                    run_colab_job(job)
                 return
             save_metadata(job,status="transferring",detail="Preparing selected DICOM series",progress=0)
             subprocess.run(["ssh",WORKER,"mkdir","-p",f"{remote}/input",f"{remote}/output"],check=True,timeout=30)
@@ -620,72 +1231,132 @@ def process(job: Path):
             transfer_to_worker(job, archive, f"{remote}/selected-series.tar")
             archive.unlink(missing_ok=True)
             subprocess.run(["ssh",WORKER,f"tar -C {remote} -xf {remote}/selected-series.tar && rm -f {remote}/selected-series.tar"],check=True,timeout=600)
-            data=metadata(job); save_metadata(job,status="processing",detail="GPU segmentation in progress",progress=None)
-            for i,task in enumerate(data["models"],1):
-                run_worker_task(job, remote, task, i, len(data["models"]))
+            save_metadata(job,status="processing",detail="GPU segmentation in progress",progress=None)
+            for i,task in enumerate(tasks_to_run,1):
+                run_worker_task(job, remote, task, i, len(tasks_to_run))
             save_metadata(job,status="retrieving",detail="Retrieving RTSTRUCT results from GPU worker",progress=None)
             subprocess.run(["scp","-q",f"{WORKER}:{remote}/output/*.dcm",str(job/"output")+"/"],check=True,timeout=600)
             finalize_results(job)
             shutil.rmtree(job/"input",ignore_errors=True)
             subprocess.run(["ssh",WORKER,"rm","-rf",remote],timeout=30)
         except Exception as exc:
-            if WORKER_MODE == "ssh":
+            if WORKER_MODE == "ssh" or (WORKER_MODE == "colab" and COLAB_ORCHESTRATOR == "worker"):
                 subprocess.run(["ssh",WORKER,"rm","-rf",remote],timeout=30)
             save_metadata(job,status="failed",detail="Processing failed",error=str(exc))
 
 @app.get("/",response_class=HTMLResponse)
 def home(): return HTML
 
+def enabled_external_models():
+    """ENABLED_EXTERNAL_MODELS plus one model name per line in ENABLED_MODELS_FILE ('#' comments allowed)."""
+    names = set(ENABLED_EXTERNAL_MODELS)
+    try:
+        names |= {line.strip() for line in ENABLED_MODELS_FILE.read_text().splitlines()
+                  if line.strip() and not line.lstrip().startswith("#")}
+    except OSError:
+        pass
+    return names
+
+def enabled_models_mtime():
+    try: return ENABLED_MODELS_FILE.stat().st_mtime_ns
+    except OSError: return None
+
+catalog_build_lock = threading.Lock()
+catalog_flag_lock = threading.Lock()
+catalog_state = {"value": None, "built": 0.0, "enabled_mtime": None, "refreshing": False}
+
+def refresh_catalog():
+    mtime = enabled_models_mtime()
+    value = build_catalog()
+    catalog_state.update(value=value, built=time.time(), enabled_mtime=mtime)
+    return value
+
+def refresh_catalog_in_background():
+    with catalog_flag_lock:
+        if catalog_state["refreshing"]: return False
+        catalog_state["refreshing"] = True
+    def run():
+        try: refresh_catalog()
+        except Exception: pass
+        finally: catalog_state["refreshing"] = False
+    threading.Thread(target=run, daemon=True).start()
+    return True
+
 @app.get("/api/tasks")
 @app.get("/api/v1/models", tags=["automation"])
 def tasks():
+    """Serve the cached catalog. Building it runs model preflight across the model bundle, which can take minutes,
+    so requests never wait for a refresh once a catalog exists."""
+    if catalog_state["value"] is None:
+        with catalog_build_lock:
+            if catalog_state["value"] is None:
+                refresh_catalog()
+    elif (time.time() - catalog_state["built"] > CATALOG_TTL_SECONDS
+          or enabled_models_mtime() != catalog_state["enabled_mtime"]):
+        refresh_catalog_in_background()
+    return catalog_state["value"]
+
+def build_catalog():
     # Catalog is sourced from the installed worker package when available.
-    code="from totalsegmentator.map_to_binary import class_map,commercial_models; import json; print(json.dumps({'tasks':sorted(class_map),'licensed':list(commercial_models),'structures':{k:list(v.values()) if isinstance(v,dict) else list(v) for k,v in class_map.items()}}))"
+    enabled = enabled_external_models()
+    code="from totalsegmentator.map_to_binary import class_map,commercial_models; import json, importlib.util; C=__import__('totalsegmentator.map_tasks_config',fromlist=['TASK_CONFIGS']).TASK_CONFIGS if importlib.util.find_spec('totalsegmentator.map_tasks_config') else None; print(json.dumps({'tasks':sorted(t for t in class_map if C is None or t in C),'licensed':list(commercial_models),'structures':{k:list(v.values()) if isinstance(v,dict) else list(v) for k,v in class_map.items()}}))"
     try:
-        if WORKER_MODE == "local":
+        if WORKER_MODE in {"local", "auto"} or (WORKER_MODE == "colab" and COLAB_ORCHESTRATOR == "nfs"):
             cp=subprocess.run([LOCAL_PYTHON,"-c",code],capture_output=True,text=True,timeout=20,check=True)
-        else:
+        elif WORKER_MODE in {"ssh", "colab"}:
             command=f"{shlex.quote(REMOTE_PYTHON)} -c {shlex.quote(code)}"
             cp=subprocess.run(["ssh",WORKER,command],capture_output=True,text=True,timeout=20,check=True)
+        else:
+            raise RuntimeError("Colab runtimes are provisioned only while processing jobs")
         remote=json.loads(cp.stdout.strip().splitlines()[-1]); licensed=set(remote["licensed"])
         internal={"test","total_highres_test","total_v1","vertebrae_pp","vertebrae_pp_refined"}
         names=[n for n in remote["tasks"] if n not in internal and not n.endswith("_auxiliary")]
     except Exception: names=FALLBACK_TASKS; licensed=set()
     preflight = {}
     try:
-        if WORKER_MODE == "local":
+        if WORKER_MODE in {"local", "auto"} or (WORKER_MODE == "colab" and COLAB_ORCHESTRATOR == "nfs"):
             environment = os.environ.copy()
-            environment.setdefault("RTSEG_APP_ROOT", str(Path(LOCAL_RUNNER).parent))
-            environment.setdefault("RTSEG_MODEL_ROOT", "/models")
-            environment.setdefault("RTSEG_RUNTIME_ROOT", environment["RTSEG_MODEL_ROOT"])
-            cp = subprocess.run([LOCAL_PYTHON, str(Path(LOCAL_RUNNER).parent / "model_preflight.py")],
-                                env=environment, capture_output=True, text=True, timeout=20, check=True)
-        else:
+            app_root = REMOTE_APP_ROOT if COLAB_ORCHESTRATOR == "nfs" else str(Path(LOCAL_RUNNER).parent)
+            python = REMOTE_PYTHON if COLAB_ORCHESTRATOR == "nfs" else LOCAL_PYTHON
+            environment.setdefault("RTSEG_APP_ROOT", app_root)
+            environment.setdefault("RTSEG_MODEL_ROOT", REMOTE_MODEL_ROOT if COLAB_ORCHESTRATOR == "nfs" else "/models")
+            environment.setdefault("RTSEG_RUNTIME_ROOT", REMOTE_RUNTIME_ROOT if COLAB_ORCHESTRATOR == "nfs" else environment["RTSEG_MODEL_ROOT"])
+            cp = subprocess.run([python, str(Path(app_root) / "model_preflight.py")],
+                                env=environment, capture_output=True, text=True, timeout=PREFLIGHT_TIMEOUT_SECONDS, check=True)
+        elif WORKER_MODE in {"ssh", "colab"}:
             command = ["ssh", WORKER, "env", f"RTSEG_APP_ROOT={REMOTE_APP_ROOT}",
                        f"RTSEG_RUNTIME_ROOT={REMOTE_RUNTIME_ROOT}",
                        f"RTSEG_MODEL_ROOT={REMOTE_MODEL_ROOT}",
                        REMOTE_PYTHON,
                        str(Path(REMOTE_APP_ROOT) / "model_preflight.py")]
-            cp = subprocess.run(command, capture_output=True, text=True, timeout=20, check=True)
+            cp = subprocess.run(command, capture_output=True, text=True, timeout=PREFLIGHT_TIMEOUT_SECONDS, check=True)
+        else:
+            raise RuntimeError("No persistent Colab runtime for model preflight")
         preflight = json.loads(cp.stdout.strip().splitlines()[-1])
     except Exception:
         pass
     structure_map = remote.get("structures",{}) if 'remote' in locals() else {}
-    catalog=[{"name":n,"licensed":n in licensed,"modality":task_modality(n),"enabled":True,
+    catalog=[{"name":n,"licensed":n in licensed,"modality":task_modality(n),
+              "enabled":not (WORKER_MODE == "colab" and n in licensed),
+              "status":"license_not_configured_in_colab" if WORKER_MODE == "colab" and n in licensed else "available",
               "description":f"TotalSegmentator {task_modality(n)} segmentation task producing the structures listed below.",
               "structures":", ".join(structure_map.get(n,[])) or "Task-specific TotalSegmentator structures",
               "reference":"https://github.com/wasserth/TotalSegmentator"} for n in names]
     for name, details in EXTERNAL_TASKS.items():
         item={"name":name,"licensed":False,"enabled":True,**details}
-        if WORKER_MODE == "local" and name not in ENABLED_EXTERNAL_MODELS:
+        if (WORKER_MODE == "colab" and name not in COLAB_EXTERNAL_TASKS) or (WORKER_MODE == "local" and name not in enabled):
             item.update(enabled=False, status="model_bundle_required")
         check = preflight.get(name)
         if check and not check["ready"]:
-            item.update(enabled=False, status="dependencies_missing", missing=check["missing"])
+            item.update(enabled=False,
+                        status=item.get("blocked_status", "dependencies_missing"),
+                        missing=check["missing"])
         orientation_ready = (check.get("orientation_ready", False) if check is not None
                              else (ORIENTATION_VALIDATION / f"{name}.json").is_file())
         if not orientation_ready:
-            item.update(enabled=False, status="orientation_revalidation_pending")
+            item.update(enabled=False,
+                        status=item.get("blocked_status", "orientation_revalidation_pending"))
+        item.pop("blocked_status", None)
         if name.startswith("lnsegfm_"):
             item.update(structures="Visible/pathologic head-and-neck lymph-node candidate mask (not elective nodal levels)", reference="https://github.com/HiLab-git/LN-Seg-FM")
         elif name.startswith("isrt_"):
@@ -699,16 +1370,299 @@ def tasks():
         catalog.append(item)
     for name, details in INFORMATIONAL_MODELS.items():
         item={"name":name,"licensed":False,**details}
-        if WORKER_MODE == "local" and name not in ENABLED_EXTERNAL_MODELS:
+        if (WORKER_MODE == "colab" and name not in COLAB_EXTERNAL_TASKS) or (WORKER_MODE == "local" and name not in enabled):
             item.update(enabled=False, status="model_bundle_required")
         check = preflight.get(name)
         if check and not check["ready"]:
             item.update(enabled=False, status="dependencies_missing", missing=check["missing"])
+        orientation_ready = (check.get("orientation_ready", False) if check is not None
+                             else (ORIENTATION_VALIDATION / f"{name}.json").is_file())
+        if item.get("enabled", False) and not orientation_ready:
+            item.update(enabled=False, status="orientation_revalidation_pending")
         catalog.append(item)
     for item in catalog:
         item["clinical_tags"] = clinical_tags(item)
     return {"tasks":catalog, "clinical_tags":[{"id": key, "label": value["label"]}
                                                 for key, value in CLINICAL_TAGS.items()]}
+
+@app.post("/api/tools/prostate-sbrt-crop", status_code=202)
+@app.post("/api/v1/tools/prostate-sbrt-crop", status_code=202, tags=["automation"])
+async def create_prostate_sbrt_crop(files: list[UploadFile]=File(...), margin_mm: float=Form(150.0), keep_uids: bool=Form(False)):
+    if not np.isfinite(margin_mm) or margin_mm < 0:
+        raise HTTPException(400, "margin_mm must be finite and non-negative")
+    jid=time.strftime("%Y%m%d-%H%M%S-")+secrets.token_hex(4); job=BASE/jid; inp=job/"input"; inp.mkdir(parents=True)
+    (job / "output").mkdir()
+    total=0; expanded=0
+    try:
+        for upload in files:
+            name=Path(upload.filename or "upload").name; target=job/(secrets.token_hex(4)+"_"+name)
+            with target.open("wb") as dst:
+                while chunk:=await upload.read(4*1024**2):
+                    total+=len(chunk)
+                    if total>MAX_BYTES: raise ValueError("Upload exceeds configured 8 GiB limit")
+                    dst.write(chunk)
+            if zipfile.is_zipfile(target):
+                with zipfile.ZipFile(target) as archive:
+                    size=sum(i.file_size for i in archive.infolist() if not i.is_dir())
+                safe_extract(target, inp, MAX_BYTES-expanded); expanded+=size; target.unlink()
+            else:
+                expanded+=target.stat().st_size
+                if expanded>MAX_BYTES: raise ValueError("Expanded upload exceeds configured 8 GiB limit")
+                shutil.move(target, inp/(secrets.token_hex(4)+"_"+name))
+        (job/"job.json").write_text(json.dumps({"id":jid,"status":"queued","detail":"Prostate SBRT crop queued on CPU",
+            "models":["prostate_sbrt_crop"],"created":time.time(),"error":None,"tool":"prostate_sbrt_crop",
+            "margin_mm":margin_mm,"keep_uids":keep_uids},indent=2))
+    except Exception as exc:
+        shutil.rmtree(job,ignore_errors=True); raise HTTPException(400,str(exc))
+    threading.Thread(target=process_prostate_sbrt_crop,args=(job,),daemon=True).start()
+    return {"id":jid}
+
+MAX_REQUEST_BYTES = 32 * 1024**2
+UPLOAD_LOCK_WAIT_SECONDS = 4.0
+
+
+@contextmanager
+def upload_session(session_id: str):
+    # Directory flock coordinates threads AND cooperating uvicorn processes. The browser sends up to four
+    # slices at once and each writer holds the lock only for one append, so wait briefly for the writer
+    # ahead before answering 429. Blocking: call from worker threads, never on the event loop.
+    if not re.fullmatch(r"session-\d{8}-\d{6}-[0-9a-f]+", session_id):
+        raise HTTPException(404, "Upload session not found or expired")
+    session = BASE / session_id
+    try: fd = os.open(session, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError: raise HTTPException(404, "Upload session not found or expired")
+    try:
+        deadline = time.monotonic() + UPLOAD_LOCK_WAIT_SECONDS
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB); break
+            except BlockingIOError:
+                if time.monotonic() >= deadline: raise HTTPException(429, "Upload session busy; retry")
+                time.sleep(0.01)
+        try:
+            data = json.loads((session / "session.json").read_text())
+            if data["id"] != session_id or not isinstance(data["files"], dict): raise ValueError()
+            if data["status"] not in {"receiving", "assessing", "ready", "failed", "used"}: raise ValueError()
+            if not isinstance(data["created"], (int, float)) or not np.isfinite(data["created"]): raise ValueError()
+            if not isinstance(data["received_bytes"], int) or data["received_bytes"] < 0: raise ValueError()
+            if data["error"] is not None and not isinstance(data["error"], str): raise ValueError()
+            if data["result"] is not None and not isinstance(data["result"], dict): raise ValueError()
+            for key, item in data["files"].items():
+                if not re.fullmatch(r"0|[1-9][0-9]{0,5}", key): raise ValueError()
+                if not isinstance(item["name"], str) or item["name"] in {"", ".", ".."} or any(c in item["name"] for c in ("/", "\\", "\x00")): raise ValueError()
+                if any(not isinstance(item[k], int) or item[k] < 0 for k in ("size", "received")): raise ValueError()
+                if item["received"] > item["size"]: raise ValueError()
+        except Exception: raise HTTPException(404, "Upload session not found or expired")
+        yield session, data
+    finally: os.close(fd)
+
+
+def save_session(session: Path, data: dict):
+    target = session / "session.json"
+    incoming = session / "session.json.incoming"
+    incoming.write_text(json.dumps(data))
+    incoming.replace(target)
+
+
+@app.post("/api/upload-sessions")
+@app.post("/api/v1/upload-sessions", tags=["automation"])
+def create_upload_session():
+    sid = "session-" + time.strftime("%Y%m%d-%H%M%S-") + secrets.token_hex(8)
+    session = BASE / sid; session.mkdir(); (session / "files").mkdir()
+    save_session(session, {"id":sid, "created":time.time(), "status":"receiving",
+                           "files":{}, "received_bytes":0, "error":None, "result":None})
+    return {"session_id":sid, "max_request_bytes":MAX_REQUEST_BYTES, "max_total_bytes":MAX_BYTES}
+
+
+def commit_upload_chunk(session_id: str, file_index: int, name: str, offset: int, size: int, body: bytes):
+    with upload_session(session_id) as (session, data):
+        if data["status"] != "receiving": raise HTTPException(409, "Upload session is no longer receiving")
+        if not 0 <= file_index <= 999999 or offset < 0 or size < 0:
+            raise HTTPException(400, "Invalid file index, offset or size")
+        # Only the numeric index is used on disk until staging. A supplied basename
+        # cannot overwrite metadata or another file, including on Windows clients.
+        name = Path(name.replace("\\", "/")).name
+        if name in {"", ".", ".."} or "\x00" in name: name = "upload"
+        key = str(file_index); record = data["files"].get(key)
+        target = session / "files" / key
+        received = target.stat().st_size if target.exists() else 0
+        if record and (record["size"] != size or record["name"] != name):
+            raise HTTPException(400, "File name and size must stay the same")
+        if offset != received:
+            return JSONResponse(status_code=409, content={"detail":"Offset does not match stored bytes", "expected_offset":received})
+        if offset + len(body) > size: raise HTTPException(400, "Chunk exceeds declared file size")
+        if len(body) > MAX_REQUEST_BYTES: raise HTTPException(413, "Request exceeds 32 MiB limit")
+        # Reconcile a write whose metadata commit was interrupted before a retry.
+        previous = record["received"] if record else 0
+        total = data["received_bytes"] + received - previous + len(body)
+        if total > MAX_BYTES or size > MAX_BYTES: raise HTTPException(413, "Upload exceeds configured 8 GiB limit")
+        if not record:
+            data["files"][key] = {"name":name, "size":size, "received":received}
+            save_session(session, data)
+        try:
+            with target.open("ab") as dst: dst.write(body)
+        except Exception:
+            if target.exists():
+                with target.open("r+b") as dst: dst.truncate(received)
+            raise
+        data["files"][key]["received"] = received + len(body)
+        data["received_bytes"] = total
+        save_session(session, data)
+        return {"received":received + len(body), "complete":received + len(body) == size}
+
+
+@app.put("/api/upload-sessions/{session_id}/files/{file_index}")
+@app.put("/api/v1/upload-sessions/{session_id}/files/{file_index}", tags=["automation"])
+async def put_upload_chunk(session_id: str, file_index: int, request: Request, name: str, offset: int, size: int):
+    await run_in_threadpool(require_receiving_session, session_id)
+    try:
+        length = int(request.headers.get("content-length", "0"))
+    except ValueError: raise HTTPException(400, "Invalid Content-Length")
+    if length > MAX_REQUEST_BYTES: raise HTTPException(413, "Request exceeds 32 MiB limit")
+    # A 32 MiB slice over a slow link can take minutes (Tailscale users reach the portal directly), so only a
+    # body that stops arriving is rejected.
+    body, stream = bytearray(), request.stream().__aiter__()
+    while True:
+        try: chunk = await asyncio.wait_for(stream.__anext__(), timeout=UPLOAD_IDLE_TIMEOUT_SECONDS)
+        except StopAsyncIteration: break
+        except asyncio.TimeoutError: raise HTTPException(408, "Upload stalled; retry")
+        if len(body) + len(chunk) > MAX_REQUEST_BYTES: raise HTTPException(413, "Request exceeds 32 MiB limit")
+        body.extend(chunk)
+    return await run_in_threadpool(commit_upload_chunk, session_id, file_index, name, offset, size, body)
+
+
+def require_receiving_session(session_id: str):
+    with upload_session(session_id) as (_, data):
+        if data["status"] != "receiving": raise HTTPException(409, "Upload session is no longer receiving")
+
+
+UPLOAD_IDLE_TIMEOUT_SECONDS = 60
+
+
+@app.get("/api/upload-sessions/{session_id}")
+@app.get("/api/v1/upload-sessions/{session_id}", tags=["automation"])
+def get_upload_session(session_id: str):
+    with upload_session(session_id) as (_, data):
+        return {"session_id":session_id, "status":data["status"], "files":len(data["files"]),
+                "received_bytes":data["received_bytes"], "error":data["error"], "result":data["result"]}
+
+
+def complete_session_files(session: Path, data: dict):
+    if data["status"] != "receiving": raise HTTPException(409, "Upload session is no longer receiving")
+    if not data["files"] or any(not (session / "files" / key).exists() or
+            (session / "files" / key).stat().st_size != item["size"] for key, item in data["files"].items()):
+        raise HTTPException(409, "Upload session has no files or incomplete files")
+
+
+def stage_session_files(session: Path, data: dict, stage: Path, crop: bool = False):
+    inp = stage / "input"; expanded = 0
+    for key, item in data["files"].items():
+        target = session / "files" / key
+        if zipfile.is_zipfile(target):
+            with zipfile.ZipFile(target) as archive:
+                size = sum(i.file_size for i in archive.infolist() if not i.is_dir())
+            safe_extract(target, inp, MAX_BYTES-expanded if crop else MAX_BYTES)
+            expanded += size; target.unlink()
+        else:
+            expanded += target.stat().st_size
+            if crop and expanded > MAX_BYTES: raise ValueError("Expanded upload exceeds configured 8 GiB limit")
+            shutil.move(target, inp / (key + "_" + item["name"]))
+
+
+def finish_session_assessment(session: Path, data: dict):
+    uid = "upload-" + time.strftime("%Y%m%d-%H%M%S-") + secrets.token_hex(8)
+    stage = BASE / uid
+    try:
+        (stage / "input").mkdir(parents=True)
+        stage_session_files(session, data, stage)
+        report = inspect_upload(stage / "input")
+        if not report["series"]: raise ValueError("No valid CT/MR/PET DICOM image series were found")
+        (stage / "upload.json").write_text(json.dumps({"id":uid, "created":time.time(), **report}, indent=2))
+        public = {**report, "series":[{k:v for k,v in g.items() if k != "files"} for g in report["series"]]}
+        changes = {"status":"ready", "result":{"upload_id":uid, **public}, "error":None}
+    except Exception as exc:
+        shutil.rmtree(stage, ignore_errors=True)
+        changes = {"status":"failed", "error":str(exc), "result":None}
+    # Polling uses a nonblocking lock; a background writer may wait for that brief read.
+    while session.exists():
+        try:
+            with upload_session(session.name) as (_, current):
+                current.update(changes); save_session(session, current)
+            return
+        except HTTPException as exc:
+            if exc.status_code != 429: return
+            time.sleep(0.01)
+
+
+@app.post("/api/upload-sessions/{session_id}/assess", status_code=202)
+@app.post("/api/v1/upload-sessions/{session_id}/assess", status_code=202, tags=["automation"])
+def assess_upload_session(session_id: str):
+    with upload_session(session_id) as (session, data):
+        # Idempotent finalization makes a lost POST response safe to retry.
+        if data["status"] in {"assessing", "ready", "failed"} and data.get("operation") == "assess":
+            return {"status":"assessing"}
+        complete_session_files(session, data)
+        data.update(status="assessing", operation="assess"); save_session(session, data)
+        threading.Thread(target=finish_session_assessment, args=(session, data), daemon=True).start()
+    return {"status":"assessing"}
+
+
+def finish_session_job(session: Path, data: dict, job: Path, crop: bool):
+    try:
+        stage_session_files(session, data, job, crop)
+        if crop: process_prostate_sbrt_crop(job)
+        else:
+            slices, modality = validate_series(job / "input")
+            wrong = [m for m in metadata(job)["models"] if task_modality(m) != modality]
+            if wrong: raise ValueError(f"The uploaded series is {modality}, but incompatible tasks were selected: {', '.join(wrong)}")
+            save_metadata(job, detail=f"{slices} {modality} DICOM slices received")
+            process(job)
+    except Exception as exc:
+        save_metadata(job, status="failed", detail="Cropping failed" if crop else "Upload staging failed", error=str(exc))
+
+
+def queue_session_job(session_id: str, options: dict, crop: bool):
+    with upload_session(session_id) as (session, data):
+        operation = "crop" if crop else "jobs"
+        if data["status"] == "used" and data.get("operation") == operation and data.get("options") == options:
+            return {"id":data["job_id"]}
+        complete_session_files(session, data)
+        jid = time.strftime("%Y%m%d-%H%M%S-") + secrets.token_hex(8); job = BASE / jid
+        (job / "input").mkdir(parents=True); (job / "output").mkdir()
+        (job / "job.json").write_text(json.dumps({"id":jid, "status":"queued", "created":time.time(),
+            "detail":"Prostate SBRT crop queued on CPU" if crop else "Staging uploaded files", "error":None, **options}, indent=2))
+        data.update(status="used", operation=operation, options=options, job_id=jid); save_session(session, data)
+        threading.Thread(target=finish_session_job, args=(session, data, job, crop), daemon=True).start()
+        return {"id":jid}
+
+
+@app.post("/api/upload-sessions/{session_id}/prostate-sbrt-crop", status_code=202)
+@app.post("/api/v1/upload-sessions/{session_id}/prostate-sbrt-crop", status_code=202, tags=["automation"])
+def crop_upload_session(session_id: str, margin_mm: float=Form(150.0), keep_uids: bool=Form(False)):
+    if not np.isfinite(margin_mm) or margin_mm < 0:
+        raise HTTPException(400, "margin_mm must be finite and non-negative")
+    return queue_session_job(session_id, {"models":["prostate_sbrt_crop"], "tool":"prostate_sbrt_crop",
+                                         "margin_mm":margin_mm, "keep_uids":keep_uids}, True)
+
+
+@app.post("/api/v1/upload-sessions/{session_id}/jobs", status_code=202, tags=["automation"])
+async def create_session_job(session_id: str, models: list[str]=Form(...), postprocess: str=Form("")):
+    postprocessing = validate_postprocess(postprocess, models)
+    if not models: raise HTTPException(400, "Select at least one model")
+    def check_session():
+        with upload_session(session_id): pass
+    await run_in_threadpool(check_session)
+    # A cold catalog may run minutes of preflight. Keep legacy validation, but
+    # bound the wait; its existing build lock prevents duplicate catalog builds.
+    try: catalog = await asyncio.wait_for(run_in_threadpool(tasks), timeout=4)
+    except asyncio.TimeoutError: raise HTTPException(503, "Model catalog is warming; retry")
+    available = {x["name"] for x in catalog["tasks"] if x.get("enabled", True)}
+    if any(not re.fullmatch(r"[A-Za-z0-9_]+", m) or m not in available for m in models):
+        raise HTTPException(400, "Invalid model selection")
+    if "total" in models and "total_mr" in models:
+        raise HTTPException(400, "Select either total (CT) or total_mr (MR), not both")
+    return queue_session_job(session_id, {"models":models, "postprocess":postprocessing}, False)
+
 
 @app.post("/api/uploads")
 async def assess_upload(files: list[UploadFile]=File(...)):
@@ -777,7 +1731,8 @@ def preview_slice(uid: str, series_key: str, index: int = 0):
         "X-Columns":str(int(ds.Columns)), "X-Rows":str(int(ds.Rows))})
 
 @app.post("/api/uploads/{uid}/start")
-async def start_assessed(uid: str, series_key: str=Form(...), models: list[str]=Form(...), prompt_json: str=Form("")):
+async def start_assessed(uid: str, series_key: str=Form(...), models: list[str]=Form(...), prompt_json: str=Form(""), postprocess: str=Form("")):
+    postprocessing = validate_postprocess(postprocess, models)
     if not re.fullmatch(r"upload-[A-Za-z0-9-]+",uid): raise HTTPException(404)
     stage=BASE/uid
     try: data=json.loads((stage/"upload.json").read_text())
@@ -802,23 +1757,49 @@ async def start_assessed(uid: str, series_key: str=Form(...), models: list[str]=
     if prompt_models:
         try: prompt_data = json.loads(prompt_json)
         except Exception: raise HTTPException(400,"Prompt JSON is required and must be valid JSON")
+        if not isinstance(prompt_data, dict):
+            raise HTTPException(400,"Prompt JSON must be an object")
         columns, rows, slices = selected["columns"], selected["rows"], selected["slices"]
-        coordinates = list(prompt_data.get("positive_points",[])) + list(prompt_data.get("negative_points",[]))
-        if prompt_data.get("box"): coordinates += list(prompt_data["box"])
+        positives, negatives, box = (prompt_data.get("positive_points", []),
+                                     prompt_data.get("negative_points", []),
+                                     prompt_data.get("box"))
+        if not isinstance(positives, list) or not isinstance(negatives, list):
+            raise HTTPException(400,"positive_points and negative_points must be lists")
+        if box is not None and (not isinstance(box, list) or len(box) != 2):
+            raise HTTPException(400,"A box prompt must contain exactly two [column,row,slice] corners")
+        coordinates = positives + negatives + (box or [])
         if not coordinates and not str(prompt_data.get("text","")).strip():
             raise HTTPException(400,"The selected prompted model requires a point, box, mask, or text prompt")
         if "pam_prompted" in prompt_models and not (prompt_data.get("positive_points") or prompt_data.get("box")):
             raise HTTPException(400,"PAM requires a positive point or a two-corner box on one axial slice")
-        coordinate_prompt_models = {"sam_med2d_prompted", "sat3d_prompted"}
+        coordinate_prompt_models = {"sam_med2d_prompted", "medsam_vit_b_box_2d", "medical_sam3_3d_prompted", "sat3d_prompted", "nninteractive_v1_prompted", "vista3d_prompted_ct"}
         if coordinate_prompt_models.intersection(prompt_models) and not coordinates:
             raise HTTPException(400,"The selected model requires at least one point or a two-corner box")
-        if "sat3d_prompted" in prompt_models and not prompt_data.get("positive_points"):
-            raise HTTPException(400,"SAT3D requires at least one positive point")
+        if {"sat3d_prompted", "vista3d_prompted_ct"}.intersection(prompt_models) and not positives:
+            raise HTTPException(400,"The selected 3-D prompted model requires at least one positive point")
+        if "nninteractive_v1_prompted" in prompt_models and not (positives or box):
+            raise HTTPException(400,"nnInteractive requires a positive point or a two-corner box on one axial slice")
+        if "medsam_vit_b_box_2d" in prompt_models and not box:
+            raise HTTPException(400,"MedSAM requires a two-corner box on one axial slice")
+        if "medical_sam3_3d_prompted" in prompt_models:
+            if not box:
+                raise HTTPException(400,"Medical-SAM3 requires a two-corner box on one axial slice")
+            text_prompt = prompt_data.get("text")
+            if not isinstance(text_prompt, str) or not text_prompt.strip():
+                raise HTTPException(400,"Medical-SAM3 requires a non-empty medical concept text prompt")
+        if "voxtell_v1_1_text_prompted" in prompt_models:
+            text_prompt = prompt_data.get("text")
+            if not isinstance(text_prompt, str) or not text_prompt.strip():
+                raise HTTPException(400,"VoxTell requires a non-empty text prompt")
+            if len(text_prompt) > 512 or any(ord(char) < 32 for char in text_prompt):
+                raise HTTPException(400,"VoxTell text must be at most 512 printable characters")
         for point in coordinates:
             if not isinstance(point,list) or len(point)!=3 or any(not isinstance(v,(int,float)) for v in point):
                 raise HTTPException(400,"Every prompt coordinate must be [column,row,slice]")
             if not (0<=point[0]<columns and 0<=point[1]<rows and 0<=point[2]<slices):
                 raise HTTPException(400,f"Prompt coordinate {point} is outside the selected series")
+        if box and box[0][2] != box[1][2] and any(m != "segvol_prompted_ct" for m in prompt_models):
+            raise HTTPException(400,"Both box corners must be on the same slice")
     companion = None
     if needs_ct:
         companion = next((g for g in data["series"]
@@ -835,12 +1816,13 @@ async def start_assessed(uid: str, series_key: str=Form(...), models: list[str]=
         for name in companion["files"]: shutil.move(stage/"input"/name, ct_dir/name)
         detail += f"; paired with {companion['slices']} co-referenced CT slices"
     if prompt_data: (job/"prompt.json").write_text(json.dumps(prompt_data,indent=2))
-    (job/"job.json").write_text(json.dumps({"id":jid,"status":"queued","detail":detail,"models":models,"created":time.time(),"error":None,"prompted":bool(prompt_data)},indent=2))
+    (job/"job.json").write_text(json.dumps({"id":jid,"status":"queued","detail":detail,"models":models,"created":time.time(),"error":None,"prompted":bool(prompt_data),"postprocess":postprocessing},indent=2))
     shutil.rmtree(stage,ignore_errors=True); threading.Thread(target=process,args=(job,),daemon=True).start(); return {"id":jid}
 
 @app.post("/api/jobs")
 @app.post("/api/v1/jobs", status_code=202, tags=["automation"])
-async def create_job(files: list[UploadFile]=File(...), models: list[str]=Form(...)):
+async def create_job(files: list[UploadFile]=File(...), models: list[str]=Form(...), postprocess: str=Form("")):
+    postprocessing = validate_postprocess(postprocess, models)
     if not models: raise HTTPException(400,"Select at least one model")
     available={x["name"] for x in tasks()["tasks"] if x.get("enabled",True)}
     if any(not re.fullmatch(r"[A-Za-z0-9_]+",m) or m not in available for m in models): raise HTTPException(400,"Invalid model selection")
@@ -860,7 +1842,7 @@ async def create_job(files: list[UploadFile]=File(...), models: list[str]=Form(.
         slices, modality=validate_series(inp)
         wrong=[m for m in models if task_modality(m) != modality]
         if wrong: raise ValueError(f"The uploaded series is {modality}, but incompatible tasks were selected: {', '.join(wrong)}")
-        (job/"job.json").write_text(json.dumps({"id":jid,"status":"queued","detail":f"{slices} {modality} DICOM slices received","models":models,"created":time.time(),"error":None},indent=2))
+        (job/"job.json").write_text(json.dumps({"id":jid,"status":"queued","detail":f"{slices} {modality} DICOM slices received","models":models,"created":time.time(),"error":None,"postprocess":postprocessing},indent=2))
     except Exception as exc:
         shutil.rmtree(job,ignore_errors=True); raise HTTPException(400,str(exc))
     threading.Thread(target=process,args=(job,),daemon=True).start(); return {"id":jid}
@@ -894,8 +1876,10 @@ def retry_job(jid: str):
         raise HTTPException(409,"The retained input series is unavailable; upload it again")
     shutil.rmtree(job/"output",ignore_errors=True); (job/"output").mkdir()
     save_metadata(job,status="queued",detail="Retry queued",error=None,progress=0,model_index=0,
-                  recovery_count=int(data.get("recovery_count",0)))
-    threading.Thread(target=process,args=(job,),daemon=True).start()
+                  recovery_count=int(data.get("recovery_count",0)), fallback_reason=None,
+                  execution_backend=None, gpu_release_attempted=False, postprocess_notes=[])
+    target = process_prostate_sbrt_crop if data.get("tool") else process
+    threading.Thread(target=target,args=(job,),daemon=True).start()
     return {"id":jid,"status":"queued"}
 
 @app.get("/api/jobs/{jid}/download")
@@ -903,7 +1887,8 @@ def retry_job(jid: str):
 def download(jid: str):
     job=BASE/jid; data=metadata(job); result=job/"rtstruct-results.zip"
     if data["status"]!="complete" or not result.exists(): raise HTTPException(409,"Result is not ready")
-    return FileResponse(result,filename=f"{jid}-RTSTRUCT.zip",media_type="application/zip")
+    filename = f"{jid}-prostate-SBRT-crop.zip" if data.get("tool") else f"{jid}-RTSTRUCT.zip"
+    return FileResponse(result,filename=filename,media_type="application/zip")
 
 @app.get("/api/v1/health", tags=["automation"])
 def health():
@@ -914,18 +1899,46 @@ def health():
                                 WORKER, "true"], capture_output=True, timeout=5)
         worker_ok = check.returncode == 0
         detail = WORKER
+    if WORKER_MODE == "colab":
+        command = (["ssh", WORKER, str(Path.home() / ".local/bin/colab"), "--auth=oauth2", "sessions"]
+                   if COLAB_ORCHESTRATOR == "worker" else colab_command("sessions"))
+        check = subprocess.run(command, capture_output=True, text=True, timeout=20)
+        colab_ok = check.returncode == 0
+        worker_ok = colab_ok
+        detail = f"Colab {COLAB_GPU} via {COLAB_AUTH} authentication"
+    if WORKER_MODE == "auto":
+        local = subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True, timeout=10)
+        colab_check = subprocess.run(colab_command("sessions"), capture_output=True, text=True, timeout=20)
+        worker_ok = local.returncode == 0 and colab_check.returncode == 0
+        detail = f"worker GPU first; Colab {COLAB_GPU} fallback on GPU OOM"
+    free_mb, total_mb = gpu_memory_mb() if WORKER_MODE in {"local", "auto"} else (None, None)
     return {"status":"ok" if worker_ok else "degraded", "worker_mode":WORKER_MODE,
-            "worker":detail, "worker_reachable":worker_ok, "version":app.version}
+            "worker":detail, "worker_reachable":worker_ok, "gpu_free_mb":free_mb,
+            "gpu_total_mb":total_mb, "gpu_release_command_configured":bool(GPU_RELEASE_COMMAND.strip()),
+            "version":app.version}
+
+def cleanup_once():
+    cutoff=time.time()-RETENTION_HOURS*3600
+    for job in BASE.iterdir():
+        fd = None
+        try:
+            if not job.is_dir() or job.is_symlink(): continue
+            is_session = job.name.startswith("session-")
+            if is_session:
+                fd = os.open(job, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            meta=job/("session.json" if is_session else "upload.json" if job.name.startswith("upload-") else "job.json")
+            try: created = float(json.loads(meta.read_text())["created"])
+            except Exception: created = job.stat().st_mtime
+            if created < cutoff: shutil.rmtree(job)
+        except Exception: pass
+        finally:
+            if fd is not None: os.close(fd)
+
 
 def cleanup_loop():
     while True:
-        cutoff=time.time()-RETENTION_HOURS*3600
-        for job in BASE.iterdir():
-            try:
-                if not job.is_dir(): continue
-                meta=job/("upload.json" if job.name.startswith("upload-") else "job.json")
-                if json.loads(meta.read_text()).get("created",time.time())<cutoff: shutil.rmtree(job)
-            except Exception: pass
+        cleanup_once()
         time.sleep(3600)
 
 def recover_interrupted_jobs():
@@ -942,9 +1955,19 @@ def recover_interrupted_jobs():
             continue
     retry = []
     for job, previous_status in interrupted:
-        if WORKER_MODE == "ssh":
+        is_tool = bool(metadata(job).get("tool"))
+        if not is_tool and (WORKER_MODE == "ssh" or (WORKER_MODE == "colab" and COLAB_ORCHESTRATOR == "worker")):
             remote = f"{REMOTE_BASE}/{job.name}"
+            if WORKER_MODE == "colab":
+                session = f"rtseg-{job.name[-12:]}"
+                subprocess.run(["ssh", WORKER, str(Path.home() / ".local/bin/colab"),
+                                "--auth=oauth2", "stop", "-s", session], timeout=60)
             subprocess.run(["ssh", WORKER, "rm", "-rf", remote], timeout=30)
+        elif not is_tool and WORKER_MODE in {"auto", "colab"} and COLAB_ORCHESTRATOR == "nfs":
+            session = f"rtseg-{job.name[-12:]}"
+            subprocess.run(colab_command("stop", "-s", session), timeout=60,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            shutil.rmtree(job / "colab-stage", ignore_errors=True)
         data = metadata(job); recovery_count = int(data.get("recovery_count",0)) + 1
         has_input = (job/"input").is_dir() and any((job/"input").iterdir())
         if has_input and recovery_count <= 3:
@@ -959,9 +1982,11 @@ def recover_interrupted_jobs():
                           error=f"Could not restart automatically because {reason}.",
                           recovery_count=recovery_count,interrupted_status=previous_status)
     for job in retry:
-        threading.Thread(target=process,args=(job,),daemon=True).start()
+        target = process_prostate_sbrt_crop if metadata(job).get("tool") else process
+        threading.Thread(target=target,args=(job,),daemon=True).start()
 
 @app.on_event("startup")
 def startup():
+    threading.Thread(target=tasks, daemon=True).start()  # warm the catalog; tasks() builds once under the lock
     recover_interrupted_jobs()
     threading.Thread(target=cleanup_loop,daemon=True).start()

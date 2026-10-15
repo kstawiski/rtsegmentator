@@ -1,0 +1,16 @@
+{
+  "family": "Medical-SAM2 (ImprintLab)",
+  "task": "medical_sam2_prompted_ct",
+  "source": "https://github.com/ImprintLab/Medical-SAM2",
+  "source_commit": "18b0f5bcea75cb0c212d652ff22ad063bf39ee3a",
+  "checkpoint_source": "https://huggingface.co/jiayuanz3/MedSAM2_pretrain",
+  "checkpoint": "MedSAM2_pretrain.pth",
+  "checkpoint_sha256": "059572b072eff2e41975bf85b0dcca96bc58889db60a89e9f5b1f075236735d7",
+  "checkpoint_bytes": 78078138,
+  "source_license": "GPL-3.0",
+  "input_contract": "one 3-D image plus points or a 2-D box on one axial seed slice",
+  "status": "validated_research",
+  "validation": "validation/medical_sam2_prompted_ct.json",
+  "orientation_validation": "orientation-validation/medical_sam2_prompted_ct.json",
+  "verified_at": "2026-08-13"
+}

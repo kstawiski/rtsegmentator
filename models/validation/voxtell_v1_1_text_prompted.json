@@ -1,0 +1,16 @@
+{
+  "task": "voxtell_v1_1_text_prompted",
+  "result": "passed",
+  "verified_at": "2026-08-13",
+  "fixture": "MSD Task09 spleen case 19; 51 source DICOM slices",
+  "prompt": "spleen",
+  "inference": "official VoxTell v1.1 checkpoint and published precomputed embedding on NVIDIA H100",
+  "foreground_voxels": 101225,
+  "prediction_sha256": "f3bb7caa3a6d51a174b37533052bfc25183a22632daac141c5b82358ad1b2bbf",
+  "rtstruct_rois": 1,
+  "referenced_images": 19,
+  "geometry_bbox_max_delta_mm": 0.0,
+  "rtstruct_bytes": 95160,
+  "rtstruct_sha256": "013995d47fa82b0b5ec2be64b5e29cd523bc2601105c75504bf3186a996a0f80",
+  "orientation_evidence": "orientation-validation/voxtell_v1_1_text_prompted.json"
+}

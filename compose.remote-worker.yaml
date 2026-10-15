@@ -7,6 +7,7 @@ services:
       - "2222:2222"
     environment:
       SSH_AUTHORIZED_KEY: ${SSH_AUTHORIZED_KEY:?set SSH_AUTHORIZED_KEY}
+      RTSEG_APP_ROOT: /app
       RTSEG_MODEL_ROOT: /models
       RTSEG_RUNTIME_ROOT: /runtimes
     volumes:

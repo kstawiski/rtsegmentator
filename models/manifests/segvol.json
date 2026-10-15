@@ -1,0 +1,21 @@
+{
+  "family": "SegVol",
+  "task": "segvol_prompted_ct",
+  "source": "https://github.com/BAAI-DCAI/SegVol",
+  "source_commit": "5768c9795794a327a2629ce7f137ab03d5ea8378",
+  "checkpoint_source": "https://huggingface.co/BAAI/SegVol",
+  "checkpoint_revision": "516701d5bef430604a13f5db7ce896149d075663",
+  "checkpoint": "pytorch_model.bin",
+  "checkpoint_sha256": "500f2758a8f989339b2b2baf09a819169bc87549795193d3cfe505726ac0b399",
+  "checkpoint_bytes": 723726667,
+  "vit_pretraining_checkpoint_sha256": "e8d032a3616497b0bbce2d928510d2e6e06b358f98481223b564aa127b07de32",
+  "vit_pretraining_checkpoint_bytes": 352765225,
+  "source_license": "MIT",
+  "checkpoint_license": "MIT",
+  "input_contract": "one 3-D CT series plus text, positive/negative point, or 3-D box prompts",
+  "runtime": "released MONAI 0.9 architecture with documented NumPy 2 seed compatibility patch",
+  "status": "validated",
+  "validation": "validation/segvol_prompted_ct.json",
+  "orientation_validation": "orientation-validation/segvol_prompted_ct.json",
+  "verified_at": "2026-08-13"
+}

@@ -1,0 +1,23 @@
+{
+  "task": "medsam2_ct_lesion_prompted",
+  "result": "passed",
+  "verified_at": "2026-08-13",
+  "checkpoint_loading": "Released FLARE25 RECIST baseline checkpoint loaded with no missing or unexpected tensors",
+  "publisher_fixture": "MedSAM2 CT_Lesion_FLARE23Ts_0007.npz",
+  "publisher_fixture_prompt": "RECIST-derived two-dimensional box on axial slice 64",
+  "prediction_voxels": 7547,
+  "ground_truth_voxels": 6915,
+  "dice": 0.9098326649149495,
+  "prediction_sha256": "f913e583d44c5c3cd7caf5ec6630abe3b1292c82f585458e6a15c0b1aecd768c",
+  "point_prompt_prediction_voxels": 6285,
+  "point_prompt_dice": 0.9072727272727272,
+  "point_prompt_prediction_sha256": "f5ee472afabe18a04b690a573731d60166bce5048ff71fd62cdacc85df8d8650",
+  "dicom_fixture": "MSD Task06 lung case 53",
+  "rtstruct_rois": 1,
+  "referenced_images": 92,
+  "geometry_bbox_max_delta_mm": 0.0,
+  "rtstruct_bytes": 799198,
+  "rtstruct_sha256": "371b696cd7efb7811170d859c9d5f280c9837a51574cc05afe023da7a8e5f4f7",
+  "warning": "Research/education model. Prompt quality and CT window affect propagation; every lesion contour requires review.",
+  "orientation_evidence": "orientation-validation/medsam2_ct_lesion_prompted.json"
+}

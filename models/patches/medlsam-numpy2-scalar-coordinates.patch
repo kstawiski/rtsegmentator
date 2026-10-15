@@ -1,0 +1,9 @@
+--- MedLAM/detection_functions.py
++++ MedLAM/detection_functions.py
+@@
+-    center_x = np.asarray(mask[0][half:half+1])
+-    center_y = np.asarray(mask[1][half:half+1])
++    # NumPy 2 no longer permits assigning a length-one array to a scalar slot.
++    center_x = int(mask[0][half])
++    center_y = int(mask[1][half])
+     return center_x, center_y

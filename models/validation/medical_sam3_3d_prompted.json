@@ -1,0 +1,14 @@
+{
+  "task": "medical_sam3_3d_prompted",
+  "result": "passed",
+  "verified_at": "2026-08-13",
+  "checkpoint_loading": "The official full 3-D checkpoint loaded into the bundled SAM3 video model using the publisher's non-strict evaluation setting, with no missing or unexpected keys reported",
+  "technical_fixture": "MSD Task09 spleen case 19, eight-slice window 22 through 29 centered on boxed slice 26 with text prompt spleen",
+  "technical_fixture_truth_voxels": 59233,
+  "technical_fixture_prediction_voxels": 62596,
+  "technical_fixture_intersection_voxels": 58928,
+  "technical_fixture_dice": 0.9673887169721495,
+  "technical_fixture_per_slice_dice_range": [0.9550045913682277, 0.973489010989011],
+  "scope_warning": "The released 3-D training/evaluation protocol uses an eight-frame window. The portal therefore returns that prompt-centered eight-slice window rather than claiming unconstrained whole-volume propagation.",
+  "orientation_evidence": "orientation-validation/medical_sam3_3d_prompted.json"
+}

@@ -1,6 +1,6 @@
 {
   "verified_at": "2026-08-11",
-  "storage_root": "/umed-projekty/RTsegmentator-private/model-bundle-v2",
+  "storage_root": "/models",
   "rano2_assist": {
     "record": "15411078",
     "archive_md5": "df95653320bee3182775cde51ffad298",

@@ -1,0 +1,18 @@
+{
+  "multitalent_v1_unet_ct": {
+    "modality": "CT",
+    "description": "MultiTalent V1 standard U-Net trained jointly on 13 public CT segmentation datasets; single all-data checkpoint",
+    "structures": "47 overlapping dataset-specific heads covering abdominal and thoracic organs, pelvic OARs, lung nodule and liver, pancreas, colon and kidney tumors",
+    "reference": "https://zenodo.org/records/8297767",
+    "model_folder": "weights/multitalent-v1/Task100_MultiTalent/MultiTalent_trainer_ddp_2000ep__MultiTalent_bs4",
+    "clinical_tag_ids": ["lung_cancer", "bladder_cancer", "liver_cancer", "pancreatic_cancer", "kidney_cancer", "colorectal_cancer"]
+  },
+  "multitalent_v1_resenc_ct": {
+    "modality": "CT",
+    "description": "MultiTalent V1 residual U-Net trained jointly on 13 public CT segmentation datasets; single all-data checkpoint",
+    "structures": "47 overlapping dataset-specific heads covering abdominal and thoracic organs, pelvic OARs, lung nodule and liver, pancreas, colon and kidney tumors",
+    "reference": "https://zenodo.org/records/8297767",
+    "model_folder": "weights/multitalent-v1/Task100_MultiTalent/MultiTalent_trainer_resenc_ddp_2000ep__MultiTalent_resenc_bs4",
+    "clinical_tag_ids": ["lung_cancer", "bladder_cancer", "liver_cancer", "pancreatic_cancer", "kidney_cancer", "colorectal_cancer"]
+  }
+}

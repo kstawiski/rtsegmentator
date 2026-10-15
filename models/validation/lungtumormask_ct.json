@@ -1,8 +1,7 @@
 {
   "artifact_bytes": 84664,
-  "artifact_sha256": "2edea3e07380140a2147cebe1de3baa8d48205b83e43262cce588277cc55ebcb",
   "contour_sets": 1,
-  "fixture": "287173-ct-chest-dicom",
+  "fixture": "Private acceptance fixture; identifier withheld. Reproduction requires an external fixture map.",
   "model": "LungTumorMask v1.3.1 dc_student.pth",
   "referenced_images": 45,
   "rois": 1,

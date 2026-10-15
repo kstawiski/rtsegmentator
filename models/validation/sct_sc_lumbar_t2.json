@@ -1,0 +1,21 @@
+{
+  "task": "sct_sc_lumbar_t2",
+  "result": "passed",
+  "verified_at": "2026-08-13",
+  "runtime": "Spinal Cord Toolbox 7.3",
+  "model": "model_seg_epfl_t2w_lumbar_sc r20231004",
+  "model_url": "https://github.com/ivadomed/lumbar_seg_EPFL/releases/download/r20231004/model_seg_epfl_t2w_lumbar_sc.zip",
+  "checkpoint_sha256": "401fdbf1ae7fb6cf00eed72accba4ac2a2e18611824211ac3c4c08a4eea27f04",
+  "fixture": "SCT PAM50 T2 template converted to 991 source MR DICOM slices",
+  "fixture_shape": [141, 141, 991],
+  "fixture_spacing_mm": [0.5, 0.5, 0.5],
+  "inference": "official SCT sc_lumbar_t2 task on CUDA",
+  "rtstruct_rois": 1,
+  "roi_names": ["Spinal_Cord"],
+  "referenced_images": 497,
+  "geometry_mapping": "direct [DICOM column,row,slice] to rt-utils [row,column,slice]",
+  "geometry_bbox_max_delta_mm": 0.0,
+  "rtstruct_bytes": 786308,
+  "rtstruct_sha256": "9a4b86af2329d94b30e665ec974d05105afad2645e32690fd2a21c05d28f1e8a",
+  "orientation_evidence": "orientation-validation/sct_sc_lumbar_t2.json"
+}

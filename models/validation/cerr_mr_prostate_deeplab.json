@@ -1,0 +1,13 @@
+{
+  "verified_at": "2026-08-14",
+  "result": "passed",
+  "task": "cerr_mr_prostate_deeplab",
+  "model": "CERR MR_Prostate_Deeplab frozen_inference_graph.pb",
+  "fixture": "Medical Segmentation Decathlon Task05 prostate_00 axial T2 MRI converted to a geometry-preserving synthetic DICOM series",
+  "gate": "Official TensorFlow 1.15 graph inference in the archived CERR environment; non-empty output; exact physical voxel roundtrip; source SOP references and model-specific DICOM identity",
+  "evidence": "orientation-validation/cerr_mr_prostate_deeplab.json",
+  "roundtrip_dice": 1.0,
+  "rois": 5,
+  "nonempty_labels": ["Bladder", "Prostate_CTV", "Rectum", "Urethra_Foley", "Large_Bowel"],
+  "clinical_note": "The fixture has no known rectal spacer or Foley catheter and is not an RT-planning acquisition. Acceptance proves execution and DICOM geometry, not clinical contour accuracy; all output requires clinical review."
+}

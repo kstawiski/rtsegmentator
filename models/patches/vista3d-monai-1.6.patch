@@ -1,0 +1,9 @@
+--- a/scripts/evaluator.py
++++ b/scripts/evaluator.py
+@@ -231,7 +231,7 @@
+             if points is not None:
+                 points = torch.as_tensor([points])
+                 points = self.transform_points(points, np.linalg.inv(inputs.affine[0]) @ inputs.meta["original_affine"][0].numpy())
+-                points = torch.from_numpy(points).to(inputs.device)
++                points = torch.as_tensor(points).to(inputs.device)
+             point_labels = torch.as_tensor([point_labels]).to(inputs.device) if point_labels is not None else None

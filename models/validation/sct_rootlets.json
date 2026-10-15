@@ -1,0 +1,20 @@
+{
+  "task": "sct_rootlets",
+  "result": "passed",
+  "verified_at": "2026-08-13",
+  "runtime": "Spinal Cord Toolbox 7.3",
+  "model": "model_seg_spinal_rootlets_nnunet r20250318",
+  "model_url": "https://github.com/ivadomed/model-spinal-rootlets/releases/download/r20250318/model-spinal-rootlets-multicon-r20250318.zip",
+  "checkpoint_sha256": "8d8081fb949c3fe018ad7151d122c6cf473631591c53675c4585ec57ccc6affe",
+  "fixture": "SCT bundled t2/t2.nii.gz testing scan converted to 55 source MR DICOM slices",
+  "fixture_shape": [52, 60, 55],
+  "fixture_spacing_mm": [1.0, 1.0, 1.0],
+  "inference": "official SCT rootlets task on CUDA",
+  "rtstruct_rois": 4,
+  "roi_names": ["Rootlets_C4", "Rootlets_C5", "Rootlets_C6", "Rootlets_C7"],
+  "referenced_images": 41,
+  "geometry_bbox_max_delta_mm": 0.0,
+  "rtstruct_bytes": 47180,
+  "rtstruct_sha256": "15de56dc614755ee410e9f7d78c8bc4c0eebb64365c3b1c1f2adde4ca71315c7",
+  "orientation_evidence": "orientation-validation/sct_rootlets.json"
+}

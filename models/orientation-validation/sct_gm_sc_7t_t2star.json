@@ -1,0 +1,32 @@
+{
+  "task": "sct_gm_sc_7t_t2star",
+  "result": "passed",
+  "orientation_fix": "direct_column_row_slice_mapping",
+  "structure_set_label": "sct_gm_sc_7t_t2s",
+  "structure_set_name": "RTSEG: sct_gm_sc_7t_t2star",
+  "series_description": "RTSEG: sct_gm_sc_7t_t2star",
+  "rois": 2,
+  "referenced_images": 33,
+  "contour_min_lps": [
+    -10.026705384254456,
+    -95.27516162395477,
+    -46.43262156844139
+  ],
+  "contour_max_lps": [
+    4.641662418842316,
+    -48.451645493507385,
+    103.26395659148693
+  ],
+  "source_origin_min_lps": [
+    115.53452640771866,
+    8.406314015388489,
+    -62.279052734375
+  ],
+  "source_origin_max_lps": [
+    115.53452640771866,
+    63.02793884277344,
+    137.38398551940918
+  ],
+  "artifact_bytes": 87944,
+  "artifact_sha256": "c76f88e4f8218abd62e8f211e32f22aa7920becbf9694f17c7c3027019260187"
+}

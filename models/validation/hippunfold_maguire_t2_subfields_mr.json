@@ -1,0 +1,19 @@
+{
+  "task": "hippunfold_maguire_t2_subfields_mr",
+  "result": "passed",
+  "verified_at": "2026-08-13",
+  "source_commit": "55f4ac1f4e77cc860f6011d6394771f2143f71c4",
+  "fixture": "OpenNeuro ds000221 sub-010002 ses-01 whole-field T2w; 256 generated source DICOM slices",
+  "fixture_license": "CC0",
+  "inference": "official HippUnfold dev-v2.0.0 workflow; Maguire T2w five-fold nnU-Net v2 ensemble",
+  "prediction_shape": [176, 256, 256],
+  "prediction_nonempty_labels": 15,
+  "prediction_sha256": "56813b3f335e21cab2cc42dcf981579dd155b908d8636e9c4b64ac926ce1a61b",
+  "rtstruct_rois": 15,
+  "referenced_images": 29,
+  "geometry_mapping": "direct [DICOM column,row,slice] to rt-utils [row,column,slice]",
+  "geometry_bbox_max_delta_mm": 0.0002,
+  "rtstruct_bytes": 314042,
+  "rtstruct_sha256": "96c1bbd778bf1d55586ff7ba9ee94fd5f20d8c5285daad3d4297388df950b536",
+  "orientation_evidence": "orientation-validation/hippunfold_maguire_t2_subfields_mr.json"
+}

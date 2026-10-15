@@ -16,7 +16,14 @@ child = None
 APP_ROOT = Path(os.environ.get("RTSEG_APP_ROOT", Path(__file__).resolve().parent))
 MODEL_ROOT = Path(os.environ.get("RTSEG_MODEL_ROOT", "/models"))
 RUNTIME_ROOT = Path(os.environ.get("RTSEG_RUNTIME_ROOT", MODEL_ROOT))
+_venv_totalsegmentator = Path(sys.executable).parent / "TotalSegmentator"
+TOTAL_SEGMENTATOR = (str(_venv_totalsegmentator) if _venv_totalsegmentator.is_file()
+                     else shutil.which("TotalSegmentator") or str(_venv_totalsegmentator))
+SCRATCH_ROOT = Path(os.environ.get(
+    "RTSEG_SCRATCH_ROOT", MODEL_ROOT / "runtime-homes" / "tmp"
+))
 NNUNET_V2_TASKS = json.loads((APP_ROOT / "catalog/nnunet-v2.json").read_text())
+MULTITALENT_V1_TASKS = json.loads((APP_ROOT / "catalog/multitalent-v1.json").read_text())
 NNUNET_V1_TASKS = json.loads((APP_ROOT / "catalog/nnunet-v1.json").read_text())
 MONAI_BUNDLE_TASKS = json.loads((APP_ROOT / "catalog/monai-bundles.json").read_text())
 CADS_OPEN_TASKS = json.loads((APP_ROOT / "catalog/cads-open.json").read_text())
@@ -26,9 +33,15 @@ PYCAD_TASKS = json.loads((APP_ROOT / "catalog/pycad-model-zoo.json").read_text()
 ANTSPYNET_TASKS = json.loads((APP_ROOT / "catalog/antspynet.json").read_text())
 SCT_TASKS = json.loads((APP_ROOT / "catalog/sct.json").read_text())
 GOUHFI_TASKS = json.loads((APP_ROOT / "catalog/gouhfi.json").read_text())
+FASTSURFER_TASKS = json.loads((APP_ROOT / "catalog/fastsurfer.json").read_text())
+CERR_TASKS = json.loads((APP_ROOT / "catalog/cerr.json").read_text())
 
 def run(cmd, env=None, cwd=None):
     global child
+    SCRATCH_ROOT.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy() if env is None else env.copy()
+    for name in ("TMPDIR", "TEMP", "TMP"):
+        env[name] = str(SCRATCH_ROOT)
     child = subprocess.Popen(cmd, start_new_session=True, env=env, cwd=cwd)
     code = child.wait()
     child = None
@@ -44,6 +57,42 @@ def stop_child(*_):
             try: os.killpg(child.pid, signal.SIGKILL)
             except ProcessLookupError: pass
     raise SystemExit(143)
+
+def writable_mirror(source: Path, target: Path) -> Path:
+    """Mirror immutable files with symlinks, but materialize every directory.
+
+    The target must be fresh. Expand directory aliases without linking writable
+    paths back to the bundle, and reject cycles, overlaps and special files.
+    Existing files remain read-only through the bundle mount, not this helper.
+    """
+    source = source.resolve(strict=True)
+    target = target.absolute()
+    if target.resolve() != target:
+        raise ValueError(f"Mirror target has a symlink ancestor: {target}")
+
+    def populate(src, dst, ancestors):
+        src = src.resolve(strict=True)
+        if src in ancestors or target == src or target.is_relative_to(src):
+            raise ValueError(f"Cyclic or overlapping mirror source: {src}")
+        dst.mkdir(parents=True)
+        for entry in src.iterdir():
+            original = entry.resolve(strict=True)
+            if original.is_dir():
+                populate(original, dst / entry.name, ancestors | {src})
+            elif original.is_file():
+                (dst / entry.name).symlink_to(original)
+            else:
+                raise ValueError(f"Not a regular mirror file: {entry}")
+
+    if target.exists() or target.is_symlink():
+        raise FileExistsError(target)
+    try:
+        populate(source, target, set())
+    except Exception:
+        if target.is_dir(): shutil.rmtree(target)
+        raise
+    return target
+
 
 def identify_rtstruct(path: Path, model_name: str):
     """Give every result a model-specific identity in common TPS displays."""
@@ -86,7 +135,76 @@ try:
         "lungmask_ltrc_lobes": ("LTRCLobes", "labels/lungmask-lobes.json"),
         "lungmask_ltrc_lobes_r231": ("LTRCLobes_R231", "labels/lungmask-lobes.json"),
     }
-    if task == "siam_v3_head_mr_ct":
+    hippunfold_tasks = {
+        "hippunfold_adni_t1_subfields_mr": "ADNI_T1w_v1",
+        "hippunfold_maguire_t2_subfields_mr": "maguire_T2w",
+    }
+    if task in CERR_TASKS:
+        spec = CERR_TASKS[task]
+        if spec.get("runner") not in {"smit", "legacy_mrrn", "legacy_prostate"}:
+            raise SystemExit(f"{task} has no accepted CERR runner: {spec.get('blocked_status', spec.get('runner'))}")
+        work = job / "external" / task
+        work.mkdir(parents=True, exist_ok=True)
+        model_input, prediction, labels = work / "input.nii.gz", work / "prediction.nii.gz", work / "labels.json"
+        labels.write_text(json.dumps(spec["labels"], indent=2, sort_keys=True) + "\n")
+        run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"),
+             str(job / "input"), str(model_input)])
+        if spec["runner"] == "smit":
+            environment = os.environ.copy()
+            overlay = MODEL_ROOT / "runtime-homes/cerr/monai08-overlay"
+            environment["PYTHONPATH"] = f"{overlay}:{environment.get('PYTHONPATH', '')}"
+            run([str(RUNTIME_ROOT / "envs/segmentation-modern/bin/python"),
+                 str(APP_ROOT / "run_cerr_smit.py"), "--model", spec["upstream_model"],
+                 "--source", str(MODEL_ROOT / "sources/cerr" / spec["upstream_model"]),
+                 "--checkpoint", str(MODEL_ROOT / spec["checkpoint"]),
+                 "--input", str(model_input), "--output", str(prediction),
+                 "--work", str(work / "pipeline")], env=environment)
+        else:
+            legacy_input, legacy_output = work / "legacy-input", work / "legacy-output"
+            legacy_input.mkdir(); legacy_output.mkdir()
+            shutil.copy2(model_input, legacy_input / "case.nii.gz")
+            legacy_env = os.environ.copy()
+            if spec["runner"] == "legacy_prostate":
+                legacy_env["CUDA_VISIBLE_DEVICES"] = ""
+            run([str(RUNTIME_ROOT / "envs/segmentation-modern/bin/python"),
+                 str(APP_ROOT / "run_cerr_legacy.py"), "--model", spec["upstream_model"],
+                 "--source", str(MODEL_ROOT / "sources/cerr" / spec["upstream_model"]),
+                 "--weights", str(MODEL_ROOT / spec["checkpoint"]),
+                 "--input", str(legacy_input), "--output", str(legacy_output),
+                 "--work", str(work / "pipeline")], env=legacy_env)
+            generated = list(legacy_output.glob("*.nii.gz"))
+            if len(generated) != 1:
+                raise SystemExit(f"Expected one CERR legacy prediction, found {len(generated)}")
+            shutil.copy2(generated[0], prediction)
+        run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
+             "--prediction", str(prediction), "--model-input", str(model_input),
+             "--dicom", str(job / "input"), "--output", str(output),
+             "--labels", str(labels)])
+        shutil.rmtree(work, ignore_errors=True)
+    elif task in hippunfold_tasks:
+        work = job / "external" / task
+        work.mkdir(parents=True, exist_ok=True)
+        nifti, prediction = work / "input.nii.gz", work / "prediction.nii.gz"
+        run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"),
+             str(job / "input"), str(nifti)])
+        hippunfold_image = MODEL_ROOT / "images/hippunfold/hippunfold-dev-v2.0.0.sif"
+        if task == "hippunfold_adni_t1_subfields_mr":
+            hippunfold_image = MODEL_ROOT / "images/hippunfold/hippunfold-v1.5.3.sif"
+        hippunfold_command = [sys.executable, str(APP_ROOT / "run_hippunfold.py"),
+             "--input", str(nifti), "--output", str(prediction),
+             "--work-dir", str(work / "pipeline"),
+             "--image", str(hippunfold_image),
+             "--cache", str(MODEL_ROOT / "runtime-homes/hippunfold-cache"),
+             "--model", hippunfold_tasks[task], "--app-root", str(APP_ROOT)]
+        if task == "hippunfold_adni_t1_subfields_mr":
+            hippunfold_command.append("--cpu")
+        run(hippunfold_command)
+        run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
+             "--prediction", str(prediction), "--model-input", str(nifti),
+             "--dicom", str(job / "input"), "--output", str(output),
+             "--labels", str(APP_ROOT / "labels/hippunfold-bigbrain.json")])
+        shutil.rmtree(work, ignore_errors=True)
+    elif task == "siam_v3_head_mr_ct":
         work=job/"external"/task; input_dir,output_dir=work/"input",work/"output"
         input_dir.mkdir(parents=True,exist_ok=True); output_dir.mkdir(parents=True,exist_ok=True)
         nifti=input_dir/"case.nii.gz"
@@ -102,6 +220,27 @@ try:
              "--model-input",str(nifti),"--dicom",str(job/"input"),"--output",str(output),
              "--labels",str(APP_ROOT/"labels/siam-v3.json")])
         shutil.rmtree(work,ignore_errors=True)
+    elif task in FASTSURFER_TASKS:
+        work = job / "external" / task
+        work.mkdir(parents=True, exist_ok=True)
+        original, prediction = work / "input.nii.gz", work / "prediction.nii.gz"
+        restored, labels = work / "restored.nii.gz", work / "labels.json"
+        source = MODEL_ROOT / "sources/FastSurfer"
+        runtime = RUNTIME_ROOT / "envs/segmentation-modern"
+        overlay = MODEL_ROOT / "runtime-homes/fastsurfer-python"
+        run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"), str(job / "input"), str(original)])
+        run([str(runtime / "bin/python"), str(APP_ROOT / "run_fastsurfer.py"),
+             "--input", str(original), "--output", str(prediction),
+             "--source", str(source), "--runtime", str(runtime), "--overlay", str(overlay),
+             "--work", str(work / "pipeline")])
+        run([sys.executable, str(APP_ROOT / "resample_label_to_reference.py"),
+             str(prediction), str(original), str(restored)])
+        run([sys.executable, str(APP_ROOT / "labels_from_segmentation_lut.py"), str(restored),
+             str(source / "FastSurferCNN/config/FreeSurferColorLUT.txt"), str(labels)])
+        run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
+             "--prediction", str(restored), "--model-input", str(original),
+             "--dicom", str(job / "input"), "--output", str(output), "--labels", str(labels)])
+        shutil.rmtree(work, ignore_errors=True)
     elif task in GOUHFI_TASKS:
         spec=GOUHFI_TASKS[task]; work=job/"external"/task
         raw_dir, brain_dir, conformed_dir = work/"raw", work/"brain", work/"conformed"
@@ -129,21 +268,48 @@ try:
         nifti, prediction, labels = work / "input.nii.gz", work / "combined.nii.gz", work / "labels.json"
         run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"), str(job / "input"), str(nifti)])
         sct_root = Path(os.environ.get("RTSEG_SCT_ROOT", MODEL_ROOT / "runtime-homes/sct/sct_7.3"))
-        command = [str(sct_root / "bin/sct_deepseg"), spec["sct_task"], "-i", str(nifti),
+        # SCT's relocatable install leaves console-script shebangs pointing at
+        # the staging prefix. Invoke the bundled interpreter explicitly and
+        # provide its relocated package/binary roots.
+        sct_python = sct_root / "python/envs/venv_sct/bin/python3.10"
+        command = [str(sct_python), str(sct_root / "bin/sct_deepseg"),
+                   spec["sct_task"], "-i", str(nifti),
                    "-o", str(work / "prediction.nii.gz")]
         if spec.get("label_vert"): command += ["-label-vert", "1"]
-        env = os.environ.copy(); env["SCT_USE_GPU"] = "1"
+        env = os.environ.copy()
+        env.update(SCT_USE_GPU="1", SCT_DIR=str(sct_root),
+                   PYTHONPATH=str(sct_root),
+                   PATH=f"{sct_root / 'bin'}:{sct_root / 'python/envs/venv_sct/bin'}:{env.get('PATH', '')}")
         run(command, env=env)
-        multiclass_labels = spec.get("multiclass_labels", {})
-        if spec.get("labels_file"):
-            multiclass_labels = json.loads((APP_ROOT / spec["labels_file"]).read_text())
-        run([sys.executable, str(APP_ROOT / "combine_sct_outputs.py"),
-             "--glob", str(work / "prediction*.nii.gz"), "--output", str(prediction),
-             "--labels", str(labels), "--output-names", json.dumps(spec.get("output_names", {})),
-             "--multiclass-labels", json.dumps(multiclass_labels)])
-        run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
-             "--prediction", str(prediction), "--model-input", str(nifti),
-             "--dicom", str(job / "input"), "--output", str(output), "--labels", str(labels)])
+        if spec.get("preserve_overlaps"):
+            masks = {}
+            for native in sorted(work.glob(spec.get("output_glob", "prediction*.nii.gz"))):
+                key = re.sub(r"\.nii(?:\.gz)?$", "", native.name)
+                key = re.sub(r"^prediction_?", "", key).strip("_")
+                name = next((value for token, value in spec.get("output_names", {}).items()
+                             if token.lower() in key.lower()), None)
+                if name and native.is_file():
+                    masks[name] = str(native)
+            if not masks:
+                raise SystemExit(f"{task} produced no named native masks")
+            masks_json = work / "masks.json"
+            masks_json.write_text(json.dumps(masks, indent=2, sort_keys=True) + "\n")
+            run([sys.executable, str(APP_ROOT / "convert_masks_validate_rtstruct.py"),
+                 "--masks-json", str(masks_json), "--model-input", str(nifti),
+                 "--dicom", str(job / "input"), "--output", str(output),
+                 "--threshold", str(spec.get("mask_threshold", 0.0))])
+        else:
+            multiclass_labels = spec.get("multiclass_labels", {})
+            if spec.get("labels_file"):
+                multiclass_labels = json.loads((APP_ROOT / spec["labels_file"]).read_text())
+            native_glob = spec.get("output_glob", "prediction*.nii.gz")
+            run([sys.executable, str(APP_ROOT / "combine_sct_outputs.py"),
+                 "--glob", str(work / native_glob), "--output", str(prediction),
+                 "--labels", str(labels), "--output-names", json.dumps(spec.get("output_names", {})),
+                 "--multiclass-labels", json.dumps(multiclass_labels)])
+            run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
+                 "--prediction", str(prediction), "--model-input", str(nifti),
+                 "--dicom", str(job / "input"), "--output", str(output), "--labels", str(labels)])
         shutil.rmtree(work, ignore_errors=True)
     elif task in ANTSPYNET_TASKS:
         spec = ANTSPYNET_TASKS[task]
@@ -281,10 +447,14 @@ try:
         run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"),
              str(job / "input"), str(nifti)])
         env = os.environ.copy()
+        # A retry reuses this job directory; clear this job's previous mirror (dirs + file links only) first.
+        shutil.rmtree(work / "cads-source", ignore_errors=True)
+        source = writable_mirror(MODEL_ROOT / "sources/CADS", work / "cads-source")
+        env["PYTHONPATH"] = os.pathsep.join([str(source), env.get("PYTHONPATH", "")])
         env["CADS_WEIGHTS_PATH"] = str(MODEL_ROOT / "weights/cads")
         run([str(RUNTIME_ROOT / "envs/cads/bin/python"), "-m", "cads.scripts.predict_images",
              "-in", str(nifti), "-out", str(segmentation_dir),
-             "-task", str(spec["task_id"]), "-license", "open", "-np", "2", "-ns", "2"], env=env)
+             "-task", str(spec["task_id"]), "-license", "open", "-np", "2", "-ns", "2"], env=env, cwd=source)
         prediction = segmentation_dir / "input" / f"input_part_{spec['task_id']}.nii.gz"
         if not prediction.exists():
             raise SystemExit("CADS did not create its expected task segmentation")
@@ -322,7 +492,19 @@ try:
         run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"),
              str(job / "input"), str(nifti)])
         env = os.environ.copy()
-        env["RESULTS_FOLDER"] = str(MODEL_ROOT / "weights/nnunet-v1/model-zoo")
+        results = work / "nnunet-results"
+        configuration = Path("nnUNet") / spec["configuration"]
+        source = MODEL_ROOT / "weights/nnunet-v1/model-zoo" / configuration
+        task_name = str(spec["task"])
+        if task_name.isdigit():
+            candidates = [p.name for p in source.iterdir()
+                          if p.is_dir() and p.name.startswith(f"Task{int(task_name):03d}")]
+            if len(candidates) != 1:
+                raise ValueError(f"Expected one nnU-Net task for {task_name}: {candidates}")
+            task_name = candidates[0]
+        shutil.rmtree(results, ignore_errors=True)
+        writable_mirror(source / task_name, results / configuration / task_name)
+        env["RESULTS_FOLDER"] = str(results)
         command = [str(RUNTIME_ROOT / "envs/nnunet-v1/bin/nnUNet_predict"),
                    "-i", str(input_dir), "-o", str(prediction_dir), "-t", spec["task"],
                    "-m", spec["configuration"], "-tr", spec["trainer"], "-p", spec["plans"],
@@ -460,6 +642,27 @@ try:
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output), "--labels", str(labels)])
+        shutil.rmtree(work, ignore_errors=True)
+    elif task in MULTITALENT_V1_TASKS:
+        spec = MULTITALENT_V1_TASKS[task]
+        work = job / "external" / task
+        input_dir, prediction_dir = work / "input", work / "prediction"
+        input_dir.mkdir(parents=True, exist_ok=True)
+        prediction_dir.mkdir(parents=True, exist_ok=True)
+        nifti = input_dir / "case_0000.nii.gz"
+        masks_json = work / "masks.json"
+        run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"),
+             str(job / "input"), str(nifti)])
+        run([sys.executable, str(APP_ROOT / "run_multitalent_v1.py"),
+             "--python", str(RUNTIME_ROOT / "envs/nnunet-v1/bin/python"),
+             "--source", str(MODEL_ROOT / "sources/MultiTalentV1"),
+             "--model-folder", str(MODEL_ROOT / spec["model_folder"]),
+             "--input-dir", str(input_dir), "--output-dir", str(prediction_dir),
+             "--labels", str(APP_ROOT / "labels/multitalent-v1-masks.json"),
+             "--masks-json", str(masks_json), "--fold", "all"])
+        run([sys.executable, str(APP_ROOT / "convert_masks_validate_rtstruct.py"),
+             "--masks-json", str(masks_json), "--model-input", str(nifti),
+             "--dicom", str(job / "input"), "--output", str(output)])
         shutil.rmtree(work, ignore_errors=True)
     elif task in NNUNET_V2_TASKS:
         spec = NNUNET_V2_TASKS[task]
@@ -602,14 +805,101 @@ try:
              "--dicom", str(job / "input"), "--output", str(output),
              "--labels", str(labels)])
         shutil.rmtree(work, ignore_errors=True)
-    elif task in {"pam_prompted", "sam_med2d_prompted", "sat3d_prompted"}:
+    elif task == "medlsam_structseg_han_oars":
+        work = job / "external" / task
+        work.mkdir(parents=True, exist_ok=True)
+        nifti, prediction = work / "input.nii.gz", work / "prediction.nii.gz"
+        run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"),
+             str(job / "input"), str(nifti)])
+        run([str(RUNTIME_ROOT / "envs/pam/bin/python"), str(APP_ROOT / "run_medlsam.py"),
+             "--input", str(nifti), "--output", str(prediction),
+             "--source", str(MODEL_ROOT / "sources/MedLSAM"),
+             "--medlam", str(MODEL_ROOT / "weights/medlsam/medlam.pth"),
+             "--medsam", str(MODEL_ROOT / "weights/medlsam/medsam_vit_b.pth"),
+             "--support-root", str(MODEL_ROOT / "testdata/medlsam-structseg-han/HaN_OAR"),
+             "--work", str(work / "pipeline")])
+        run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
+             "--prediction", str(prediction), "--model-input", str(nifti),
+             "--dicom", str(job / "input"), "--output", str(output),
+             "--labels", str(APP_ROOT / "labels/medlsam-structseg-han.json")])
+        shutil.rmtree(work, ignore_errors=True)
+    elif task in {"pam_prompted", "sam_med2d_prompted", "sam_med3d_turbo_prompted", "medsam_vit_b_box_2d", "medical_sam3_3d_prompted", "medsam2_ct_lesion_prompted", "medical_sam2_prompted_ct", "sat3d_prompted", "nninteractive_v1_prompted", "vista3d_prompted_ct", "voxtell_v1_1_text_prompted", "segvol_prompted_ct"}:
         root = MODEL_ROOT
         work = job / "external" / task
         work.mkdir(parents=True, exist_ok=True)
         nifti = work / "input.nii.gz"
         prediction = work / "prediction.nii.gz"
         run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"), str(job / "input"), str(nifti)])
-        if task == "pam_prompted":
+        if task == "medical_sam3_3d_prompted":
+            env = os.environ.copy()
+            env["PYTORCH_CUDA_ALLOC_CONF"] = ""
+            run([str(RUNTIME_ROOT / "envs/segmentation-modern/bin/python"),
+                 str(APP_ROOT / "run_medical_sam3.py"),
+                 "--input", str(nifti), "--output", str(prediction),
+                 "--prompt", str(job / "prompt.json"),
+                 "--source", str(MODEL_ROOT / "sources/Medical-SAM3"),
+                 "--checkpoint", str(MODEL_ROOT / "weights/medical-sam3/checkpoint_3D.pt"),
+                 "--site-packages", str(MODEL_ROOT / "runtime-homes/medical-sam3-site")], env=env)
+        elif task == "medsam_vit_b_box_2d":
+            run([str(RUNTIME_ROOT / "envs/pam/bin/python"),
+                 str(APP_ROOT / "run_medsam.py"),
+                 "--input", str(nifti), "--output", str(prediction),
+                 "--prompt", str(job / "prompt.json"),
+                 "--source", str(MODEL_ROOT / "sources/MedSAM"),
+                 "--checkpoint", str(MODEL_ROOT / "weights/medlsam/medsam_vit_b.pth")])
+        elif task == "sam_med3d_turbo_prompted":
+            run([str(RUNTIME_ROOT / "envs/pam/bin/python"),
+                 str(APP_ROOT / "run_sam_med3d.py"),
+                 "--input", str(nifti), "--output", str(prediction),
+                 "--prompt", str(job / "prompt.json"),
+                 "--source", str(MODEL_ROOT / "sources/SAM-Med3D"),
+                 "--checkpoint", str(MODEL_ROOT / "weights/sam-med3d/sam_med3d_turbo.pth")])
+        elif task in {"medsam2_ct_lesion_prompted", "medical_sam2_prompted_ct"}:
+            imprint = task == "medical_sam2_prompted_ct"
+            run([str(RUNTIME_ROOT / "envs/pam/bin/python"),
+                 str(APP_ROOT / "run_medsam2.py"),
+                 "--implementation", "imprintlab" if imprint else "wanglab",
+                 "--input", str(nifti), "--output", str(prediction),
+                 "--prompt", str(job / "prompt.json"),
+                 "--source", str(MODEL_ROOT / ("sources/Medical-SAM2" if imprint else "sources/MedSAM2")),
+                 "--checkpoint", str(MODEL_ROOT / ("weights/medical-sam2/MedSAM2_pretrain.pth" if imprint else "weights/medsam2/medsam2_FLARE25_RECIST_baseline.pt")),
+                 "--site-packages", str(MODEL_ROOT / "runtime-homes/medsam2-site")])
+        elif task == "segvol_prompted_ct":
+            run([str(RUNTIME_ROOT / "envs/lnq/bin/python"),
+                 str(APP_ROOT / "run_segvol.py"),
+                 "--input", str(nifti), "--output", str(prediction),
+                 "--prompt", str(job / "prompt.json"),
+                 "--model-dir", str(MODEL_ROOT / "weights/segvol"),
+                 "--monai-site", str(MODEL_ROOT / "runtime-homes/segvol-site"),
+                 "--transformers-site", str(MODEL_ROOT / "runtime-homes/voxtell-env/lib/python3.11/site-packages")])
+        elif task == "voxtell_v1_1_text_prompted":
+            run([str(RUNTIME_ROOT / "envs/segmentation-modern/bin/python"),
+                 str(APP_ROOT / "run_voxtell.py"),
+                 "--input", str(nifti), "--output", str(prediction),
+                 "--prompt", str(job / "prompt.json"),
+                 "--model-dir", str(MODEL_ROOT / "weights/voxtell/voxtell_v1.1"),
+                 "--embeddings", str(MODEL_ROOT / "weights/voxtell/embeddings/voxtell_v1.1/text_embeddings.npz"),
+                 "--text-model", str(MODEL_ROOT / "weights/voxtell/qwen3-embedding-4b"),
+                 "--site-packages", str(MODEL_ROOT / "runtime-homes/voxtell-env/lib/python3.11/site-packages"),
+                 "--source", str(MODEL_ROOT / "sources/VoxTell"),
+                 "--work", str(work / "prediction")])
+        elif task == "vista3d_prompted_ct":
+            run([str(RUNTIME_ROOT / "envs/lnq/bin/python"), str(APP_ROOT / "run_vista3d.py"),
+                 "--input", str(nifti), "--output", str(prediction),
+                 "--prompt", str(job / "prompt.json"),
+                 "--source", str(MODEL_ROOT / "sources/NV-Segment-CTMR/NV-Segment-CT"),
+                 "--checkpoint", str(MODEL_ROOT / "weights/vista3d/NV-Segment-CT/model.pt"),
+                 "--runtime-python", str(RUNTIME_ROOT / "envs/lnq/bin/python"),
+                 "--work", str(work / "pipeline")])
+        elif task == "nninteractive_v1_prompted":
+            run([str(RUNTIME_ROOT / "envs/segmentation-modern/bin/python"),
+                 str(APP_ROOT / "run_nninteractive.py"),
+                 "--input", str(nifti), "--output", str(prediction),
+                 "--prompt", str(job / "prompt.json"),
+                 "--model-dir", str(MODEL_ROOT / "weights/nninteractive/nnInteractive_v1.0"),
+                 "--source", str(MODEL_ROOT / "sources/nnInteractive"),
+                 "--site-packages", str(MODEL_ROOT / "runtime-homes/nninteractive-site")])
+        elif task == "pam_prompted":
             modality = json.loads((job / "prompt.json").read_text()).get("modality")
             if modality not in {"CT", "MR", "PT"}:
                 # Read modality from the selected DICOM rather than trusting browser input.
@@ -642,7 +932,12 @@ try:
         run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"),
              str(job / "input"), str(nifti)])
         env = os.environ.copy()
-        env["RESULTS_FOLDER"] = str(root / "weights/hnlnl/model")
+        results = work / "nnunet-results"
+        shutil.rmtree(results, ignore_errors=True)
+        for configuration in ("2d", "3d_fullres"):
+            relative = Path("nnUNet") / configuration / "Task110_HNLNFixed_MirrorBest"
+            writable_mirror(root / "weights/hnlnl/model" / relative, results / relative)
+        env["RESULTS_FOLDER"] = str(results)
         common = ["-i", str(input_dir), "-t", "Task110_HNLNFixed_MirrorBest",
                   "-tr", "nnUNetTrainerV2", "-p", "nnUNetPlansv2.1",
                   "-chk", "model_final_checkpoint", "-z"]
@@ -691,7 +986,7 @@ try:
         nifti = input_dir / "case_0000.nii.gz"
         run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"),
              str(job / "input"), str(full_nifti)])
-        run([str(Path(sys.executable).parent / "TotalSegmentator"),
+        run([TOTAL_SEGMENTATOR,
              "-i", str(full_nifti), "-o", str(lung_dir), "--roi_subset",
              "lung_lower_lobe_left", "lung_upper_lobe_left", "lung_lower_lobe_right",
              "lung_upper_lobe_right", "lung_middle_lobe_right"])
@@ -887,7 +1182,11 @@ test_time_augmentation_iteration=0
             run([sys.executable, str(APP_ROOT / "crop_to_mask.py"), str(nifti),
                  str(lungs_dir / "labels_Lungs.nii.gz"), str(cropped_input), "32", "32", "16"])
             nn_env = os.environ.copy()
-            nn_env["RESULTS_FOLDER"] = str(root / "weights/lymphoma/results")
+            results = work / "nnunet-results"
+            shutil.rmtree(results, ignore_errors=True)
+            relative = Path("nnUNet/3d_fullres/Task066_Lymphoma")
+            writable_mirror(root / "weights/lymphoma/results" / relative, results / relative)
+            nn_env["RESULTS_FOLDER"] = str(results)
             run([str(RUNTIME_ROOT / "envs/nnunet-v1/bin/nnUNet_predict"),
                  "-i", str(cropped_input.parent), "-o", str(cropped_output),
                  "-t", "Task066_Lymphoma", "-m", "3d_fullres",
@@ -947,7 +1246,31 @@ test_time_augmentation_iteration=0
              "--labels", str(labels)])
         shutil.rmtree(work, ignore_errors=True)
     else:
-        run([str(Path(sys.executable).parent/"TotalSegmentator"),"-i",str(job/"input"),"-o",str(output),"--task",task,"--output_type","dicom_rtstruct","--device","gpu","--nr_thr_saving","1"])
+        # TotalSegmentator's native RTSTRUCT helper reverses the DICOM row axis.
+        # Keep inference in a source-grid multilabel NIfTI and use the portal's
+        # geometry-verified direct [column,row,slice] -> [row,column,slice]
+        # converter shared by every other model.
+        from totalsegmentator.map_to_binary import class_map
+        if task not in class_map:
+            raise SystemExit(f"unknown TotalSegmentator task label map: {task}")
+        work = job / "external" / task
+        work.mkdir(parents=True, exist_ok=True)
+        nifti, prediction = work / "input.nii.gz", work / "prediction.nii.gz"
+        labels = work / "labels.json"
+        labels.write_text(json.dumps({str(k): v for k, v in class_map[task].items()}, indent=2))
+        run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"),
+             str(job / "input"), str(nifti)])
+        run([TOTAL_SEGMENTATOR,
+             "-i", str(nifti), "-o", str(prediction), "--task", task,
+             "--ml", "--device", "gpu", "--nr_thr_saving", "1"])
+        # TotalSegmentator strips auxiliary training labels only for tasks with a "<task>_auxiliary" class map;
+        # appendicular_bones_mr has none, so keep exactly the labels this task's class map defines.
+        run([sys.executable, str(APP_ROOT / "keep_labels.py"), str(prediction), str(labels)])
+        run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
+             "--prediction", str(prediction), "--model-input", str(nifti),
+             "--dicom", str(job / "input"), "--output", str(output),
+             "--labels", str(labels)])
+        shutil.rmtree(work, ignore_errors=True)
     if not output.exists():
         raise SystemExit(f"{task} did not create its expected RTSTRUCT")
     identify_rtstruct(output, task)

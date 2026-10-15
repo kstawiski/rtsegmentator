@@ -1,0 +1,21 @@
+{
+  "task": "sct_sc_canal_t2",
+  "result": "passed",
+  "verified_at": "2026-08-13",
+  "runtime": "Spinal Cord Toolbox 7.3",
+  "model": "model_seg_canal_t2w r20241126",
+  "model_url": "https://github.com/ivadomed/model-canal-seg/releases/download/r20241126/model-canal-seg_r20241126.zip",
+  "checkpoint_sha256": "102935aee56ae41266039f1bd35376c0804abd2054ed75367ccf55563823e746",
+  "fixture": "SCT PAM50 T2 template converted to 991 source MR DICOM slices",
+  "fixture_shape": [141, 141, 991],
+  "fixture_spacing_mm": [0.5, 0.5, 0.5],
+  "inference": "official SCT sc_canal_t2 task on CUDA",
+  "rtstruct_rois": 1,
+  "roi_names": ["Spinal_Canal"],
+  "referenced_images": 972,
+  "geometry_mapping": "direct [DICOM column,row,slice] to rt-utils [row,column,slice]",
+  "geometry_bbox_max_delta_mm": 0.0,
+  "rtstruct_bytes": 2005242,
+  "rtstruct_sha256": "47601c3a3d28749f7fcfefc091f846b45719cd6e42a3bbae6c06b1b85819b0c8",
+  "orientation_evidence": "orientation-validation/sct_sc_canal_t2.json"
+}

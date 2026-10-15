@@ -20,3 +20,7 @@ HANDOFF.md
 *.pth
 *.ckpt
 .env*
+
+# Exclude operational backups
+*.bak*
+*.pre-*

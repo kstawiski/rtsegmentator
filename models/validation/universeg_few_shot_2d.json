@@ -1,0 +1,19 @@
+{
+  "task": "universeg_few_shot_2d",
+  "result": "checkpoint_and_official_fixture_passed",
+  "portal_status": "disabled",
+  "portal_blocker": "requires_support_image_mask_uploads",
+  "verified_at": "2026-08-13",
+  "checkpoint_loading": "All 1182785 parameters matched strictly",
+  "fixture": "publisher-linked neurite-oasis.2d.v1.0",
+  "fixture_archive_sha256": "177432a773b677247119d572950a64539db721c8964c0b9b6ffd0eeb5af71f2d",
+  "support_examples": 64,
+  "target_index": 100,
+  "target_label": 1,
+  "foreground_voxels": 1499,
+  "ground_truth_voxels": 1336,
+  "intersection_voxels": 1290,
+  "dice": 0.91005291005291,
+  "prediction_sha256": "d0f1247dabcdfd855eadf4dfd329558c8706a26f0975e66a9ba0ca7f30b8ec76",
+  "rtstruct_result": "not_applicable_until_support-pair upload contract is implemented"
+}

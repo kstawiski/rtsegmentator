@@ -1,0 +1,16 @@
+{
+  "result": "passed_projection_inference",
+  "fixture": "Official TotalSegmentator2D assets/sample_s0332.nrrd",
+  "command_contract": "ts2d --model ts2d-v2-ep4000b2 --no-remote --no-fetch --save-all",
+  "device": "NVIDIA H100L-47C",
+  "runtime": {"python": "3.12", "torch": "2.7.1+cu126", "ts2d": "1.2.0"},
+  "resolved_groups": ["cardiac", "muscles", "organs", "ribs", "vertebrae"],
+  "group_segment_counts": {"cardiac": 18, "muscles": 23, "organs": 24, "ribs": 26, "vertebrae": 26},
+  "combined_segment_count": 117,
+  "output_size_xyz": [269, 1, 505],
+  "output_spacing_xyz_mm": [1.5, 403.5, 1.5],
+  "output_direction": [-1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, -1.0],
+  "combined_nonzero_component_voxels": 287301,
+  "rtstruct_acceptance": "not_applicable",
+  "rtstruct_blocker": "The single AP voxel is a 2-D projected occupancy mask, not a 3-D segmentation. No inverse projection exists, so generating RTSTRUCT would invent anterior-posterior contour locations."
+}

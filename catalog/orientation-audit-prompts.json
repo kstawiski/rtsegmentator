@@ -1,0 +1,11 @@
+{
+  "medical_sam3_3d_prompted": "validation-prompts/medsam-msd-spleen.json",
+  "medsam_vit_b_box_2d": "validation-prompts/medsam-msd-spleen.json",
+  "sam_med3d_turbo_prompted": "validation-prompts/vista3d-msd-spleen.json",
+  "medical_sam2_prompted_ct": "validation-prompts/medsam2-msd-lung.json",
+  "medsam2_ct_lesion_prompted": "validation-prompts/medsam2-msd-lung.json",
+  "segvol_prompted_ct": "validation-prompts/segvol-official-spleen.json",
+  "nninteractive_v1_prompted": "validation-prompts/nninteractive-mni.json",
+  "vista3d_prompted_ct": "validation-prompts/vista3d-msd-spleen.json",
+  "voxtell_v1_1_text_prompted": "validation-prompts/voxtell-msd-spleen.json"
+}
