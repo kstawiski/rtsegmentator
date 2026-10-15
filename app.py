@@ -371,6 +371,8 @@ INFORMATIONAL_MODELS = {
         "reference":"https://github.com/JJGO/UniverSeg"},
     "segvol_prompted_ct": {"modality":"CT", "enabled":True, "licensed":True,
         "prompt":"text_points_or_box", "status":"validated",
+        "prompt_contract":{"allow_box_with_points":False},
+        "limitations":"Use points or a 3-D box, without combining them. Text may accompany either prompt type.",
         "clinical_tag_ids":["lung_cancer","prostate_cancer","bladder_cancer","head_neck_cancer","breast_cancer","liver_cancer","pancreatic_cancer","kidney_cancer","colorectal_cancer","cervical_cancer","lymphoma","spine_tumors","sarcoma_soft_tissue","whole_body_metastatic"],
         "structures":"One text-, point-, or 3-D-box-selected CT organ, tumour, lesion or other object",
         "description":"Official SegVol CT foundation model supporting more than 200 reported categories. The released checkpoint passed exact MONAI 0.9 state loading and H100 text-prompted inference on its public fixture (spleen Dice 0.980), followed by direct source-grid RTSTRUCT geometry acceptance.",
@@ -1088,12 +1090,33 @@ def colab_capable(task: str) -> bool:
     return (task not in EXTERNAL_TASKS and task not in INFORMATIONAL_MODELS) or task in COLAB_EXTERNAL_TASKS
 
 EMPTY_PREDICTION_MARKERS = ("empty prediction: no RTSTRUCT created",
-                            "all supplied masks are empty: no RTSTRUCT created")
+                            "all supplied masks are empty: no RTSTRUCT created",
+                            "no contourable structures: no RTSTRUCT created")
 
 def is_empty_prediction(exc: Exception) -> bool:
-    """True only for a model that ran to completion and segmented nothing in the series."""
+    """Recognize completed empty predictions or explicitly reported un-contourable ROIs."""
     message = str(exc)
     return any(marker in message for marker in EMPTY_PREDICTION_MARKERS)
+
+def conversion_notes(job: Path) -> list[str]:
+    """Surface converter omissions from retained local/SSH/Colab worker logs."""
+    notes = []
+    for path in sorted(job.glob("*.log")):
+        with path.open(errors="replace") as log:
+            for line in log:
+                if not line.startswith("RTSTRUCT_CONVERSION_NOTE "):
+                    continue
+                try:
+                    record = json.loads(line.removeprefix("RTSTRUCT_CONVERSION_NOTE "))
+                    model = record["output"].removesuffix("_RTSTRUCT.dcm")
+                    for roi in record["omitted_rois"]:
+                        note = (f"{model}: omitted ROI {roi['name']} ({int(roi['voxels'])} voxels; "
+                                f"{roi['reason']}).")
+                        if note not in notes:
+                            notes.append(note)
+                except (ValueError, KeyError, TypeError, AttributeError):
+                    logger.warning("Could not parse an RTSTRUCT conversion note in %s", path.name)
+    return notes
 
 def finalize_results(job: Path, empty=()):
     results = sorted((job / "output").glob("*.dcm"))
@@ -1102,6 +1125,7 @@ def finalize_results(job: Path, empty=()):
     report = json.loads(report_path.read_text()) if report_path.is_file() else None
     if not results and not empty and report is None:
         raise RuntimeError("Worker completed without producing an RTSTRUCT file")
+    omissions = conversion_notes(job)
     with zipfile.ZipFile(job/"rtstruct-results.zip","w",zipfile.ZIP_DEFLATED) as z:
         nested = sorted(path for path in (job / "output").rglob("*")
                         if path.is_file() and path.parent != job / "output")
@@ -1111,6 +1135,8 @@ def finalize_results(job: Path, empty=()):
             z.writestr("NO_STRUCTURES_FOUND.txt",
                        "These models ran to completion but found no structures in the selected series, "
                        "so no RTSTRUCT was created for them:\n" + "".join(f"- {name}\n" for name in empty))
+        if omissions:
+            z.writestr("CONVERSION_NOTES.txt", "\n".join(omissions) + "\n")
     # Retain the selected input for the viewer until job retention or explicit deletion.
     shutil.rmtree(job/"input_ct",ignore_errors=True)
     if not results:
@@ -1122,9 +1148,10 @@ def finalize_results(job: Path, empty=()):
     if report is not None:
         detail = "Results ready; AI draft " + report["status"].replace("_", " ")
         save_metadata(job, report_status=report["status"], report_reason=report.get("reason", ""))
-    notes = metadata(job).get("postprocess_notes", [])
+    notes = metadata(job).get("postprocess_notes", []) + omissions
     if notes: detail += "; " + "; ".join(notes)
-    save_metadata(job,status="complete",detail=detail,progress=100,no_structures_found=empty)
+    save_metadata(job,status="complete",detail=detail,progress=100,no_structures_found=empty,
+                  conversion_notes=omissions)
 
 def validate_postprocess(value: str, models: list[str]) -> list[str]:
     if not value: return []
@@ -1891,6 +1918,9 @@ def validate_assessed_prompt(models, items, selected, prompt_json):
             raise HTTPException(400,"The selected prompted model requires a point, box, or text prompt")
         for name in prompt_models:
             kind = items[name]["prompt"]
+            contract = items[name].get("prompt_contract", {})
+            if box and (positives or negatives) and contract.get("allow_box_with_points") is False:
+                raise HTTPException(400, f"{name} cannot combine box and point prompts; use points or a box")
             if kind in {"points", "points_or_box"} and not (positives or (box and kind == "points_or_box")):
                 raise HTTPException(400, f"{name} requires a positive point" +
                                     (" or a two-corner box prompt" if kind == "points_or_box" else " prompt"))

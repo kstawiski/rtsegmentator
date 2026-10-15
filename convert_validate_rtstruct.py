@@ -5,7 +5,7 @@ import nibabel as nib
 import numpy as np
 import pydicom
 from pydicom.uid import RTStructureSetStorage
-from rt_utils import RTStructBuilder
+from rtstruct_geometry import add_roi, create_rtstruct, mask_bounds, report_omissions
 from rtstruct_roundtrip import validate_roi_roundtrip
 
 
@@ -26,24 +26,25 @@ def main():
     unknown=present-set(labels)
     if unknown: raise SystemExit(f"unmapped prediction labels: {sorted(unknown)}")
     if not present: raise SystemExit("empty prediction: no RTSTRUCT created")
-    # nibabel/SimpleITK arrays are [DICOM column, DICOM row, slice]. rt-utils
-    # expects [row, column, slice]. Passing this mapping directly avoids the
-    # historical TotalSegmentator helper's unconditional axial row reversal,
-    # which reflected otherwise geometry-faithful masks in the AP direction.
-    rtstruct = RTStructBuilder.create_new(dicom_series_path=a.dicom)
+    # Preserve [DICOM column, DICOM row, acquired slice] array indices. The
+    # shared writer transposes each plane for OpenCV without reversing rows.
+    rtstruct = create_rtstruct(a.dicom, inp)
     expected_bounds = {}
     expected_masks = {}
+    omitted = []
     for class_idx, class_name in labels.items():
         binary = data == class_idx
         if not np.any(binary):
             continue
-        rtstruct.add_roi(mask=np.transpose(binary, (1, 0, 2)),
-                         name=class_name, color=deterministic_color(class_name))
-        ijk = np.argwhere(binary)
-        ras = nib.affines.apply_affine(pred.affine, ijk)
-        lps = ras * np.array([-1.0, -1.0, 1.0])
-        expected_bounds[class_name] = (lps.min(0), lps.max(0))
+        if not add_roi(rtstruct, binary, class_name, deterministic_color(class_name)):
+            omitted.append({"name": class_name, "voxels": int(binary.sum()),
+                            "reason": "no non-degenerate contour polygon"})
+            continue
+        expected_bounds[class_name] = mask_bounds(binary, rtstruct.series_data)
         expected_masks[class_name] = binary
+    report_omissions(a.output, omitted)
+    if not expected_masks:
+        raise SystemExit("no contourable structures: no RTSTRUCT created")
     rtstruct.save(str(a.output))
     ds=pydicom.dcmread(a.output,stop_before_pixels=True)
     if ds.SOPClassUID != RTStructureSetStorage or ds.Modality != "RTSTRUCT": raise SystemExit("output is not DICOM RT Structure Set Storage")
@@ -77,11 +78,12 @@ def main():
         if delta>tolerance:
             raise SystemExit(f"RTSTRUCT geometry mismatch for {name}: {delta:.3f} mm > {tolerance:.3f} mm")
         try:
-            roundtrip[name]=validate_roi_roundtrip(roi,pred,expected_masks[name])
+            roundtrip[name]=validate_roi_roundtrip(roi,pred,expected_masks[name],
+                                                  source_slices=rtstruct.series_data)
         except ValueError as exc:
             raise SystemExit(f"RTSTRUCT physical round-trip mismatch for {name}: {exc}") from exc
     print(json.dumps({"valid":True,"rois":len(rois),"contour_sets":len(contours),
         "referenced_images":len(refs),"geometry_bbox_max_delta_mm":round(max_delta,4),
         "geometry_tolerance_mm":round(tolerance,4),"physical_roundtrip":roundtrip,
-        "bytes":Path(a.output).stat().st_size}))
+        "omitted_rois":omitted,"bytes":Path(a.output).stat().st_size}))
 if __name__=="__main__": main()

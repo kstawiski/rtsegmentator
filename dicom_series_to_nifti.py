@@ -3,12 +3,10 @@ from pathlib import Path
 import sys
 
 import SimpleITK as sitk
+from dicom_series import ordered_dicom_files
 
 source, output = Path(sys.argv[1]), Path(sys.argv[2])
-series_ids = sitk.ImageSeriesReader.GetGDCMSeriesIDs(str(source)) or []
-if len(series_ids) != 1:
-    raise SystemExit(f"expected one DICOM series, found {len(series_ids)}")
-files = sitk.ImageSeriesReader.GetGDCMSeriesFileNames(str(source), series_ids[0])
+files = ordered_dicom_files(source)
 reader = sitk.ImageSeriesReader()
 reader.SetFileNames(files)
 image = reader.Execute()

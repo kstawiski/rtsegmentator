@@ -51,6 +51,8 @@ def test_crop_preserves_pixels_and_remaps_all_references(synthetic_ct, tmp_path,
     rt = pydicom.dcmread(out / "struct_cropped.dcm")
     assert rt.StudyInstanceUID == cropped[0].StudyInstanceUID
     assert rt.FrameOfReferenceUID == cropped[0].FrameOfReferenceUID
+    assert all(roi.ReferencedFrameOfReferenceUID == cropped[0].FrameOfReferenceUID
+               for roi in rt.StructureSetROISequence)
     refs = {str(i.ReferencedSOPInstanceUID) for roi in rt.ROIContourSequence
             for c in getattr(roi, "ContourSequence", []) for i in c.ContourImageSequence}
     assert refs and refs <= uids

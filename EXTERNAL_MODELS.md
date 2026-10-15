@@ -201,6 +201,10 @@ Every automatic output must satisfy all of the following:
 5. every referenced SOP Instance UID belongs to the selected source DICOM series.
 
 An empty candidate-detection mask is reported as “no candidates detected”; contours are never fabricated merely to create a file.
+
+Both RTSTRUCT converters now position polygons on each referenced DICOM slice using its own position, orientation and row/column spacing, in the inference reader's GDCM order. This corrects rt-utils' unequal-spacing swap and uniform-stack assumption. The tested non-square outputs previously failed the physical geometry gate. A square-pixel gapped fixture passed the old affine-based gate despite a 1.600000 mm source-plane error; the new gate checks the acquired planes directly. The Dice, plane-distance and bounding-box thresholds remain unchanged. TotalSegmentator uses the same converter. Synthetic orientation and overlap tests cover this change; they do not assess model accuracy.
+
+Nonempty labels with no valid polygon are omitted with the ROI name and voxel count in job and download notes. SCT empty masks complete through the standard no-structures path. HD-CTBET's writable directory mirror keeps training logs outside its read-only bundle. SegVol rejects combined point and box prompts through its catalog contract and shared HTTP validation.
 # Additional catalog integrations (2026-08-10)
 
 - The nine CADS `cads-model-open_v1.0.0` checkpoints (tasks 551–559) are

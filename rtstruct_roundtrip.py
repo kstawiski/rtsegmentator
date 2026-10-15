@@ -8,34 +8,66 @@ import numpy as np
 
 
 def validate_roi_roundtrip(roi_contour, mask_image, expected_mask,
-                           minimum_dice: float = 0.95) -> dict:
-    """Rasterize patient-space contours on the NIfTI grid and compare masks.
+                           minimum_dice: float = 0.95, *, source_slices=None) -> dict:
+    """Rasterize patient-space contours on the source grid and compare masks.
 
     This intentionally does not use rt-utils' RTSTRUCT reader. Its returned
     array follows an internal column/row convention that can hide or suggest
-    transpositions. Contour LPS coordinates are transformed directly through
-    the inverse NIfTI affine instead.
+    transpositions. With DICOM sources, each SOP reference selects its acquired
+    plane, including irregular stacks that a NIfTI affine cannot represent.
+    Without them, retain the inverse-NIfTI-affine check for existing callers.
+    Dice and the 0.05-voxel plane tolerance are unchanged.
     """
     expected = np.asarray(expected_mask, dtype=bool)
     reconstructed = np.zeros(expected.shape, dtype=bool)
     inverse_affine = np.linalg.inv(mask_image.affine)
     polygons_by_slice: dict[int, list[np.ndarray]] = {}
+    by_uid = ({str(ds.SOPInstanceUID): (k, ds) for k, ds in enumerate(source_slices)}
+              if source_slices is not None else None)
 
     for contour in getattr(roi_contour, "ContourSequence", []):
         values = getattr(contour, "ContourData", None)
         if not values:
             continue
         lps = np.asarray(values, dtype=float).reshape(-1, 3)
-        ras = lps * np.array([-1.0, -1.0, 1.0])
-        ijk = nib.affines.apply_affine(inverse_affine, ras)
-        slice_positions = ijk[:, 2]
-        k = int(round(float(np.median(slice_positions))))
+        if not np.isfinite(lps).all() or len(lps) < 3:
+            raise ValueError("invalid contour coordinates")
+        if by_uid is None:
+            ras = lps * np.array([-1.0, -1.0, 1.0])
+            ijk = nib.affines.apply_affine(inverse_affine, ras)
+            slice_positions = ijk[:, 2]
+            k = int(round(float(np.median(slice_positions))))
+            xy = ijk[:, :2]
+        else:
+            refs = [str(im.ReferencedSOPInstanceUID)
+                    for im in getattr(contour, "ContourImageSequence", [])]
+            if len(refs) != 1 or refs[0] not in by_uid:
+                raise ValueError("contour must reference exactly one source SOP Instance UID")
+            k, ds = by_uid[refs[0]]
+            if contour.ContourGeometricType != "CLOSED_PLANAR":
+                raise ValueError("expected CLOSED_PLANAR contour")
+            column, row = np.asarray(ds.ImageOrientationPatient, dtype=float).reshape(2, 3)
+            normal = np.cross(column, row)
+            normal /= np.linalg.norm(normal)
+            delta = lps - np.asarray(ds.ImagePositionPatient, dtype=float)
+            xy = np.column_stack((delta @ column / float(ds.PixelSpacing[1]),
+                                  delta @ row / float(ds.PixelSpacing[0])))
+            # Large gaps must not relax the original plane tolerance.
+            step = float(mask_image.header.get_zooms()[2])
+            for neighbor in (k - 1, k + 1):
+                if 0 <= neighbor < len(source_slices):
+                    distance = abs((np.asarray(source_slices[neighbor].ImagePositionPatient)
+                                    - np.asarray(ds.ImagePositionPatient)) @ normal)
+                    if distance > 0:
+                        step = min(step, float(distance))
+            slice_positions = k + (delta @ normal) / step
         if not 0 <= k < expected.shape[2]:
             raise ValueError(f"contour maps outside NIfTI slice range: {k}")
         if np.max(np.abs(slice_positions - k)) > 0.05:
-            raise ValueError("contour is not planar on the NIfTI voxel grid")
+            grid = "DICOM source" if by_uid is not None else "NIfTI"
+            raise ValueError(f"contour is not planar on the {grid} voxel grid")
         polygons_by_slice.setdefault(k, []).append(
-            np.rint(ijk[:, :2]).astype(np.int32)
+            np.rint(xy).astype(np.int32)
         )
 
     for k, polygons in polygons_by_slice.items():

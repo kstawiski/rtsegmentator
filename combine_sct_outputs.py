@@ -32,7 +32,8 @@ else:
         mask=np.asanyarray(img.dataobj)>0
         if mask.any(): data[mask]=idx
         labels[str(idx)]=label
-if not np.any(data): raise SystemExit("SCT prediction is empty")
+# Preserve a valid empty result; the shared converter and portal record the
+# same no-structures outcome as for other models. Missing files still fail.
 header=imgs[0].header.copy(); header.set_data_dtype(np.uint16)
 nib.save(nib.Nifti1Image(data, imgs[0].affine, header), a.output)
 Path(a.labels).write_text(json.dumps(labels,indent=2,sort_keys=True)+"\n")

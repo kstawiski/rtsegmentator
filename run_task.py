@@ -695,7 +695,13 @@ try:
         run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"),
              str(job / "input"), str(nifti)])
         env = os.environ.copy()
-        env["HOME"] = str(MODEL_ROOT / "runtime-homes/hd-ctbet")
+        # Failed jobs retain work directories for diagnosis. Rebuild only our
+        # own writable mirror on retry; immutable bundle files remain linked.
+        model_home = work / "hd-ctbet-home"
+        if model_home.exists():
+            shutil.rmtree(model_home)
+        env["HOME"] = str(writable_mirror(MODEL_ROOT / "runtime-homes/hd-ctbet",
+                                          model_home))
         run([str(RUNTIME_ROOT / "envs/nnunet-v1/bin/hd-ctbet"),
              "-i", str(nifti), "-o", str(work / "brain.nii.gz"),
              "-device", "0", "-mode", "fast", "-tta", "0"], env=env)

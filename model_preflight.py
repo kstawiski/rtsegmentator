@@ -35,7 +35,8 @@ def report_acceptance_ready():
     except (OSError, ValueError, TypeError): return False
 
 
-COMMON = ["dicom_series_to_nifti.py", "convert_validate_rtstruct.py"]
+COMMON = ["dicom_series_to_nifti.py", "dicom_series.py", "convert_validate_rtstruct.py",
+          "rtstruct_geometry.py", "rtstruct_roundtrip.py"]
 REQUIREMENTS = {
     "medical_sam3_3d_prompted": [
         "@run_medical_sam3.py", "@prompted-target-label.json",

@@ -9,7 +9,7 @@ import nibabel as nib
 import numpy as np
 import pydicom
 from pydicom.uid import RTStructureSetStorage
-from rt_utils import RTStructBuilder
+from rtstruct_geometry import add_roi, create_rtstruct, mask_bounds, report_omissions
 from rtstruct_roundtrip import validate_roi_roundtrip
 
 
@@ -34,9 +34,10 @@ def main() -> None:
     if not isinstance(mappings, dict) or not mappings:
         raise SystemExit("masks JSON must be a non-empty ROI-name to path object")
 
-    rtstruct = RTStructBuilder.create_new(dicom_series_path=args.dicom)
+    rtstruct = create_rtstruct(args.dicom, model_input)
     expected_bounds: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     expected_masks: dict[str, tuple[nib.Nifti1Image, np.ndarray]] = {}
+    omitted = []
     for name, filename in mappings.items():
         mask_image = nib.load(filename)
         if mask_image.shape != model_input.shape:
@@ -46,15 +47,17 @@ def main() -> None:
         mask = np.asanyarray(mask_image.dataobj) > args.threshold
         if not np.any(mask):
             continue
-        rtstruct.add_roi(mask=np.transpose(mask, (1, 0, 2)), name=str(name),
-                         color=deterministic_color(str(name)))
-        ras = nib.affines.apply_affine(mask_image.affine, np.argwhere(mask))
-        lps = ras * np.array([-1.0, -1.0, 1.0])
-        expected_bounds[str(name)] = (lps.min(0), lps.max(0))
+        if not add_roi(rtstruct, mask, str(name), deterministic_color(str(name))):
+            omitted.append({"name": str(name), "voxels": int(mask.sum()),
+                            "reason": "no non-degenerate contour polygon"})
+            continue
+        expected_bounds[str(name)] = mask_bounds(mask, rtstruct.series_data)
         expected_masks[str(name)] = (mask_image, mask)
 
+    report_omissions(args.output, omitted)
     if not expected_bounds:
-        raise SystemExit("all supplied masks are empty: no RTSTRUCT created")
+        raise SystemExit("no contourable structures: no RTSTRUCT created" if omitted else
+                         "all supplied masks are empty: no RTSTRUCT created")
     rtstruct.save(args.output)
 
     ds = pydicom.dcmread(args.output, stop_before_pixels=True)
@@ -101,14 +104,14 @@ def main() -> None:
             raise SystemExit(f"RTSTRUCT geometry mismatch for {name}: "
                              f"{delta:.3f} mm > {tolerance:.3f} mm")
         image, mask = expected_masks[name]
-        roundtrip[name] = validate_roi_roundtrip(roi, image, mask)
+        roundtrip[name] = validate_roi_roundtrip(roi, image, mask, source_slices=rtstruct.series_data)
 
     print(json.dumps({"valid": True, "rois": len(rois),
                       "referenced_images": len(refs),
                       "geometry_bbox_max_delta_mm": round(max_delta, 4),
                       "geometry_tolerance_mm": round(tolerance, 4),
                       "physical_roundtrip": roundtrip,
-                      "bytes": Path(args.output).stat().st_size}))
+                      "omitted_rois": omitted, "bytes": Path(args.output).stat().st_size}))
 
 
 if __name__ == "__main__":

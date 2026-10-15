@@ -115,6 +115,9 @@ def _remap_references(ds, uid_map, series_uid, output_series_uid,
                     and (not study_uid or str(study.ReferencedSOPInstanceUID) == study_uid)):
                 study.ReferencedSOPInstanceUID = output_study_uid
     for node in _nodes(ds):
+        if (output_frame_uid and "ReferencedFrameOfReferenceUID" in node
+                and (not frame_uid or str(node.ReferencedFrameOfReferenceUID) == frame_uid)):
+            node.ReferencedFrameOfReferenceUID = output_frame_uid
         if "RTReferencedSeriesSequence" in node:
             # Do not relabel references to other series as the selected series.
             node.RTReferencedSeriesSequence = Sequence([
@@ -169,6 +172,9 @@ def _validate(output, rt_names, kept, uid_map, mode, study_uid=None, frame_uid=N
         if (frame_uid is not None and "FrameOfReferenceUID" in ds
                 and str(ds.FrameOfReferenceUID) != frame_uid):
             raise ValueError("Validation failed: RTSTRUCT top-level FrameOfReferenceUID does not match output CT")
+        if frame_uid is not None and any(str(roi.get("ReferencedFrameOfReferenceUID", "")) != frame_uid
+                                         for roi in ds.get("StructureSetROISequence", [])):
+            raise ValueError("Validation failed: ROI FrameOfReferenceUID does not match output CT")
         for frame in ds.get("ReferencedFrameOfReferenceSequence", []):
             if frame_uid is not None and str(frame.get("FrameOfReferenceUID", "")) != frame_uid:
                 raise ValueError("Validation failed: RTSTRUCT FrameOfReferenceUID does not match output CT")

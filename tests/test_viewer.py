@@ -143,34 +143,25 @@ def test_orientation_exact_mask_pixels(portal, synthetic_ct, tmp_path, iop, spac
     job = make_job(portal, source)
     mask = make_mask()
     output = job / "output/total_RTSTRUCT.dcm"
-    if not gaps:
-        # Exercise the production conversion and independent physical round-trip gate.
-        first = pydicom.dcmread(source / ("slice-0006.dcm" if reverse else "slice-0000.dcm"))
-        affine = np.eye(4)
-        affine[:3, :3] = np.column_stack((np.array(iop[:3]) * spacing[1], np.array(iop[3:]) * spacing[0],
-                                         np.cross(iop[:3], iop[3:]) * 2))
-        affine[:3, 3] = first.ImagePositionPatient
-        affine[:2] *= -1  # LPS -> RAS, with no array permutation beyond row/column.
-        prediction = tmp_path / "prediction.nii.gz"
-        nib.save(nib.Nifti1Image(mask.transpose(1, 0, 2).astype(np.uint8), affine), prediction)
-        labels = tmp_path / "labels.json"
-        labels.write_text('{"1": "Asymmetric L"}')
-        converted = subprocess.run([sys.executable, str(Path(__file__).parents[1] / "convert_validate_rtstruct.py"),
-                                    "--prediction", str(prediction), "--model-input", str(prediction),
-                                    "--dicom", str(source), "--output", str(output), "--labels", str(labels)],
-                                   capture_output=True, text=True)
-        if converted.returncode == 0:
-            assert json.loads(converted.stdout.splitlines()[-1])["physical_roundtrip"]["Asymmetric L"]["roundtrip_dice"] == 1
-        else:
-            # Record the existing converter limitation; do not teach the viewer
-            # the writer's incorrect spacing convention to make this test pass.
-            assert not np.isclose(*spacing), converted.stdout + converted.stderr
-            assert "RTSTRUCT geometry mismatch" in converted.stderr
-            print("PRODUCTION_CONVERTER_REJECTED " + converted.stderr.strip().splitlines()[-1])
-            make_rtstruct(source, output, mask)
-    else:
-        # An irregular stack has no single exact NIfTI affine.
-        make_rtstruct(source, output, mask)
+    # Use the actual inference reader, including its acquired-plane order and
+    # average NIfTI spacing for the gapped stack. No synthetic RTSTRUCT fallback.
+    model_input = tmp_path / "input.nii.gz"
+    reader = subprocess.run([sys.executable, str(Path(__file__).parents[1] / "dicom_series_to_nifti.py"),
+                             str(source), str(model_input)], capture_output=True, text=True)
+    assert reader.returncode == 0, reader.stdout + reader.stderr
+    input_image = nib.load(model_input)
+    prediction = tmp_path / "prediction.nii.gz"
+    nib.save(nib.Nifti1Image(mask.transpose(1, 0, 2).astype(np.uint8), input_image.affine), prediction)
+    labels = tmp_path / "labels.json"
+    labels.write_text('{"1": "Asymmetric L"}')
+    converted = subprocess.run([sys.executable, str(Path(__file__).parents[1] / "convert_validate_rtstruct.py"),
+                                "--prediction", str(prediction), "--model-input", str(model_input),
+                                "--dicom", str(source), "--output", str(output), "--labels", str(labels)],
+                               capture_output=True, text=True)
+    assert converted.returncode == 0, converted.stdout + converted.stderr
+    validation = json.loads(converted.stdout.splitlines()[-1])
+    assert validation["physical_roundtrip"]["Asymmetric L"]["roundtrip_dice"] == 1
+    print("PRODUCTION_CONVERTER " + json.dumps(validation))
     client = TestClient(portal.app)
     base = f"/api/v1/jobs/{job.name}/viewer"
     response = client.get(base)
