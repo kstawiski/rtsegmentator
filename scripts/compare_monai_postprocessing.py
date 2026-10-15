@@ -104,7 +104,7 @@ def main():
     env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'}
     nifti = args.output / 'input.nii.gz'
     with (args.output / 'conversion.log').open('w') as log:
-        subprocess.run([str(args.conversion_python.resolve()), str(APP_ROOT / 'dicom_series_to_nifti.py'),
+        subprocess.run([str(args.conversion_python.absolute()), str(APP_ROOT / 'dicom_series_to_nifti.py'),
                         str(args.dicom.resolve()), str(nifti)], env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
     summary = {'seed': args.seed,
                'memory_measurement': 'PyTorch peak allocated/reserved MiB on cuda:0; excludes non-PyTorch CUDA allocations',
@@ -123,12 +123,12 @@ def main():
             started = time.perf_counter()
             try:
                 config = compatible_config(bundle, spec, work)
-                command = bundle_command(args.runtime_python.resolve(), bundle, spec, config, nifti, inference)
+                command = bundle_command(args.runtime_python.absolute(), bundle, spec, config, nifti, inference)
                 metrics_path = work / 'metrics.json'
                 request_path = work / 'request.json'
                 request_path.write_text(json.dumps({'command': command, 'metrics': str(metrics_path), 'seed': args.seed}, indent=2) + '\n')
                 with (work / 'run.log').open('w') as log:
-                    result = subprocess.run([str(args.runtime_python.resolve()), str(Path(__file__).resolve()), '--worker', str(request_path)],
+                    result = subprocess.run([str(args.runtime_python.absolute()), str(Path(__file__).resolve()), '--worker', str(request_path)],
                                             env=env, stdout=log, stderr=subprocess.STDOUT)
                 metrics = json.loads(metrics_path.read_text()) if metrics_path.exists() else {'status': 'failed', 'error_type': 'NoWorkerMetrics'}
                 metrics['returncode'] = result.returncode
