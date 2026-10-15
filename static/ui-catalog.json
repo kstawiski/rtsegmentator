@@ -1,0 +1,2059 @@
+{
+  "schema_version": 1,
+  "fallback": "Clinical-purpose rules in app.js, then the explicit Other anatomy and research models group. Availability, modalities and restrictions always come from the live catalog. Counts come from published label maps; unknown counts stay unspecified.",
+  "overrides": {
+    "total": {
+      "title": "Whole-body organs · TotalSegmentator",
+      "group": "whole",
+      "purpose": "Default CT starting model for organs, vessels, bones and muscles. Coverage depends on the scan."
+    },
+    "total_mr": {
+      "title": "Whole-body organs · TotalSegmentator MR",
+      "group": "whole",
+      "purpose": "Default MR starting model for organs, vessels, bones and muscles. Check the sequence and field of view."
+    },
+    "total_v3": {
+      "title": "Whole-body organs · TotalSegmentator v3",
+      "group": "whole",
+      "purpose": "Version-specific whole-body CT anatomy; inspect the runtime structure list."
+    },
+    "nv_reason_ct_report": {
+      "title": "CT draft report · NV-Reason-CT",
+      "group": "report",
+      "purpose": "Research AI draft for diagnostic chest/abdomen CT. Requires radiologist review; CBCT is refused."
+    },
+    "siam_v3_head_mr_ct": {
+      "title": "Head tissues · SIAM v3",
+      "group": "brain",
+      "purpose": "Whole-head tissues and anomaly candidates on compatible MR or CT images.",
+      "count": 17,
+      "structures": [
+        "Gray_Matter",
+        "White_Matter",
+        "CSF",
+        "Ventricular_CSF",
+        "Cerebellar_Gray_Matter",
+        "Thalamus",
+        "Pallidum",
+        "Putamen",
+        "Caudate",
+        "Accumbens",
+        "Amygdala",
+        "Hippocampus",
+        "Dura",
+        "Vasculature",
+        "Skull",
+        "Head",
+        "Anomaly_Candidate"
+      ]
+    },
+    "nv_segment_ct_auto": {
+      "title": "Whole-body organs · NV-Segment-CT",
+      "group": "whole",
+      "purpose": "117 foreground anatomy labels on CT. Solid-tumour heads are excluded.",
+      "count": 117,
+      "structures": [
+        "liver",
+        "spleen",
+        "pancreas",
+        "right kidney",
+        "aorta",
+        "inferior vena cava",
+        "right adrenal gland",
+        "left adrenal gland",
+        "gallbladder",
+        "esophagus",
+        "stomach",
+        "duodenum",
+        "left kidney",
+        "bladder",
+        "portal vein and splenic vein",
+        "small bowel",
+        "brain",
+        "left lung upper lobe",
+        "left lung lower lobe",
+        "right lung upper lobe",
+        "right lung middle lobe",
+        "right lung lower lobe",
+        "vertebrae L5",
+        "vertebrae L4",
+        "vertebrae L3",
+        "vertebrae L2",
+        "vertebrae L1",
+        "vertebrae T12",
+        "vertebrae T11",
+        "vertebrae T10",
+        "vertebrae T9",
+        "vertebrae T8",
+        "vertebrae T7",
+        "vertebrae T6",
+        "vertebrae T5",
+        "vertebrae T4",
+        "vertebrae T3",
+        "vertebrae T2",
+        "vertebrae T1",
+        "vertebrae C7",
+        "vertebrae C6",
+        "vertebrae C5",
+        "vertebrae C4",
+        "vertebrae C3",
+        "vertebrae C2",
+        "vertebrae C1",
+        "trachea",
+        "left iliac artery",
+        "right iliac artery",
+        "left iliac vena",
+        "right iliac vena",
+        "colon",
+        "left rib 1",
+        "left rib 2",
+        "left rib 3",
+        "left rib 4",
+        "left rib 5",
+        "left rib 6",
+        "left rib 7",
+        "left rib 8",
+        "left rib 9",
+        "left rib 10",
+        "left rib 11",
+        "left rib 12",
+        "right rib 1",
+        "right rib 2",
+        "right rib 3",
+        "right rib 4",
+        "right rib 5",
+        "right rib 6",
+        "right rib 7",
+        "right rib 8",
+        "right rib 9",
+        "right rib 10",
+        "right rib 11",
+        "right rib 12",
+        "left humerus",
+        "right humerus",
+        "left scapula",
+        "right scapula",
+        "left clavicula",
+        "right clavicula",
+        "left femur",
+        "right femur",
+        "left hip",
+        "right hip",
+        "sacrum",
+        "left gluteus maximus",
+        "right gluteus maximus",
+        "left gluteus medius",
+        "right gluteus medius",
+        "left gluteus minimus",
+        "right gluteus minimus",
+        "left autochthon",
+        "right autochthon",
+        "left iliopsoas",
+        "right iliopsoas",
+        "left atrial appendage",
+        "brachiocephalic trunk",
+        "left brachiocephalic vein",
+        "right brachiocephalic vein",
+        "left common carotid artery",
+        "right common carotid artery",
+        "costal cartilages",
+        "heart",
+        "Lesion candidate: left kidney cyst",
+        "Lesion candidate: right kidney cyst",
+        "prostate",
+        "pulmonary vein",
+        "skull",
+        "spinal cord",
+        "sternum",
+        "left subclavian artery",
+        "right subclavian artery",
+        "superior vena cava",
+        "thyroid gland",
+        "First sacral vertebra"
+      ]
+    },
+    "nv_segment_ctmr_ct_body": {
+      "title": "Body organs · NV-Segment-CTMR (CT)",
+      "group": "whole",
+      "purpose": "117 foreground anatomy labels on CT. Non-commercial research or evaluation weights.",
+      "count": 117,
+      "structures": [
+        "liver",
+        "spleen",
+        "pancreas",
+        "right kidney",
+        "aorta",
+        "inferior vena cava",
+        "right adrenal gland",
+        "left adrenal gland",
+        "gallbladder",
+        "esophagus",
+        "stomach",
+        "duodenum",
+        "left kidney",
+        "bladder",
+        "portal vein and splenic vein",
+        "small bowel",
+        "brain",
+        "left lung upper lobe",
+        "left lung lower lobe",
+        "right lung upper lobe",
+        "right lung middle lobe",
+        "right lung lower lobe",
+        "vertebrae L5",
+        "vertebrae L4",
+        "vertebrae L3",
+        "vertebrae L2",
+        "vertebrae L1",
+        "vertebrae T12",
+        "vertebrae T11",
+        "vertebrae T10",
+        "vertebrae T9",
+        "vertebrae T8",
+        "vertebrae T7",
+        "vertebrae T6",
+        "vertebrae T5",
+        "vertebrae T4",
+        "vertebrae T3",
+        "vertebrae T2",
+        "vertebrae T1",
+        "vertebrae C7",
+        "vertebrae C6",
+        "vertebrae C5",
+        "vertebrae C4",
+        "vertebrae C3",
+        "vertebrae C2",
+        "vertebrae C1",
+        "trachea",
+        "left iliac artery",
+        "right iliac artery",
+        "left iliac vena",
+        "right iliac vena",
+        "colon",
+        "left rib 1",
+        "left rib 2",
+        "left rib 3",
+        "left rib 4",
+        "left rib 5",
+        "left rib 6",
+        "left rib 7",
+        "left rib 8",
+        "left rib 9",
+        "left rib 10",
+        "left rib 11",
+        "left rib 12",
+        "right rib 1",
+        "right rib 2",
+        "right rib 3",
+        "right rib 4",
+        "right rib 5",
+        "right rib 6",
+        "right rib 7",
+        "right rib 8",
+        "right rib 9",
+        "right rib 10",
+        "right rib 11",
+        "right rib 12",
+        "left humerus",
+        "right humerus",
+        "left scapula",
+        "right scapula",
+        "left clavicula",
+        "right clavicula",
+        "left femur",
+        "right femur",
+        "left hip",
+        "right hip",
+        "sacrum",
+        "left gluteus maximus",
+        "right gluteus maximus",
+        "left gluteus medius",
+        "right gluteus medius",
+        "left gluteus minimus",
+        "right gluteus minimus",
+        "left autochthon",
+        "right autochthon",
+        "left iliopsoas",
+        "right iliopsoas",
+        "left atrial appendage",
+        "brachiocephalic trunk",
+        "left brachiocephalic vein",
+        "right brachiocephalic vein",
+        "left common carotid artery",
+        "right common carotid artery",
+        "costal cartilages",
+        "heart",
+        "Lesion candidate: left kidney cyst",
+        "Lesion candidate: right kidney cyst",
+        "prostate",
+        "pulmonary vein",
+        "skull",
+        "spinal cord",
+        "sternum",
+        "left subclavian artery",
+        "right subclavian artery",
+        "superior vena cava",
+        "thyroid gland",
+        "First sacral vertebra"
+      ]
+    },
+    "nv_segment_ctmr_mri_body": {
+      "title": "Body organs · NV-Segment-CTMR (MR)",
+      "group": "whole",
+      "purpose": "50 foreground anatomy labels on body MR. Non-commercial research or evaluation weights.",
+      "count": 50,
+      "structures": [
+        "liver",
+        "spleen",
+        "pancreas",
+        "right kidney",
+        "aorta",
+        "inferior vena cava",
+        "right adrenal gland",
+        "left adrenal gland",
+        "gallbladder",
+        "esophagus",
+        "stomach",
+        "duodenum",
+        "left kidney",
+        "bladder",
+        "portal vein and splenic vein",
+        "small bowel",
+        "brain",
+        "left iliac artery",
+        "right iliac artery",
+        "left iliac vena",
+        "right iliac vena",
+        "colon",
+        "left humerus",
+        "right humerus",
+        "left scapula",
+        "right scapula",
+        "left clavicula",
+        "right clavicula",
+        "left femur",
+        "right femur",
+        "left hip",
+        "right hip",
+        "sacrum",
+        "left gluteus maximus",
+        "right gluteus maximus",
+        "left gluteus medius",
+        "right gluteus medius",
+        "left gluteus minimus",
+        "right gluteus minimus",
+        "left autochthon",
+        "right autochthon",
+        "left iliopsoas",
+        "right iliopsoas",
+        "heart",
+        "prostate",
+        "spinal cord",
+        "intervertebral discs",
+        "left lung",
+        "right lung",
+        "vertebrae"
+      ]
+    },
+    "nv_segment_ctmr_mri_brain": {
+      "title": "Brain regions · NV-Segment-CTMR (T1 MR)",
+      "group": "brain",
+      "purpose": "132 foreground brain labels. Evidence is from T1 MR; publisher documents disagree on other sequences.",
+      "count": 132,
+      "structures": [
+        "3rd-Ventricle",
+        "4th-Ventricle",
+        "Right-Accumbens-Area",
+        "Left-Accumbens-Area",
+        "Right-Amygdala",
+        "Left-Amygdala",
+        "Brain-Stem",
+        "Right-Caudate",
+        "Left-Caudate",
+        "Right-Cerebellum-Exterior",
+        "Left-Cerebellum-Exterior",
+        "Right-Cerebellum-White-Matter",
+        "Left-Cerebellum-White-Matter",
+        "Right-Cerebral-White-Matter",
+        "Left-Cerebral-White-Matter",
+        "Right-Hippocampus",
+        "Left-Hippocampus",
+        "Right-Inf-Lat-Vent",
+        "Left-Inf-Lat-Vent",
+        "Right-Lateral-Ventricle",
+        "Left-Lateral-Ventricle",
+        "Right-Pallidum",
+        "Left-Pallidum",
+        "Right-Putamen",
+        "Left-Putamen",
+        "Right-Thalamus-Proper",
+        "Left-Thalamus-Proper",
+        "Right-Ventral-DC",
+        "Left-Ventral-DC",
+        "Cerebellar-Vermal-Lobules-I-V",
+        "Cerebellar-Vermal-Lobules-VI-VII",
+        "Cerebellar-Vermal-Lobules-VIII-X",
+        "Left-Basal-Forebrain",
+        "Right-Basal-Forebrain",
+        "Right-ACgG--anterior-cingulate-gyrus",
+        "Left-ACgG--anterior-cingulate-gyrus",
+        "Right-AIns--anterior-insula",
+        "Left-AIns--anterior-insula",
+        "Right-AOrG--anterior-orbital-gyrus",
+        "Left-AOrG--anterior-orbital-gyrus",
+        "Right-AnG---angular-gyrus",
+        "Left-AnG---angular-gyrus",
+        "Right-Calc--calcarine-cortex",
+        "Left-Calc--calcarine-cortex",
+        "Right-CO----central-operculum",
+        "Left-CO----central-operculum",
+        "Right-Cun---cuneus",
+        "Left-Cun---cuneus",
+        "Right-Ent---entorhinal-area",
+        "Left-Ent---entorhinal-area",
+        "Right-FO----frontal-operculum",
+        "Left-FO----frontal-operculum",
+        "Right-FRP---frontal-pole",
+        "Left-FRP---frontal-pole",
+        "Right-FuG---fusiform-gyrus",
+        "Left-FuG---fusiform-gyrus",
+        "Right-GRe---gyrus-rectus",
+        "Left-GRe---gyrus-rectus",
+        "Right-IOG---inferior-occipital-gyrus",
+        "Left-IOG---inferior-occipital-gyrus",
+        "Right-ITG---inferior-temporal-gyrus",
+        "Left-ITG---inferior-temporal-gyrus",
+        "Right-LiG---lingual-gyrus",
+        "Left-LiG---lingual-gyrus",
+        "Right-LOrG--lateral-orbital-gyrus",
+        "Left-LOrG--lateral-orbital-gyrus",
+        "Right-MCgG--middle-cingulate-gyrus",
+        "Left-MCgG--middle-cingulate-gyrus",
+        "Right-MFC---medial-frontal-cortex",
+        "Left-MFC---medial-frontal-cortex",
+        "Right-MFG---middle-frontal-gyrus",
+        "Left-MFG---middle-frontal-gyrus",
+        "Right-MOG---middle-occipital-gyrus",
+        "Left-MOG---middle-occipital-gyrus",
+        "Right-MOrG--medial-orbital-gyrus",
+        "Left-MOrG--medial-orbital-gyrus",
+        "Right-MPoG--postcentral-gyrus",
+        "Left-MPoG--postcentral-gyrus",
+        "Right-MPrG--precentral-gyrus",
+        "Left-MPrG--precentral-gyrus",
+        "Right-MSFG--superior-frontal-gyrus",
+        "Left-MSFG--superior-frontal-gyrus",
+        "Right-MTG---middle-temporal-gyrus",
+        "Left-MTG---middle-temporal-gyrus",
+        "Right-OCP---occipital-pole",
+        "Left-OCP---occipital-pole",
+        "Right-OFuG--occipital-fusiform-gyrus",
+        "Left-OFuG--occipital-fusiform-gyrus",
+        "Right-OpIFG-opercular-part-of-the-IFG",
+        "Left-OpIFG-opercular-part-of-the-IFG",
+        "Right-OrIFG-orbital-part-of-the-IFG",
+        "Left-OrIFG-orbital-part-of-the-IFG",
+        "Right-PCgG--posterior-cingulate-gyrus",
+        "Left-PCgG--posterior-cingulate-gyrus",
+        "Right-PCu---precuneus",
+        "Left-PCu---precuneus",
+        "Right-PHG---parahippocampal-gyrus",
+        "Left-PHG---parahippocampal-gyrus",
+        "Right-PIns--posterior-insula",
+        "Left-PIns--posterior-insula",
+        "Right-PO----parietal-operculum",
+        "Left-PO----parietal-operculum",
+        "Right-PoG---postcentral-gyrus",
+        "Left-PoG---postcentral-gyrus",
+        "Right-POrG--posterior-orbital-gyrus",
+        "Left-POrG--posterior-orbital-gyrus",
+        "Right-PP----planum-polare",
+        "Left-PP----planum-polare",
+        "Right-PrG---precentral-gyrus",
+        "Left-PrG---precentral-gyrus",
+        "Right-PT----planum-temporale",
+        "Left-PT----planum-temporale",
+        "Right-SCA---subcallosal-area",
+        "Left-SCA---subcallosal-area",
+        "Right-SFG---superior-frontal-gyrus",
+        "Left-SFG---superior-frontal-gyrus",
+        "Right-SMC---supplementary-motor-cortex",
+        "Left-SMC---supplementary-motor-cortex",
+        "Right-SMG---supramarginal-gyrus",
+        "Left-SMG---supramarginal-gyrus",
+        "Right-SOG---superior-occipital-gyrus",
+        "Left-SOG---superior-occipital-gyrus",
+        "Right-SPL---superior-parietal-lobule",
+        "Left-SPL---superior-parietal-lobule",
+        "Right-STG---superior-temporal-gyrus",
+        "Left-STG---superior-temporal-gyrus",
+        "Right-TMP---temporal-pole",
+        "Left-TMP---temporal-pole",
+        "Right-TrIFG-triangular-part-of-the-IFG",
+        "Left-TrIFG-triangular-part-of-the-IFG",
+        "Right-TTG---transverse-temporal-gyrus",
+        "Left-TTG---transverse-temporal-gyrus"
+      ]
+    },
+    "mrsegmentator": {
+      "title": "Body organs · MRSegmentator",
+      "group": "whole",
+      "purpose": "Broad body anatomy across supported MR and CT images.",
+      "count": 40,
+      "structures": [
+        "Spleen",
+        "Kidney_R",
+        "Kidney_L",
+        "Gallbladder",
+        "Liver",
+        "Stomach",
+        "Pancreas",
+        "Adrenal_R",
+        "Adrenal_L",
+        "Lung_L",
+        "Lung_R",
+        "Heart",
+        "Aorta",
+        "IVC",
+        "PortalSplenicVein",
+        "IliacArtery_L",
+        "IliacArtery_R",
+        "IliacVein_L",
+        "IliacVein_R",
+        "Esophagus",
+        "SmallBowel",
+        "Duodenum",
+        "Colon",
+        "Bladder",
+        "Spine",
+        "Sacrum",
+        "Hip_L",
+        "Hip_R",
+        "Femur_L",
+        "Femur_R",
+        "Autochthon_L",
+        "Autochthon_R",
+        "Iliopsoas_L",
+        "Iliopsoas_R",
+        "GluteusMax_L",
+        "GluteusMax_R",
+        "GluteusMed_L",
+        "GluteusMed_R",
+        "GluteusMin_L",
+        "GluteusMin_R"
+      ]
+    },
+    "mrisegmentator": {
+      "title": "Body organs · MRISegmentator",
+      "group": "whole",
+      "purpose": "Thoracic and abdominal anatomy on T1-weighted MR.",
+      "count": 62,
+      "structures": [
+        "spleen",
+        "kidney_right",
+        "kidney_left",
+        "gallbladder",
+        "liver",
+        "esophagus",
+        "stomach",
+        "aorta",
+        "inferior_vena_cava",
+        "portal_vein_and_splenic_vein",
+        "pancreas",
+        "adrenal_gland_right",
+        "adrenal_gland_left",
+        "lung_right",
+        "lung_left",
+        "small_bowel",
+        "duodenum",
+        "colon",
+        "iliac_artery_left",
+        "iliac_artery_right",
+        "iliac_vena_left",
+        "iliac_vena_right",
+        "gluteus_maximus_left",
+        "gluteus_maximus_right",
+        "gluteus_medius_left",
+        "gluteus_medius_right",
+        "autochthon_left",
+        "autochthon_right",
+        "iliopsoas_left",
+        "iliopsoas_right",
+        "hip_left",
+        "hip_right",
+        "sacrum",
+        "rib_left_4",
+        "rib_left_5",
+        "rib_left_6",
+        "rib_left_7",
+        "rib_left_8",
+        "rib_left_9",
+        "rib_left_10",
+        "rib_left_11",
+        "rib_left_12",
+        "rib_right_4",
+        "rib_right_5",
+        "rib_right_6",
+        "rib_right_7",
+        "rib_right_8",
+        "rib_right_9",
+        "rib_right_10",
+        "rib_right_11",
+        "rib_right_12",
+        "vertebrae_L5",
+        "vertebrae_L4",
+        "vertebrae_L3",
+        "vertebrae_L2",
+        "vertebrae_L1",
+        "vertebrae_T12",
+        "vertebrae_T11",
+        "vertebrae_T10",
+        "vertebrae_T9",
+        "vertebrae_T8",
+        "vertebrae_T7"
+      ]
+    },
+    "vibesegmentator": {
+      "title": "Torso anatomy · VIBESegmentator",
+      "group": "whole",
+      "purpose": "Broad torso anatomy; confirm supported modality in the live catalog.",
+      "count": 72
+    },
+    "mrsegmentator_body_comp": {
+      "title": "Body composition · MRSegmentator",
+      "group": "oar",
+      "purpose": "Fat compartments and abdominal muscle groups.",
+      "count": 10,
+      "structures": [
+        "SubcutaneousFat",
+        "VisceralFat",
+        "RectusAbdominis_L",
+        "RectusAbdominis_R",
+        "ObliqueMuscle_L",
+        "ObliqueMuscle_R",
+        "QuadratusLumborum_L",
+        "QuadratusLumborum_R",
+        "AbdominalSubcutaneousFat",
+        "GluteofemoralFat"
+      ]
+    },
+    "totalspineseg": {
+      "title": "Spinal cord, vertebrae and discs · TotalSpineSeg",
+      "group": "spine",
+      "purpose": "Level-specific vertebrae, intervertebral discs, canal and cord.",
+      "count": 52,
+      "structures": [
+        "SpinalCord",
+        "SpinalCanal",
+        "Vertebra_C1",
+        "Vertebra_C2",
+        "Vertebra_C3",
+        "Vertebra_C4",
+        "Vertebra_C5",
+        "Vertebra_C6",
+        "Vertebra_C7",
+        "Vertebra_T1",
+        "Vertebra_T2",
+        "Vertebra_T3",
+        "Vertebra_T4",
+        "Vertebra_T5",
+        "Vertebra_T6",
+        "Vertebra_T7",
+        "Vertebra_T8",
+        "Vertebra_T9",
+        "Vertebra_T10",
+        "Vertebra_T11",
+        "Vertebra_T12",
+        "Vertebra_L1",
+        "Vertebra_L2",
+        "Vertebra_L3",
+        "Vertebra_L4",
+        "Vertebra_L5",
+        "Vertebra_L6",
+        "Vertebra_L7",
+        "Sacrum",
+        "Disc_C2_C3",
+        "Disc_C3_C4",
+        "Disc_C4_C5",
+        "Disc_C5_C6",
+        "Disc_C6_C7",
+        "Disc_C7_T1",
+        "Disc_T1_T2",
+        "Disc_T2_T3",
+        "Disc_T3_T4",
+        "Disc_T4_T5",
+        "Disc_T5_T6",
+        "Disc_T6_T7",
+        "Disc_T7_T8",
+        "Disc_T8_T9",
+        "Disc_T9_T10",
+        "Disc_T10_T11",
+        "Disc_T11_T12",
+        "Disc_T12_L1",
+        "Disc_L1_L2",
+        "Disc_L2_L3",
+        "Disc_L3_L4",
+        "Disc_L4_L5",
+        "Disc_L5_S"
+      ]
+    },
+    "synthseg_v1_brain": {
+      "title": "Brain regions · SynthSeg v1",
+      "group": "brain",
+      "purpose": "Cortical, deep-gray, ventricular and cerebellar labels.",
+      "count": 31,
+      "structures": [
+        "CerebralWhiteMatter_L",
+        "CerebralCortex_L",
+        "LateralVentricle_L",
+        "InferiorLateralVentricle_L",
+        "CerebellumWhiteMatter_L",
+        "CerebellumCortex_L",
+        "Thalamus_L",
+        "Caudate_L",
+        "Putamen_L",
+        "Pallidum_L",
+        "ThirdVentricle",
+        "FourthVentricle",
+        "Brainstem",
+        "Hippocampus_L",
+        "Amygdala_L",
+        "AccumbensArea_L",
+        "VentralDC_L",
+        "CerebralWhiteMatter_R",
+        "CerebralCortex_R",
+        "LateralVentricle_R",
+        "InferiorLateralVentricle_R",
+        "CerebellumWhiteMatter_R",
+        "CerebellumCortex_R",
+        "Thalamus_R",
+        "Caudate_R",
+        "Putamen_R",
+        "Pallidum_R",
+        "Hippocampus_R",
+        "Amygdala_R",
+        "AccumbensArea_R",
+        "VentralDC_R"
+      ]
+    },
+    "hd_bet_mr": {
+      "title": "Brain extraction · HD-BET",
+      "group": "brain",
+      "purpose": "Brain mask on MR.",
+      "count": 1
+    },
+    "hd_ctbet_ct": {
+      "title": "Brain extraction · HD-CTBET",
+      "group": "brain",
+      "purpose": "Brain mask on head CT.",
+      "count": 1
+    },
+    "dentalsegmentator": {
+      "title": "Dental and maxillofacial anatomy",
+      "group": "brain",
+      "purpose": "Skull, mandible, teeth and mandibular canal.",
+      "count": 5
+    },
+    "medlsam_structseg_han_oars": {
+      "title": "Head and neck OARs · MedLSAM",
+      "group": "oar",
+      "purpose": "22 organs at risk. Held-out accuracy varied substantially by structure.",
+      "count": 22,
+      "structures": [
+        "BrainStem",
+        "Eye_L",
+        "Eye_R",
+        "Lens_L",
+        "Lens_R",
+        "OpticNerve_L",
+        "OpticNerve_R",
+        "OpticChiasm",
+        "TemporalLobe_L",
+        "TemporalLobe_R",
+        "Pituitary",
+        "Parotid_L",
+        "Parotid_R",
+        "InnerEar_L",
+        "InnerEar_R",
+        "MiddleEar_L",
+        "MiddleEar_R",
+        "TMJ_L",
+        "TMJ_R",
+        "SpinalCord",
+        "Mandible_L",
+        "Mandible_R"
+      ]
+    },
+    "cervix_cbct": {
+      "title": "Cervical target and pelvic organs · CBCT",
+      "group": "ctv",
+      "purpose": "Released CTVT, CP, rectum and bladder classes. Inspect the catalog definition before use."
+    },
+    "hnlnl_2d3d": {
+      "title": "Head and neck elective nodal levels",
+      "group": "ctv",
+      "purpose": "Nodal level regions, distinct from visible lymph-node candidates."
+    },
+    "choi_tmli": {
+      "title": "Lymphatic target regions · TMLI",
+      "group": "ctv",
+      "purpose": "Regional lymphatic volumes for total marrow and lymphoid irradiation research."
+    },
+    "clnet_235": {
+      "title": "Multi-organ and nodal regions · CLNet",
+      "group": "whole",
+      "purpose": "235 reported classes; the public lymph-node station map is incomplete.",
+      "count": 235
+    },
+    "cads_open_551_organs": {
+      "title": "Abdominal organs and lung lobes · CADS",
+      "group": "oar",
+      "count": 17,
+      "structures": [
+        "spleen",
+        "kidney_right",
+        "kidney_left",
+        "gallbladder",
+        "liver",
+        "stomach",
+        "aorta",
+        "inferior_vena_cava",
+        "portal_vein_and_splenic_vein",
+        "pancreas",
+        "adrenal_gland_right",
+        "adrenal_gland_left",
+        "lung_upper_lobe_left",
+        "lung_lower_lobe_left",
+        "lung_upper_lobe_right",
+        "lung_middle_lobe_right",
+        "lung_lower_lobe_right"
+      ]
+    },
+    "cads_open_553_organs_vessels": {
+      "title": "Thoracic and pelvic organs / vessels · CADS",
+      "group": "oar",
+      "count": 18,
+      "structures": [
+        "esophagus",
+        "trachea",
+        "heart_myocardium",
+        "heart_atrium_left",
+        "heart_ventricle_left",
+        "heart_atrium_right",
+        "heart_ventricle_right",
+        "pulmonary_artery",
+        "brain",
+        "iliac_artery_left",
+        "iliac_artery_right",
+        "iliac_vena_left",
+        "iliac_vena_right",
+        "small_bowel",
+        "duodenum",
+        "colon",
+        "urinary_bladder",
+        "face"
+      ]
+    },
+    "cads_open_558_headneck_oars": {
+      "title": "Head and neck OARs · CADS",
+      "group": "oar",
+      "count": 29,
+      "structures": [
+        "OAR_A_Carotid_L",
+        "OAR_A_Carotid_R",
+        "OAR_Arytenoid",
+        "OAR_Bone_Mandible",
+        "OAR_Brainstem",
+        "OAR_BuccalMucosa",
+        "OAR_Cavity_Oral",
+        "OAR_Cochlea_L",
+        "OAR_Cochlea_R",
+        "OAR_Cricopharyngeus",
+        "OAR_Esophagus_S",
+        "OAR_Eye_AL",
+        "OAR_Eye_AR",
+        "OAR_Eye_PL",
+        "OAR_Eye_PR",
+        "OAR_Glnd_Lacrimal_L",
+        "OAR_Glnd_Lacrimal_R",
+        "OAR_Glnd_Submand_L",
+        "OAR_Glnd_Submand_R",
+        "OAR_Glnd_Thyroid",
+        "OAR_Glottis",
+        "OAR_Larynx_SG",
+        "OAR_Lips",
+        "OAR_OpticChiasm",
+        "OAR_OpticNrv_L",
+        "OAR_OpticNrv_R",
+        "OAR_Parotid_L",
+        "OAR_Parotid_R",
+        "OAR_Pituitary"
+      ]
+    },
+    "cads_open_557_brain_tissues": {
+      "title": "Brain and head tissues · CADS",
+      "group": "brain",
+      "count": 9,
+      "structures": [
+        "white_matter",
+        "gray_matter",
+        "csf",
+        "scalp",
+        "eye_balls",
+        "compact_bone",
+        "spongy_bone",
+        "blood",
+        "head_muscles"
+      ]
+    },
+    "cads_open_559_body_regions": {
+      "title": "Body regions and tissues · CADS",
+      "group": "oar",
+      "count": 10,
+      "structures": [
+        "subcutaneous_tissue",
+        "muscle",
+        "abdominal_cavity",
+        "thoracic_cavity",
+        "bones",
+        "glands",
+        "pericardium",
+        "breast_implant",
+        "mediastinum",
+        "spinal_cord"
+      ]
+    },
+    "cerr_ct_lung_smit": {
+      "title": "Lung tumour · CERR SMIT",
+      "group": "tumour",
+      "count": 1,
+      "structures": [
+        "Lung_Tumor"
+      ]
+    },
+    "cerr_ct_hn_smit": {
+      "title": "Head and neck classes · CERR SMIT",
+      "group": "oar",
+      "purpose": "Sixteen numeric classes; anatomical names are not published.",
+      "count": 16,
+      "structures": [
+        "HN_Class_01",
+        "HN_Class_02",
+        "HN_Class_03",
+        "HN_Class_04",
+        "HN_Class_05",
+        "HN_Class_06",
+        "HN_Class_07",
+        "HN_Class_08",
+        "HN_Class_09",
+        "HN_Class_10",
+        "HN_Class_11",
+        "HN_Class_12",
+        "HN_Class_13",
+        "HN_Class_14",
+        "HN_Class_15",
+        "HN_Class_16"
+      ]
+    },
+    "cerr_ct_hn_oars": {
+      "title": "Head and neck OARs · CERR",
+      "group": "oar"
+    },
+    "cerr_ct_wholebody_smitplus": {
+      "title": "Whole-body classes · CERR SMIT+",
+      "group": "whole",
+      "purpose": "Forty-six numeric classes; anatomical names are not published.",
+      "count": 46,
+      "structures": [
+        "WholeBody_Class_01",
+        "WholeBody_Class_02",
+        "WholeBody_Class_03",
+        "WholeBody_Class_04",
+        "WholeBody_Class_05",
+        "WholeBody_Class_06",
+        "WholeBody_Class_07",
+        "WholeBody_Class_08",
+        "WholeBody_Class_09",
+        "WholeBody_Class_10",
+        "WholeBody_Class_11",
+        "WholeBody_Class_12",
+        "WholeBody_Class_13",
+        "WholeBody_Class_14",
+        "WholeBody_Class_15",
+        "WholeBody_Class_16",
+        "WholeBody_Class_17",
+        "WholeBody_Class_18",
+        "WholeBody_Class_19",
+        "WholeBody_Class_20",
+        "WholeBody_Class_21",
+        "WholeBody_Class_22",
+        "WholeBody_Class_23",
+        "WholeBody_Class_24",
+        "WholeBody_Class_25",
+        "WholeBody_Class_26",
+        "WholeBody_Class_27",
+        "WholeBody_Class_28",
+        "WholeBody_Class_29",
+        "WholeBody_Class_30",
+        "WholeBody_Class_31",
+        "WholeBody_Class_32",
+        "WholeBody_Class_33",
+        "WholeBody_Class_34",
+        "WholeBody_Class_35",
+        "WholeBody_Class_36",
+        "WholeBody_Class_37",
+        "WholeBody_Class_38",
+        "WholeBody_Class_39",
+        "WholeBody_Class_40",
+        "WholeBody_Class_41",
+        "WholeBody_Class_42",
+        "WholeBody_Class_43",
+        "WholeBody_Class_44",
+        "WholeBody_Class_45",
+        "WholeBody_Class_46"
+      ]
+    },
+    "cerr_mr_hn_nodule_smit": {
+      "title": "Head and neck lesion · CERR SMIT (MR)",
+      "group": "tumour",
+      "count": 1,
+      "structures": [
+        "Head_Neck_Nodule"
+      ]
+    },
+    "cerr_mr_brainmets_smitplus": {
+      "title": "Brain metastases · CERR SMIT+",
+      "group": "tumour"
+    },
+    "cerr_mr_prostate_deeplab": {
+      "title": "Prostate CTV and pelvic OARs · CERR",
+      "group": "ctv",
+      "count": 7,
+      "structures": [
+        "Bladder",
+        "Prostate_CTV",
+        "Penile_Bulb",
+        "Rectum",
+        "Urethra_Foley",
+        "Rectal_Spacer",
+        "Large_Bowel"
+      ]
+    },
+    "matto_gbm_enhancing_t1ce_mr": {
+      "title": "Enhancing glioblastoma · MATTO (T1 contrast)",
+      "group": "tumour"
+    },
+    "matto_gbm_remaining_models": {
+      "title": "Glioblastoma research targets · MATTO",
+      "group": "ctv"
+    },
+    "rano2_assist_t1c_mr": {
+      "title": "Brain tumour constituents · RANO2.0-assist",
+      "group": "tumour"
+    },
+    "uwlair_hntsmrg_pre_t2": {
+      "title": "Head and neck GTV · UWLAIR (T2 MR)",
+      "group": "tumour",
+      "purpose": "Primary and metastatic nodal gross tumour volumes.",
+      "count": 2,
+      "structures": [
+        "GTVp",
+        "GTVn"
+      ]
+    },
+    "lungtumormask_ct": {
+      "title": "Lung tumour candidates · LungTumorMask",
+      "group": "tumour",
+      "count": 1
+    },
+    "raidionics_mediastinal_lymphnodes": {
+      "title": "Mediastinal lymph-node candidates · Raidionics",
+      "group": "tumour",
+      "purpose": "Visible or enlarged nodes; not elective nodal levels.",
+      "count": 1
+    },
+    "pediatric_thoracic_lymphoma": {
+      "title": "Paediatric thoracic lymphoma mass",
+      "group": "tumour",
+      "count": 1
+    },
+    "dotatate_pet_lesions": {
+      "title": "DOTATATE-avid lesion candidates (PET)",
+      "group": "tumour",
+      "purpose": "PET-only neuroendocrine tumour lesion candidates.",
+      "count": 1
+    },
+    "urinary_oars_t2_mr": {
+      "title": "Urinary and pelvic OARs (T2 MR)",
+      "group": "oar"
+    },
+    "hippunfold_adni_t1_subfields_mr": {
+      "title": "Hippocampal subfields · HippUnfold (T1)",
+      "group": "brain"
+    },
+    "hippunfold_maguire_t2_subfields_mr": {
+      "title": "Hippocampal subfields · HippUnfold (T2)",
+      "group": "brain"
+    },
+    "tractseg_dwi_peaks": {
+      "title": "White-matter tracts · TractSeg",
+      "group": "brain",
+      "purpose": "Requires diffusion-derived peak images.",
+      "count": 72
+    },
+    "totalsegmentator2d_projection_ct": {
+      "title": "Coronal projection anatomy · TotalSegmentator2D",
+      "group": "other",
+      "purpose": "Projection-only classes; no volumetric RTSTRUCT.",
+      "count": 117
+    },
+    "universeg_few_shot_2d": {
+      "title": "Support-example segmentation · UniverSeg",
+      "group": "interactive",
+      "purpose": "Requires paired support images and masks, which the portal does not accept."
+    },
+    "sam_med3d_original_unreleased": {
+      "title": "SAM-Med3D original checkpoint",
+      "group": "interactive",
+      "purpose": "Original checkpoint is not separately released; Turbo is a distinct model."
+    },
+    "pam_prompted": {
+      "title": "PAM · point or box propagation",
+      "group": "interactive",
+      "count": 1
+    },
+    "sat3d_prompted": {
+      "title": "SAT3D · tumour from a point",
+      "group": "interactive",
+      "count": 1
+    },
+    "sam_med2d_prompted": {
+      "title": "SAM-Med2D · individual slices",
+      "group": "interactive",
+      "count": 1
+    },
+    "medsam_vit_b_box_2d": {
+      "title": "MedSAM ViT-B · boxed slice",
+      "group": "interactive",
+      "count": 1
+    },
+    "medical_sam3_3d_prompted": {
+      "title": "Medical-SAM3 · text and box",
+      "group": "interactive",
+      "count": 1
+    },
+    "sam_med3d_turbo_prompted": {
+      "title": "SAM-Med3D Turbo · 3D object",
+      "group": "interactive",
+      "count": 1
+    },
+    "medsam2_ct_lesion_prompted": {
+      "title": "MedSAM2 · CT lesion propagation",
+      "group": "interactive",
+      "count": 1
+    },
+    "medical_sam2_prompted_ct": {
+      "title": "Medical-SAM2 · ImprintLab CT propagation",
+      "group": "interactive",
+      "count": 1
+    },
+    "nninteractive_v1_prompted": {
+      "title": "nnInteractive · 3D object",
+      "group": "interactive",
+      "count": 1
+    },
+    "vista3d_prompted_ct": {
+      "title": "VISTA3D · CT object from points",
+      "group": "interactive",
+      "count": 1
+    },
+    "segvol_prompted_ct": {
+      "title": "SegVol · text, points or 3D box",
+      "group": "interactive",
+      "count": 1
+    },
+    "voxtell_v1_1_text_prompted": {
+      "title": "VoxTell · object from text",
+      "group": "interactive",
+      "count": 1
+    },
+    "biomedparse_prompted": {
+      "title": "BiomedParse · text-selected object",
+      "group": "interactive",
+      "count": 1
+    },
+    "isrt_ct_resunet": {
+      "title": "Hodgkin lymphoma CTV · CT · ResUNet",
+      "group": "ctv",
+      "purpose": "Paediatric involved-site radiotherapy CTV. PET1 variants require co-referenced CT.",
+      "count": 1
+    },
+    "isrt_ct_segresnet": {
+      "title": "Hodgkin lymphoma CTV · CT · SegResNet",
+      "group": "ctv",
+      "purpose": "Paediatric involved-site radiotherapy CTV. PET1 variants require co-referenced CT.",
+      "count": 1
+    },
+    "isrt_ct_swinunetr": {
+      "title": "Hodgkin lymphoma CTV · CT · Swin UNETR",
+      "group": "ctv",
+      "purpose": "Paediatric involved-site radiotherapy CTV. PET1 variants require co-referenced CT.",
+      "count": 1
+    },
+    "isrt_pet1_early_deform": {
+      "title": "Hodgkin lymphoma CTV · PET/CT · early fusion, deformable weights",
+      "group": "ctv",
+      "purpose": "Paediatric involved-site radiotherapy CTV. PET1 variants require co-referenced CT.",
+      "count": 1
+    },
+    "isrt_pet1_early_rigid": {
+      "title": "Hodgkin lymphoma CTV · PET/CT · early fusion, rigid weights",
+      "group": "ctv",
+      "purpose": "Paediatric involved-site radiotherapy CTV. PET1 variants require co-referenced CT.",
+      "count": 1
+    },
+    "isrt_pet1_late_deform": {
+      "title": "Hodgkin lymphoma CTV · PET/CT · late fusion, deformable weights",
+      "group": "ctv",
+      "purpose": "Paediatric involved-site radiotherapy CTV. PET1 variants require co-referenced CT.",
+      "count": 1
+    },
+    "isrt_pet1_late_rigid": {
+      "title": "Hodgkin lymphoma CTV · PET/CT · late fusion, rigid weights",
+      "group": "ctv",
+      "purpose": "Paediatric involved-site radiotherapy CTV. PET1 variants require co-referenced CT.",
+      "count": 1
+    },
+    "lnsegfm_nnunet": {
+      "title": "Head and neck lymph-node candidates · nnU-Net",
+      "group": "tumour",
+      "purpose": "Visible or pathologic nodes, not elective nodal levels.",
+      "count": 1
+    },
+    "lnsegfm_resenc_m": {
+      "title": "Head and neck lymph-node candidates · ResEnc M",
+      "group": "tumour",
+      "purpose": "Visible or pathologic nodes, not elective nodal levels.",
+      "count": 1
+    },
+    "lnsegfm_resenc_l": {
+      "title": "Head and neck lymph-node candidates · ResEnc L",
+      "group": "tumour",
+      "purpose": "Visible or pathologic nodes, not elective nodal levels.",
+      "count": 1
+    },
+    "lnsegfm_swinunetr": {
+      "title": "Head and neck lymph-node candidates · Swin UNETR",
+      "group": "tumour",
+      "purpose": "Visible or pathologic nodes, not elective nodal levels.",
+      "count": 1
+    },
+    "hip_implant": {
+      "title": "Hip implant",
+      "group": "other",
+      "purpose": "Implant mask; inspect the runtime structure list."
+    },
+    "coronary_arteries": {
+      "title": "Coronary arteries",
+      "group": "oar"
+    },
+    "coronary_arteries_LEGACY": {
+      "title": "Coronary arteries · legacy model",
+      "group": "oar"
+    },
+    "pleural_pericard_effusion": {
+      "title": "Pleural and pericardial effusions",
+      "group": "other"
+    },
+    "ventricle_parts": {
+      "title": "Ventricular compartments",
+      "group": "other",
+      "purpose": "Inspect the runtime structure list for the exact anatomical compartments."
+    },
+    "moose_clin_ct_digestive": {
+      "title": "Digestive tract · MOOSE",
+      "group": "oar"
+    },
+    "moose_clin_ct_organs": {
+      "title": "Major body organs · MOOSE",
+      "group": "whole",
+      "purpose": "Thoracic, abdominal and pelvic organs.",
+      "count": 19
+    },
+    "nnunetv1_left_atrium": {
+      "title": "Left atrium · nnU-Net v1",
+      "group": "oar",
+      "count": 1,
+      "structures": [
+        "Left_Atrium"
+      ]
+    },
+    "lipoma_alt_t1_mr": {
+      "title": "Lipomatous tumour · T1 MR",
+      "group": "tumour",
+      "count": 1,
+      "structures": [
+        "Lipomatous_Tumor"
+      ]
+    },
+    "monai_pediatric_abdominal_ct": {
+      "title": "Paediatric abdominal organs · MONAI",
+      "group": "oar",
+      "count": 3,
+      "structures": [
+        "Liver",
+        "Spleen",
+        "Pancreas"
+      ]
+    },
+    "monai_renal_unest_ct": {
+      "title": "Renal compartments · MONAI UNesT",
+      "group": "oar",
+      "count": 3,
+      "structures": [
+        "Kidney_Cortex",
+        "Kidney_Medulla",
+        "Pelvicalyceal_System"
+      ]
+    },
+    "monai_ventricular_short_axis_mr": {
+      "title": "Cardiac ventricles · short-axis MR",
+      "group": "oar"
+    },
+    "pycad_knee_joints_mr": {
+      "title": "Knee joint structures · MR",
+      "group": "oar",
+      "count": 6,
+      "structures": [
+        "Meniscus",
+        "ACL",
+        "PCL",
+        "FemoralCartilage",
+        "PatellarCartilage",
+        "TibialCartilage"
+      ]
+    },
+    "trackrad_cine_mr_tracking": {
+      "title": "Tumour tracking · cine MR",
+      "group": "tumour"
+    },
+    "accurate_petct_desktop": {
+      "title": "Metabolic tumour volumes · ACCURATE",
+      "group": "tumour"
+    },
+    "mars_wmh_flair_t1_mr": {
+      "title": "White-matter hyperintensities · MARS",
+      "group": "brain"
+    },
+    "monai_renal_cect_triphasic": {
+      "title": "Renal tumour and compartments · triphasic CT",
+      "group": "tumour"
+    },
+    "lungmask_r231": {
+      "title": "Lungs · lungmask R231",
+      "group": "oar",
+      "purpose": "Right and left lung masks; designed to include dense pathology.",
+      "count": 2
+    },
+    "lungmask_ltrc_lobes": {
+      "title": "Pulmonary lobes · lungmask",
+      "group": "oar",
+      "purpose": "Five pulmonary lobes.",
+      "count": 5
+    },
+    "lungmask_ltrc_lobes_r231": {
+      "title": "Pulmonary lobes · lungmask fusion",
+      "group": "oar",
+      "purpose": "Lobe predictions fused with robust R231 lung masks.",
+      "count": 5
+    },
+    "antspynet_brain_extraction_t1": {
+      "count": 1,
+      "structures": [
+        "Brain"
+      ]
+    },
+    "antspynet_deep_atropos_t1": {
+      "count": 6,
+      "structures": [
+        "CSF",
+        "GrayMatter",
+        "WhiteMatter",
+        "DeepGrayMatter",
+        "Brainstem",
+        "Cerebellum"
+      ]
+    },
+    "antspynet_hippmapp3r_t1": {
+      "count": 1,
+      "structures": [
+        "Hippocampi"
+      ]
+    },
+    "antspynet_hypothalamus_t1": {
+      "count": 10,
+      "structures": [
+        "Hypo_L_AntInf",
+        "Hypo_L_AntSup",
+        "Hypo_L_Post",
+        "Hypo_L_TubInf",
+        "Hypo_L_TubSup",
+        "Hypo_R_AntInf",
+        "Hypo_R_AntSup",
+        "Hypo_R_Post",
+        "Hypo_R_TubInf",
+        "Hypo_R_TubSup"
+      ]
+    },
+    "antspynet_deep_flash_t1": {
+      "count": 14,
+      "structures": [
+        "L_aLEC",
+        "R_aLEC",
+        "L_pMEC",
+        "R_pMEC",
+        "L_Perirhinal",
+        "R_Perirhinal",
+        "L_Parahippocampal",
+        "R_Parahippocampal",
+        "L_DG_CA2_CA3_CA4",
+        "R_DG_CA2_CA3_CA4",
+        "L_CA1",
+        "R_CA1",
+        "L_Subiculum",
+        "R_Subiculum"
+      ]
+    },
+    "antspynet_cerebellum_t1": {
+      "count": 24,
+      "structures": [
+        "L_I_II",
+        "L_III",
+        "L_IV",
+        "L_V",
+        "L_VI",
+        "L_Crus_I",
+        "L_Crus_II",
+        "L_VIIB",
+        "L_VIIIA",
+        "L_VIIIB",
+        "L_IX",
+        "L_X",
+        "R_I_II",
+        "R_III",
+        "R_IV",
+        "R_V",
+        "R_VI",
+        "R_Crus_I",
+        "R_Crus_II",
+        "R_VIIB",
+        "R_VIIIA",
+        "R_VIIIB",
+        "R_IX",
+        "R_X"
+      ]
+    },
+    "antspynet_dkt_t1": {
+      "count": 95,
+      "structures": [
+        "Left_Lateral_Ventricle",
+        "Left_Cerebellum_Exterior",
+        "Left_Cerebellum_White_Matter",
+        "Left_Thalamus",
+        "Left_Caudate",
+        "Left_Putamen",
+        "Left_Pallidum",
+        "Third_Ventricle",
+        "Fourth_Ventricle",
+        "Brainstem",
+        "Left_Hippocampus",
+        "Left_Amygdala",
+        "CSF",
+        "Left_Accumbens",
+        "Left_Ventral_DC",
+        "Left_Vessel",
+        "Right_Lateral_Ventricle",
+        "Right_Inferior_Lateral_Ventricle",
+        "Right_Cerebellum_Exterior",
+        "Right_Cerebellum_White_Matter",
+        "Right_Thalamus",
+        "Right_Caudate",
+        "Right_Putamen",
+        "Right_Pallidum",
+        "Right_Hippocampus",
+        "Right_Amygdala",
+        "Right_Accumbens",
+        "Right_Ventral_DC",
+        "Left_Basal_Forebrain",
+        "Right_Basal_Forebrain",
+        "Vermis_I_V",
+        "Vermis_VI_VII",
+        "Vermis_VIII_X",
+        "Left_Caudal_Anterior_Cingulate",
+        "Left_Caudal_Middle_Frontal",
+        "Left_Cuneus",
+        "Left_Entorhinal",
+        "Left_Fusiform",
+        "Left_Inferior_Parietal",
+        "Left_Inferior_Temporal",
+        "Left_Isthmus_Cingulate",
+        "Left_Lateral_Occipital",
+        "Left_Lateral_Orbitofrontal",
+        "Left_Lingual",
+        "Left_Medial_Orbitofrontal",
+        "Left_Middle_Temporal",
+        "Left_Parahippocampal",
+        "Left_Paracentral",
+        "Left_Pars_Opercularis",
+        "Left_Pars_Orbitalis",
+        "Left_Pars_Triangularis",
+        "Left_Pericalcarine",
+        "Left_Postcentral",
+        "Left_Posterior_Cingulate",
+        "Left_Precentral",
+        "Left_Precuneus",
+        "Left_Rostral_Anterior_Cingulate",
+        "Left_Rostral_Middle_Frontal",
+        "Left_Superior_Frontal",
+        "Left_Superior_Parietal",
+        "Left_Superior_Temporal",
+        "Left_Supramarginal",
+        "Left_Transverse_Temporal",
+        "Left_Insula",
+        "Right_Caudal_Anterior_Cingulate",
+        "Right_Caudal_Middle_Frontal",
+        "Right_Cuneus",
+        "Right_Entorhinal",
+        "Right_Fusiform",
+        "Right_Inferior_Parietal",
+        "Right_Inferior_Temporal",
+        "Right_Isthmus_Cingulate",
+        "Right_Lateral_Occipital",
+        "Right_Lateral_Orbitofrontal",
+        "Right_Lingual",
+        "Right_Medial_Orbitofrontal",
+        "Right_Middle_Temporal",
+        "Right_Parahippocampal",
+        "Right_Paracentral",
+        "Right_Pars_Opercularis",
+        "Right_Pars_Orbitalis",
+        "Right_Pars_Triangularis",
+        "Right_Pericalcarine",
+        "Right_Postcentral",
+        "Right_Posterior_Cingulate",
+        "Right_Precentral",
+        "Right_Precuneus",
+        "Right_Rostral_Anterior_Cingulate",
+        "Right_Rostral_Middle_Frontal",
+        "Right_Superior_Frontal",
+        "Right_Superior_Parietal",
+        "Right_Superior_Temporal",
+        "Right_Supramarginal",
+        "Right_Transverse_Temporal",
+        "Right_Insula"
+      ]
+    },
+    "cads_open_552_vertebrae": {
+      "count": 24,
+      "structures": [
+        "vertebrae_L5",
+        "vertebrae_L4",
+        "vertebrae_L3",
+        "vertebrae_L2",
+        "vertebrae_L1",
+        "vertebrae_T12",
+        "vertebrae_T11",
+        "vertebrae_T10",
+        "vertebrae_T9",
+        "vertebrae_T8",
+        "vertebrae_T7",
+        "vertebrae_T6",
+        "vertebrae_T5",
+        "vertebrae_T4",
+        "vertebrae_T3",
+        "vertebrae_T2",
+        "vertebrae_T1",
+        "vertebrae_C7",
+        "vertebrae_C6",
+        "vertebrae_C5",
+        "vertebrae_C4",
+        "vertebrae_C3",
+        "vertebrae_C2",
+        "vertebrae_C1"
+      ]
+    },
+    "cads_open_554_bones_muscles": {
+      "count": 21,
+      "structures": [
+        "humerus_left",
+        "humerus_right",
+        "scapula_left",
+        "scapula_right",
+        "clavicula_left",
+        "clavicula_right",
+        "femur_left",
+        "femur_right",
+        "hip_left",
+        "hip_right",
+        "sacrum",
+        "gluteus_maximus_left",
+        "gluteus_maximus_right",
+        "gluteus_medius_left",
+        "gluteus_medius_right",
+        "gluteus_minimus_left",
+        "gluteus_minimus_right",
+        "autochthon_left",
+        "autochthon_right",
+        "iliopsoas_left",
+        "iliopsoas_right"
+      ]
+    },
+    "cads_open_555_ribs": {
+      "count": 24,
+      "structures": [
+        "rib_left_1",
+        "rib_left_2",
+        "rib_left_3",
+        "rib_left_4",
+        "rib_left_5",
+        "rib_left_6",
+        "rib_left_7",
+        "rib_left_8",
+        "rib_left_9",
+        "rib_left_10",
+        "rib_left_11",
+        "rib_left_12",
+        "rib_right_1",
+        "rib_right_2",
+        "rib_right_3",
+        "rib_right_4",
+        "rib_right_5",
+        "rib_right_6",
+        "rib_right_7",
+        "rib_right_8",
+        "rib_right_9",
+        "rib_right_10",
+        "rib_right_11",
+        "rib_right_12"
+      ]
+    },
+    "cads_open_556_rt_oars": {
+      "count": 15,
+      "structures": [
+        "spinal_canal",
+        "larynx",
+        "heart",
+        "bowel_bag",
+        "sigmoid",
+        "rectum",
+        "prostate",
+        "seminal_vesicle",
+        "left_mammary_gland",
+        "right_mammary_gland",
+        "sternum",
+        "right_psoas_major",
+        "left_psoas_major",
+        "right_rectus_abdominis",
+        "left_rectus_abdominis"
+      ]
+    },
+    "cerr_ct_heart_substructures_smit": {
+      "count": 9,
+      "structures": [
+        "Aorta",
+        "Pulmonary_Artery",
+        "Pulmonary_Vein",
+        "Superior_Vena_Cava",
+        "Inferior_Vena_Cava",
+        "Right_Atrium",
+        "Right_Ventricle",
+        "Left_Atrium",
+        "Left_Ventricle"
+      ]
+    },
+    "cerr_mr_rectum_gtv_smit": {
+      "count": 1,
+      "structures": [
+        "Rectal_GTV"
+      ]
+    },
+    "cerr_ct_lung_oar_mrrn": {
+      "count": 6,
+      "structures": [
+        "Lung_Left",
+        "Lung_Right",
+        "Heart",
+        "Esophagus",
+        "Spinal_Cord",
+        "Proximal_Bronchial_Tree"
+      ]
+    },
+    "monai_spleen_ct": {
+      "count": 1,
+      "structures": [
+        "Spleen"
+      ]
+    },
+    "monai_multi_organ_ct": {
+      "count": 7,
+      "structures": [
+        "Artery",
+        "Portal_Vein",
+        "Liver",
+        "Spleen",
+        "Stomach",
+        "Gallbladder",
+        "Pancreas"
+      ]
+    },
+    "monai_pancreas_dints_ct": {
+      "count": 2,
+      "structures": [
+        "Pancreas",
+        "Pancreatic_Tumor"
+      ]
+    },
+    "monai_swin_unetr_btcv_ct": {
+      "count": 13,
+      "structures": [
+        "Spleen",
+        "Kidney_Right",
+        "Kidney_Left",
+        "Gallbladder",
+        "Esophagus",
+        "Liver",
+        "Stomach",
+        "Aorta",
+        "Inferior_Vena_Cava",
+        "Portal_And_Splenic_Veins",
+        "Pancreas",
+        "Adrenal_Gland_Right",
+        "Adrenal_Gland_Left"
+      ]
+    },
+    "mrannotator_abdomen_mr": {
+      "count": 8,
+      "structures": [
+        "Spleen",
+        "Kidney_R",
+        "Kidney_L",
+        "Gallbladder",
+        "Liver",
+        "Aorta",
+        "InferiorVenaCava",
+        "Pancreas"
+      ]
+    },
+    "mrannotator_shoulder_knee_mr": {
+      "count": 10,
+      "structures": [
+        "Femur",
+        "Patella",
+        "Fibula",
+        "Tibia",
+        "Humerus_R",
+        "Clavicle_R",
+        "Scapula_R",
+        "Humerus_L",
+        "Clavicle_L",
+        "Scapula_L"
+      ]
+    },
+    "mrannotator_pelvis_prostate_mr": {
+      "count": 4,
+      "structures": [
+        "FemoralHeads",
+        "Ilium",
+        "Sacrum",
+        "Prostate"
+      ]
+    },
+    "mrannotator_spine_mr": {
+      "count": 22,
+      "structures": [
+        "C3",
+        "C4",
+        "C5",
+        "C6",
+        "C7",
+        "T1",
+        "T2",
+        "T3",
+        "T4",
+        "T5",
+        "T6",
+        "T7",
+        "T8",
+        "T9",
+        "T10",
+        "T11",
+        "T12",
+        "L1",
+        "L2",
+        "L3",
+        "L4",
+        "L5"
+      ]
+    },
+    "nnunetv1_hippocampus": {
+      "count": 2,
+      "structures": [
+        "Anterior_Hippocampus",
+        "Posterior_Hippocampus"
+      ]
+    },
+    "nnunetv1_lung_tumor": {
+      "count": 1,
+      "structures": [
+        "Lung_Tumor"
+      ]
+    },
+    "nnunetv1_spleen": {
+      "count": 1,
+      "structures": [
+        "Spleen"
+      ]
+    },
+    "nnunetv1_liver_tumor": {
+      "count": 2,
+      "structures": [
+        "Liver",
+        "Liver_Tumor"
+      ]
+    },
+    "nnunetv1_pancreas_tumor": {
+      "count": 2,
+      "structures": [
+        "Pancreas",
+        "Pancreatic_Tumor"
+      ]
+    },
+    "nnunetv1_hepatic_vessels_tumor": {
+      "count": 2,
+      "structures": [
+        "Hepatic_Vessels",
+        "Liver_Tumor"
+      ]
+    },
+    "nnunetv1_acdc_cardiac": {
+      "count": 3,
+      "structures": [
+        "Right_Ventricle_Cavity",
+        "Myocardium",
+        "Left_Ventricle_Cavity"
+      ]
+    },
+    "nnunetv1_promise_prostate": {
+      "count": 1,
+      "structures": [
+        "Prostate"
+      ]
+    },
+    "nnunetv1_segthor": {
+      "count": 4,
+      "structures": [
+        "Esophagus",
+        "Heart",
+        "Trachea",
+        "Aorta"
+      ]
+    },
+    "nnunetv1_btcv_abdomen": {
+      "count": 13,
+      "structures": [
+        "Spleen",
+        "Kidney_Right",
+        "Kidney_Left",
+        "Gallbladder",
+        "Esophagus",
+        "Liver",
+        "Stomach",
+        "Aorta",
+        "Inferior_Vena_Cava",
+        "Portal_And_Splenic_Veins",
+        "Pancreas",
+        "Adrenal_Gland_Right",
+        "Adrenal_Gland_Left"
+      ]
+    },
+    "nnunetv1_lits_liver_tumor": {
+      "count": 2,
+      "structures": [
+        "Liver",
+        "Liver_Tumor"
+      ]
+    },
+    "nnunetv1_kits_kidney_tumor": {
+      "count": 2,
+      "structures": [
+        "Kidney",
+        "Kidney_Tumor"
+      ]
+    },
+    "nnunetv1_colon_tumor": {
+      "count": 1,
+      "structures": [
+        "Colon_Tumor"
+      ]
+    },
+    "mars_brainstem_t1_mr": {
+      "count": 3,
+      "structures": [
+        "Mesencephalon",
+        "Pons",
+        "MedullaOblongata"
+      ]
+    },
+    "bamf_nsclc_lungs_nodules_ct": {
+      "count": 2,
+      "structures": [
+        "Lungs",
+        "Pulmonary_Nodule_Tumor"
+      ]
+    },
+    "bamf_lidc_lung_nodules_ct": {
+      "count": 1,
+      "structures": [
+        "Pulmonary_Nodule"
+      ]
+    },
+    "bamf_liver_t1_mr": {
+      "count": 1,
+      "structures": [
+        "Liver"
+      ]
+    },
+    "bamf_prostate_t2_mr": {
+      "count": 1,
+      "structures": [
+        "Prostate"
+      ]
+    },
+    "adipose_tissue_dixon_fat_mr": {
+      "count": 2,
+      "structures": [
+        "Adipose_Tissue_Class_1",
+        "Adipose_Tissue_Class_2"
+      ]
+    },
+    "mnms_cardiac_cine_mr": {
+      "count": 3,
+      "structures": [
+        "Left_Ventricle",
+        "Myocardium",
+        "Right_Ventricle"
+      ]
+    },
+    "lung_five_region_mr": {
+      "count": 5,
+      "structures": [
+        "Surrounding_Solid_Tissue",
+        "Lung_Left",
+        "Lung_Right",
+        "Pulmonary_Vascular_Left",
+        "Pulmonary_Vascular_Right"
+      ]
+    },
+    "pycad_vertebrae_ct": {
+      "count": 25,
+      "structures": [
+        "Vertebra_C1",
+        "Vertebra_C2",
+        "Vertebra_C3",
+        "Vertebra_C4",
+        "Vertebra_C5",
+        "Vertebra_C6",
+        "Vertebra_C7",
+        "Vertebra_T1",
+        "Vertebra_T2",
+        "Vertebra_T3",
+        "Vertebra_T4",
+        "Vertebra_T5",
+        "Vertebra_T6",
+        "Vertebra_T7",
+        "Vertebra_T8",
+        "Vertebra_T9",
+        "Vertebra_T10",
+        "Vertebra_T11",
+        "Vertebra_T12",
+        "Vertebra_L1",
+        "Vertebra_L2",
+        "Vertebra_L3",
+        "Vertebra_L4",
+        "Vertebra_L5",
+        "Vertebra_S1"
+      ]
+    },
+    "pycad_skull_ct": {
+      "count": 1,
+      "structures": [
+        "Skull"
+      ]
+    },
+    "pycad_cardiac_mr": {
+      "count": 3,
+      "structures": [
+        "PYCAD_h1",
+        "PYCAD_h2",
+        "PYCAD_h3"
+      ]
+    },
+    "sct_spine": {
+      "count": 52,
+      "structures": [
+        "SpinalCord",
+        "SpinalCanal",
+        "Vertebra_C1",
+        "Vertebra_C2",
+        "Vertebra_C3",
+        "Vertebra_C4",
+        "Vertebra_C5",
+        "Vertebra_C6",
+        "Vertebra_C7",
+        "Vertebra_T1",
+        "Vertebra_T2",
+        "Vertebra_T3",
+        "Vertebra_T4",
+        "Vertebra_T5",
+        "Vertebra_T6",
+        "Vertebra_T7",
+        "Vertebra_T8",
+        "Vertebra_T9",
+        "Vertebra_T10",
+        "Vertebra_T11",
+        "Vertebra_T12",
+        "Vertebra_L1",
+        "Vertebra_L2",
+        "Vertebra_L3",
+        "Vertebra_L4",
+        "Vertebra_L5",
+        "Vertebra_L6",
+        "Vertebra_L7",
+        "Sacrum",
+        "Disc_C2_C3",
+        "Disc_C3_C4",
+        "Disc_C4_C5",
+        "Disc_C5_C6",
+        "Disc_C6_C7",
+        "Disc_C7_T1",
+        "Disc_T1_T2",
+        "Disc_T2_T3",
+        "Disc_T3_T4",
+        "Disc_T4_T5",
+        "Disc_T5_T6",
+        "Disc_T6_T7",
+        "Disc_T7_T8",
+        "Disc_T8_T9",
+        "Disc_T9_T10",
+        "Disc_T10_T11",
+        "Disc_T11_T12",
+        "Disc_T12_L1",
+        "Disc_L1_L2",
+        "Disc_L2_L3",
+        "Disc_L3_L4",
+        "Disc_L4_L5",
+        "Disc_L5_S"
+      ]
+    }
+  }
+}

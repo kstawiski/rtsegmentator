@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>RTsegmentator · Research portal</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="app-header">
+    <a class="brand" href="#new"><span class="brand-mark" aria-hidden="true">RT</span><span>RTsegmentator<small>Segmentation research portal</small></span></a>
+    <div id="health" class="health pill" role="status">Checking worker status…</div>
+  </header>
+  <nav class="app-nav" aria-label="Main navigation">
+    <a href="#new" data-area="new" aria-current="page">New job</a>
+    <a href="#jobs" data-area="jobs">Jobs <span id="activeCount" class="count" aria-label="0 active jobs">0</span></a>
+    <a href="#tools" data-area="tools">Tools</a>
+  </nav>
+  <div class="research-notice"><strong>Research use only.</strong> Review every contour and AI draft against the source images. <span id="retention">Uploads and results are deleted automatically after the configured retention period.</span></div>
+  <noscript><p class="error">JavaScript is required to upload studies and follow jobs.</p></noscript>
+  <main id="main" tabindex="-1">
+    <section id="newPage" aria-labelledby="newTitle">
+      <div class="page-heading"><div><p class="eyebrow">NEW JOB</p><h1 id="newTitle" tabindex="-1">From images to contours</h1><p class="muted">Select one series, choose the models, then review what will run.</p></div><span class="subtle-label">DICOM · CT / MR / PET</span></div>
+      <ol class="steps" aria-label="Job steps">
+        <li><button type="button" data-step="0" aria-current="step"><span class="step-number">1</span><span><strong>Upload</strong><small id="uploadSummary">Files, folder or ZIP</small></span></button></li>
+        <li><button type="button" data-step="1" disabled><span class="step-number">2</span><span><strong>Series</strong><small id="seriesSummary">Choose the image series</small></span></button></li>
+        <li><button type="button" data-step="2" disabled><span class="step-number">3</span><span><strong>Models</strong><small id="modelsSummary">Choose the outputs</small></span></button></li>
+        <li><button type="button" data-step="3" disabled><span class="step-number">4</span><span><strong>Review &amp; start</strong><small id="reviewSummary">Confirm the job</small></span></button></li>
+      </ol>
+      <section id="uploadStep" class="panel step-panel" aria-labelledby="uploadTitle">
+        <div class="section-heading"><div><p class="eyebrow">STEP 1 OF 4</p><h2 id="uploadTitle" tabindex="-1">Upload a study</h2></div></div>
+        <div class="upload-layout">
+          <div>
+            <div id="dropZone" class="drop-zone">
+              <span class="upload-symbol" aria-hidden="true">↑</span>
+              <h3>Drop DICOM files, a folder or ZIP here</h3>
+              <p>Files without a .dcm extension are also accepted.</p>
+              <div class="button-row centered">
+                <button type="button" class="primary" id="chooseFiles">Choose files</button>
+                <button type="button" id="chooseFolder">Choose folder</button>
+              </div>
+              <input id="files" type="file" multiple hidden aria-label="DICOM files or ZIP archives">
+              <input id="folder" type="file" webkitdirectory multiple hidden aria-label="DICOM folder">
+              <p id="selection" class="muted">No files selected</p>
+            </div>
+            <div id="uploadProgress" class="upload-progress" hidden><label for="uploadBar">Upload progress</label><progress id="uploadBar" max="100" value="0"></progress><p id="uploadText" role="status"></p></div>
+            <p id="uploadError" class="error" role="alert" hidden></p>
+            <button type="button" id="resumeUpload" hidden>Retry upload / inspection</button>
+            <p id="assessment" class="success-text" role="status"></p>
+            <button type="button" class="primary" id="toSeries" hidden>Continue to series</button>
+          </div>
+          <aside class="context-note"><h3>Inspection starts automatically</h3><p>The portal separates your upload into image series. You will choose one series before starting a job.</p><p>Inspection stays on the portal server. Images are sent to the configured inference worker only when you start.</p><p id="uploadLimit" class="muted">Upload size is limited by the server configuration.</p></aside>
+        </div>
+      </section>
+      <section id="seriesStep" class="panel step-panel" aria-labelledby="seriesTitle" hidden>
+        <div class="section-heading"><div><p class="eyebrow">STEP 2 OF 4</p><h2 id="seriesTitle" tabindex="-1">Choose the image series</h2><p class="muted">Each thumbnail shows the middle slice. Check the modality, description and image coverage.</p></div></div>
+        <div id="series" class="series-grid" role="radiogroup" aria-label="Detected image series"></div>
+        <div id="seriesWarnings" class="notice" hidden></div>
+        <p id="seriesError" class="error" role="alert" hidden></p>
+        <div class="step-actions"><button type="button" data-back="0">Back to upload</button><button type="button" class="primary" id="toModels">Continue to models</button></div>
+      </section>
+      <section id="modelsStep" class="step-panel" aria-labelledby="modelsTitle" hidden>
+        <div class="panel">
+          <div class="section-heading"><div><p class="eyebrow">STEP 3 OF 4</p><h2 id="modelsTitle" tabindex="-1">Choose the outputs you need</h2><p id="modelNote" class="muted">The default starting model is total for CT and total_mr for MR. Choose it explicitly.</p></div><span id="modalityLabel" class="pill"></span></div>
+          <div id="catalogStatus" role="status">Loading model catalog…</div><button type="button" id="reloadCatalog" hidden>Retry loading models</button>
+          <section id="recommendations" aria-label="Recommended models" hidden><div class="recommendation-heading"><h3>Recommended starting points</h3><span class="muted">Choose individually; nothing runs automatically.</span></div><div id="recommended" class="recommended-grid"></div></section>
+          <div class="filters">
+            <label class="search-field">Find a model<input id="modelSearch" type="search" placeholder="Name, structure or clinical tag"></label>
+            <label>Tumour site<select id="clinicalFilter"><option value="">All tumour sites</option></select></label>
+            <label class="check-label"><input id="showUnavailable" type="checkbox"> Show unavailable models</label>
+          </div>
+          <p class="small muted">Clinical tags describe potential planning usefulness; they do not imply tumour segmentation or a clinical indication.</p>
+          <p id="modelResults" class="small" role="status"></p>
+          <div id="modelGroups" class="model-groups"></div>
+          <p id="modelError" class="error" role="alert" hidden></p>
+        </div>
+        <div class="selection-tray" aria-label="Selected models"><div><strong id="selectionCount">0 models selected</strong><div id="selectedChips" class="chips"><span class="muted">Select models to build this job.</span></div></div><button type="button" class="primary" id="toReview">Review selection</button></div>
+        <div class="step-actions"><button type="button" data-back="1">Back to series</button><button type="button" id="clearModels">Clear selection</button></div>
+      </section>
+      <section id="reviewStep" class="panel step-panel" aria-labelledby="reviewTitle" hidden>
+        <div class="section-heading"><div><p class="eyebrow">STEP 4 OF 4</p><h2 id="reviewTitle" tabindex="-1">Review and start</h2><p class="muted">Confirm the series, model inputs and requested outputs.</p></div></div>
+        <div id="reviewContent" class="review-grid"></div>
+        <section id="postprocessPanel" class="option-panel" hidden><h3>Optional prostate SBRT crop</h3><label class="check-label"><input id="prostatePostprocess" type="checkbox"> Add a CT + RTSTRUCT crop to prostate ±15 cm</label><p class="small muted">Uses the prostate contour from TotalSegmentator total. The full RTSTRUCT is retained. Available with local total inference.</p><p id="postprocessError" class="error" role="alert" hidden></p></section>
+        <section id="promptPanel" class="prompt-panel" aria-labelledby="promptTitle" hidden>
+          <h3 id="promptTitle">Add the interactive prompt</h3><div id="promptGuidance" class="notice"></div>
+          <p>Choose a slice and click inside the target. A box needs two corners. Coordinates are [column, row, slice], starting at zero.</p>
+          <div class="prompt-layout"><div>
+            <label for="promptSlice">Image slice <span id="promptSliceLabel"></span></label><input id="promptSlice" type="range" min="0" max="0" value="0">
+            <div id="promptCanvas" class="prompt-canvas"><img id="promptImage" alt="Selected DICOM slice for prompt placement" draggable="false"><div id="promptOverlay" aria-hidden="true"></div></div>
+            <p id="previewError" class="error" hidden>Preview unavailable. Use coordinates only if you can verify them against the source images.</p>
+          </div><div class="prompt-controls">
+            <label>Prompt type<select id="promptMode"><option value="positive">Positive point — inside target</option><option value="negative">Negative point — exclude area</option><option value="box">Box — two corners</option></select></label>
+            <label>Target description<input id="promptText" type="text" placeholder="For text prompts, e.g. spleen"></label>
+            <fieldset><legend>Enter a point or corner by keyboard</legend><div class="coordinate-inputs"><label>Column<input id="promptColumn" type="number" min="0" step="1" value="0"></label><label>Row<input id="promptRow" type="number" min="0" step="1" value="0"></label></div><button type="button" id="addPoint">Add at current slice</button></fieldset>
+            <p id="promptStatus" role="status"></p><button type="button" id="clearPrompt">Clear prompt</button>
+          </div></div>
+          <details class="advanced"><summary>Advanced: inspect or edit prompt JSON</summary><label for="promptJson">Prompt JSON</label><textarea id="promptJson" rows="6" spellcheck="false"></textarea><p class="small muted">SegVol supports a 3D box in JSON. Other box models need both corners on one slice.</p></details>
+          <p id="promptError" class="error" role="alert" hidden></p>
+        </section>
+        <div id="reviewWarnings" class="notice" hidden></div>
+        <p id="startError" class="error" role="alert" hidden></p>
+        <div class="step-actions"><button type="button" data-back="2">Edit models</button><button type="button" class="primary" id="startJob">Start job</button></div>
+      </section>
+    </section>
+    <section id="jobsPage" aria-labelledby="jobsTitle" hidden>
+      <div class="page-heading"><div><p class="eyebrow">JOB HISTORY</p><h1 id="jobsTitle" tabindex="-1">Jobs</h1><p class="muted">Newest first. Active jobs refresh automatically every four seconds.</p></div><button type="button" id="refreshJobs">Refresh</button></div>
+      <p id="jobNotice" class="success-text" role="status" hidden></p><p id="jobsError" class="error" role="alert" hidden></p><div id="jobs" class="jobs-list"><p class="empty panel">Loading jobs…</p></div>
+    </section>
+    <section id="toolsPage" aria-labelledby="toolsTitle" hidden>
+      <div class="page-heading"><div><p class="eyebrow">TOOLS</p><h1 id="toolsTitle" tabindex="-1">Prostate SBRT crop</h1><p class="muted">Crop an existing CT and matching RTSTRUCT on CPU. No segmentation model is run.</p></div><span class="pill">CPU tool</span></div>
+      <div class="panel"><div class="upload-layout"><form id="cropForm">
+        <div class="drop-zone" id="cropDropZone"><span class="upload-symbol" aria-hidden="true">↑</span><h2>CT + matching RTSTRUCT</h2><p>Drop files, a folder or ZIP archives here.</p><div class="button-row centered"><button type="button" class="primary" id="chooseCropFiles">Choose files</button><button type="button" id="chooseCropFolder">Choose folder</button></div><input id="cropFiles" type="file" multiple hidden aria-label="Crop CT and RTSTRUCT files"><input id="cropFolder" type="file" webkitdirectory multiple hidden aria-label="Crop folder"><p id="cropSelection" class="muted">No files selected</p></div>
+        <div class="crop-options"><label>Superior / inferior margin (cm)<input id="cropMargin" type="number" min="0" step="any" value="15" required></label><label class="check-label"><input id="cropKeepUids" type="checkbox"> Keep original UIDs (debugging)</label></div>
+        <div id="cropProgress" class="upload-progress" hidden><label for="cropBar">Upload progress</label><progress id="cropBar" max="100" value="0"></progress><p id="cropText" role="status"></p></div><p id="cropError" class="error" role="alert" hidden></p><button type="submit" class="primary" id="cropSubmit">Crop CT + RTSTRUCT</button>
+      </form><aside class="context-note"><h3>What will be cropped</h3><p>Axial CT and contours are cropped along the head–foot axis around structures named PTV* or CTV*. Subtraction helpers such as “Bowel - PTV” are excluded.</p><p>The default margin is 15 cm above and below. Pixel values are unchanged. New matching Study, Frame, Series and image UIDs are created by default.</p><p>Download the cropped CT, RTSTRUCT and crop report from Jobs. Review the retained image range and contours.</p></aside></div></div>
+    </section>
+  </main>
+  <footer>RTsegmentator <span id="version"></span> · Technical checks do not establish clinical accuracy.</footer>
+  <template id="jobTemplate"><article class="job panel"><div class="job-heading"><div><h2 data-field="title"></h2><p class="small muted" data-field="meta"></p></div><span data-field="status" class="pill"></span></div><p data-field="models" class="small"></p><p data-field="detail"></p><div data-field="progressWrap"><progress data-field="progress" max="100" aria-label="Job progress"></progress><p class="small muted" data-field="progressText"></p></div><p data-field="report" class="small"></p><details data-field="errors" class="error-details" hidden><summary>Error details</summary><pre data-field="error"></pre></details><div class="button-row"><a data-field="download" class="button primary" hidden>Download results</a><a data-field="viewReport" class="button" target="_blank" rel="noopener" hidden>View report</a><a data-field="reportJson" class="text-link" target="_blank" rel="noopener" hidden>Report JSON</a><button type="button" data-field="retry" hidden>Retry using retained input</button></div><p data-field="retryError" class="error" role="alert" hidden></p></article></template>
+</body>
+</html>
