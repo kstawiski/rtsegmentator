@@ -1019,6 +1019,41 @@ try:
              "--dicom", str(job / "input"), "--output", str(output),
              "--labels", str(APP_ROOT / "prompted-target-label.json")])
         shutil.rmtree(work, ignore_errors=True)
+    elif task == "lnq_atlas":
+        from run_lnq_atlas import total_python as lnq_total_python
+        work = job / "external" / task
+        work.mkdir(parents=True, exist_ok=True)
+        nifti, prediction = work / "input.nii.gz", work / "prediction.nii.gz"
+        run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"),
+             str(job / "input"), str(nifti)])
+        run([str(RUNTIME_ROOT / "envs/lnq/bin/python"), str(APP_ROOT / "run_lnq_atlas.py"),
+             "--input", str(nifti), "--output", str(prediction), "--work", str(work / "inference"),
+             "--source", str(MODEL_ROOT / "sources/LNQ2023"),
+             "--weights", str(MODEL_ROOT / "weights/lnq-atlas-20261015/weights"),
+             "--manifest", str(MODEL_ROOT / "weights/lnq-atlas-20261015/provenance.json"),
+             "--total-python", str(lnq_total_python(RUNTIME_ROOT))])
+        run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
+             "--prediction", str(prediction), "--model-input", str(nifti),
+             "--dicom", str(job / "input"), "--output", str(output),
+             "--labels", str(APP_ROOT / "labels/lnq-atlas.json")])
+        shutil.rmtree(work, ignore_errors=True)
+    elif task == "choi_tmli":
+        from choi_ontology import confirmed_labels
+        labels_map = confirmed_labels(APP_ROOT / "labels/choi-tmli.json")
+        work = job / "external" / task
+        work.mkdir(parents=True, exist_ok=True)
+        nifti, prediction = work / "input.nii.gz", work / "prediction.nii.gz"
+        labels = work / "labels.json"
+        labels.write_text(json.dumps(labels_map, indent=2) + "\n")
+        run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"),
+             str(job / "input"), str(nifti)])
+        run([str(RUNTIME_ROOT / "envs/nnunet-v1/bin/python"), str(APP_ROOT / "run_choi_tmli.py"),
+             "--input", str(nifti), "--output", str(prediction), "--work", str(work / "inference"),
+             "--model", str(MODEL_ROOT / "weights/tmlI-choi/results/nnUNet/3d_fullres/Task001_LN/nnUNetTrainerV2_noMirroring__nnUNetPlansv2.1")])
+        run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
+             "--prediction", str(prediction), "--model-input", str(nifti),
+             "--dicom", str(job / "input"), "--output", str(output), "--labels", str(labels)])
+        shutil.rmtree(work, ignore_errors=True)
     elif task == "hnlnl_2d3d":
         root = MODEL_ROOT
         work = job / "external" / task

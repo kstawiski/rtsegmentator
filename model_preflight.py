@@ -9,6 +9,9 @@ import os
 import sys
 from pathlib import Path
 
+from choi_ontology import confirmed_labels
+from run_lnq_atlas import (total_python as lnq_total_python, MODEL_RELATIVE as LNQ_MODEL,
+                           ATLAS_FILES as LNQ_ATLAS_FILES, validate_manifest as validate_lnq_manifest)
 from nv_segment_logic import MODES as NV_SEGMENT_MODES, validate_acceptance
 
 MODEL_ROOT = Path(os.environ.get("RTSEG_MODEL_ROOT", "/models"))
@@ -35,8 +38,24 @@ def report_acceptance_ready():
     except (OSError, ValueError, TypeError): return False
 
 
+CHOI_MODEL = "weights/tmlI-choi/results/nnUNet/3d_fullres/Task001_LN/nnUNetTrainerV2_noMirroring__nnUNetPlansv2.1"
+
 COMMON = ["dicom_series_to_nifti.py", "convert_validate_rtstruct.py"]
+LNQ_WEIGHTS = "weights/lnq-atlas-20261015/weights"
 REQUIREMENTS = {
+    "lnq_atlas": ["@run_lnq_atlas.py", "@run_total_v1.py", "@labels/lnq-atlas.json", "envs/lnq/bin/python",
+                  "envs/lnq-atlas-total-v1/bin/python", "sources/LNQ2023/Inference/preregistration/preregistration.py",
+                  "weights/lnq-atlas-20261015/provenance.json",
+                  *[f"{LNQ_WEIGHTS}/{LNQ_MODEL}/{name}" for name in ("dataset.json", "plans.json")],
+                  *[f"{LNQ_WEIGHTS}/{LNQ_MODEL}/fold_{i}/checkpoint_best.pth" for i in range(5)],
+                  *[f"{LNQ_WEIGHTS}/data/Atlas/{name}" for name in LNQ_ATLAS_FILES],
+                  "validation/lnq_atlas.json"],
+    "choi_tmli": ["@run_choi_tmli.py", "@choi_ontology.py", "@labels/choi-tmli.json",
+                  "envs/nnunet-v1/bin/python", "envs/nnunet-v1/bin/nnUNet_predict",
+                  f"{CHOI_MODEL}/plans.pkl",
+                  *[f"{CHOI_MODEL}/fold_{i}/{name}" for i in range(5)
+                    for name in ("model_final_checkpoint.model", "model_final_checkpoint.model.pkl")],
+                  "validation/choi_tmli.json"],
     "medical_sam3_3d_prompted": [
         "@run_medical_sam3.py", "@prompted-target-label.json",
         "envs/segmentation-modern/bin/python",
@@ -440,7 +459,9 @@ def audit(tasks=None) -> dict[str, dict]:
         if tasks is not None and task not in tasks: continue
         missing = []
         for requirement in [*("@" + item for item in COMMON), *requirements]:
-            if task == "nv_reason_ct_report" and requirement == "envs/nv-reason-ct/bin/python":
+            if task == "lnq_atlas" and requirement == "envs/lnq-atlas-total-v1/bin/python":
+                path = lnq_total_python(RUNTIME_ROOT)
+            elif task == "nv_reason_ct_report" and requirement == "envs/nv-reason-ct/bin/python":
                 path = nv_reason_python()
             elif requirement.startswith("@"):
                 path = APP_ROOT / requirement[1:]
@@ -450,6 +471,16 @@ def audit(tasks=None) -> dict[str, dict]:
                 path = MODEL_ROOT / requirement
             if not path.exists():
                 missing.append(requirement.lstrip("@"))
+        if task == "choi_tmli":
+            try:
+                confirmed_labels(APP_ROOT / "labels/choi-tmli.json")
+            except (OSError, ValueError, TypeError, AttributeError):
+                missing.append("labels/choi-tmli.json (clinician confirmation pending or invalid)")
+        if task == "lnq_atlas":
+            try:
+                validate_lnq_manifest(json.loads((MODEL_ROOT / "weights/lnq-atlas-20261015/provenance.json").read_text()))
+            except (OSError, ValueError, TypeError, AttributeError):
+                missing.append("LNQ artifact provenance missing or invalid")
         acceptance_ready = False
         if task in NV_SEGMENT_MODES:
             marker = MODEL_ROOT / "validation" / f"{task}.json"
