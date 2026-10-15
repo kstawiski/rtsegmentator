@@ -63,6 +63,55 @@ function blockedReason(task, series, allSeries, reportTask = 'nv_reason_ct_repor
   if (task.requires_ct && series && !pairedCT(series, allSeries)) reasons.push('Requires a CT series in the same Study and Frame of Reference');
   return reasons.join(' · ');
 }
+function primarySelection(selected, action, checked, catalog, series, allSeries = [], reportName = 'nv_reason_ct_report') {
+  const next = new Set(selected), isReport = t => t.output === 'report' || t.name === reportName;
+  if (!checked) {
+    catalog.filter(t => action === 'report' ? t.name === reportName : !isReport(t)).forEach(t => next.delete(t.name));
+    return next;
+  }
+  if (action === 'segment' && catalog.some(t => !isReport(t) && next.has(t.name))) return next;
+  const name = action === 'report' ? reportName : series?.modality === 'CT' ? 'total' : series?.modality === 'MR' ? 'total_mr' : null;
+  const task = catalog.find(t => t.name === name);
+  if (task && !blockedReason(task, series, allSeries, reportName)) next.add(task.name);
+  return next;
+}
+function canDeleteJob(job) { return !!job && TERMINAL.has(job.status); }
+function reportMarkdown(report) {
+  const lines = ['# NV-Reason-CT draft report', '', '**Research draft. Requires radiologist review.**', '',
+    `Status: ${report.status || 'Not supplied'}`, report.reason || '', '', 'Segmentation can be wrong. Coverage checks do not verify diagnostic findings or image quality.'];
+  lines.push('', 'Regions covered: ' + (report.covered_regions || (report.regions || []).map(r => r.region)).join(', '));
+  for (const region of report.regions || []) {
+    lines.push('', `## ${region.region}`, '', '### Technique', ...(region.sections?.technique || []), '', '### Findings');
+    for (const f of region.sections?.findings || []) lines.push(`${f.heading} [${f.organ_status || 'not checked'}]: ${f.text}`);
+    lines.push('', '### Impression', ...(region.sections?.impression || []), '', '### Abnormality labels', ...(region.sections?.labels || []));
+    if (region.flags?.length) lines.push('', '### Flags', ...region.flags.map(f => JSON.stringify(f)));
+    if (region.unchecked_headings?.length) lines.push('', 'Not checked against segmentation: ' + region.unchecked_headings.join('; '));
+  }
+  for (const [title, key] of [['Anatomical coverage','coverage'], ['Segmentation summary','segmentation_summary']]) {
+    lines.push('', '## ' + title, '', '```json', JSON.stringify(report[key] || {}, null, 2), '```');
+  }
+  if (report.coverage_slice_convention) lines.push('', 'Coverage slice convention: ' + report.coverage_slice_convention);
+  if (report.flags?.length) lines.push('', '## All report flags', ...report.flags.map(f => JSON.stringify(f)));
+  if (report.model || report.revision) lines.push('', 'Model: ' + (report.model || 'Not supplied'), 'Revision: ' + (report.revision || 'Not supplied'));
+  // Preserve every additional field, numeric value and citation in the JSON download.
+  lines.push('', 'Generated from the report JSON by the portal. The JSON and original files in the result ZIP retain all provenance and raw output.');
+  return lines.join('\n') + '\n';
+}
+function reportMarkup(report) {
+  const paragraphs = values => (values || []).map(v => `<p>${esc(v)}</p>`).join('');
+  const flags = values => `<ul class="report-flags">${values.map(f => `<li><strong>${esc(humanize(f.status || (f.absent_organs ? 'Absent anatomy flag' : 'Report flag')))}</strong>${f.region ? ' · '+esc(f.region) : ''}${f.heading ? ': '+esc(f.heading) : ''}${f.section ? ' · '+esc(f.section) : ''}${Number.isInteger(f.index) ? ' (index '+esc(f.index)+')' : ''}${f.absent_organs?.length ? ': '+esc(f.absent_organs.join(', ')) : ''}${f.reason ? ' · '+esc(f.reason) : ''}</li>`).join('')}</ul>`;
+  return `<div class="notice report-banner"><strong>Research AI draft · requires radiologist review</strong><p>Coverage checks do not verify diagnostic findings or image quality.</p></div>
+    <p><strong>Status: ${esc(humanize(report.status || 'Not supplied'))}</strong>${report.reason ? `<br>${esc(report.reason)}` : ''}</p>
+    <p><strong>Regions covered:</strong> ${(report.covered_regions || (report.regions || []).map(r => r.region)).map(r => esc(humanize(r))).join(', ') || 'No region report generated'}</p>
+    ${(report.regions || []).map(r => `<section class="region-report"><h3>${esc(humanize(r.region))}</h3><h4>Technique</h4>${paragraphs(r.sections?.technique)}<h4>Findings</h4>
+      ${(r.sections?.findings || []).map(f => `<div class="finding"><strong>${esc(f.heading)}</strong> <span class="badge ${f.organ_status === 'present' ? '' : 'license'}">${esc(f.organ_status === 'absent' ? 'Withheld · absent anatomy' : f.organ_status === 'partial' ? 'Partial coverage' : f.organ_status || 'Not checked')}</span><p>${esc(f.text)}</p></div>`).join('')}
+      <h4>Impression</h4>${paragraphs(r.sections?.impression)}<h4>Abnormality labels</h4>${paragraphs(r.sections?.labels)}
+      ${r.flags?.length ? `<h4>Flags</h4>${flags(r.flags)}` : ''}
+      ${r.unchecked_headings?.length ? `<p class="notice">Not checked against segmentation: ${esc(r.unchecked_headings.join('; '))}.</p>` : ''}</section>`).join('')}
+    ${report.flags?.length ? `<details><summary>All report flags</summary>${flags(report.flags)}</details>` : ''}
+    <details class="coverage-details"><summary>Anatomical coverage measurements</summary><p class="small muted">${esc(report.coverage_slice_convention || 'Zero-based indices in the report coverage grid; these can differ from the viewer series.')}</p><div class="table-scroll"><table><thead><tr><th>Organ</th><th>mL</th><th>Slices (index)</th><th>Truncated</th></tr></thead><tbody>${Object.entries(report.coverage || {}).map(([name,r]) => `<tr><td>${esc(name)}</td><td>${esc(r.volume_ml)}</td><td>${esc(r.slice_range?.join('–') || '—')}</td><td>${r.touches_first_slice || r.touches_last_slice ? 'Yes' : 'No'}</td></tr>`).join('')}</tbody></table></div></details>
+    ${report.model || report.revision ? `<p class="small muted">Model: ${esc(report.model || 'Not supplied')} · Revision: ${esc(report.revision || 'Not supplied')}</p>` : ''}`;
+}
 function executesRemotely(task, config, health) {
   return task.execution_backend === 'ssh' || (config?.worker_mode || health?.worker_mode) === 'ssh' ||
     [...(config?.remote_gpu_tasks || []), ...(health?.remote_gpu_tasks || [])].includes(task.name);
@@ -125,6 +174,7 @@ async function request(url, options={}) {
 if (typeof document !== 'undefined') {
   const $ = id => document.getElementById(id);
   const state = {step:0,upload:null,series:null,catalog:[],metadata:{overrides:{}},selected:new Set(),config:null,health:null,catalogReady:false,starting:false};
+  let seriesViewer=null, jobViewer=null, detailId=null, detailToken=0, detailLoaded=false, detailInfo=null, detailReport=null, detailLoading=false;
   const stepPanels=[$('uploadStep'),$('seriesStep'),$('modelsStep'),$('reviewStep')];
   const stepTitles=[$('uploadTitle'),$('seriesTitle'),$('modelsTitle'),$('reviewTitle')];
   const uploads={
@@ -140,10 +190,22 @@ if (typeof document !== 'undefined') {
   const reason=t=>blockedReason(t,state.series,state.upload?.series || [],reportTask());
   function showError(el,message){el.textContent=message;el.hidden=!message;}
   function setArea(area, focus=false){
-    if(!['new','jobs','tools'].includes(area)) area='new';
-    $('newPage').hidden=area!=='new';$('jobsPage').hidden=area!=='jobs';$('toolsPage').hidden=area!=='tools';
-    document.querySelectorAll('[data-area]').forEach(a=>{if(a.dataset.area===area)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
-    if(focus) (area==='new'?$ ('newTitle'):area==='jobs'?$('jobsTitle'):$('toolsTitle')).focus();
+    const match = /^jobs\/([A-Za-z0-9-]+)$/.exec(area);
+    const id = match?.[1] || null;
+    if(match) area='detail';
+    if(!['new','jobs','tools','detail'].includes(area)) area='new';
+    if(detailId !== id){
+      detailId=id; ++detailToken; detailLoaded=false; detailLoading=false; detailInfo=null; detailReport=null;
+      jobViewer?.destroy();jobViewer=null;$('jobResults').hidden=true;showError($('jobDetailError'),'');
+      $('deleteJob').disabled=true;$('jobDetailTitle').textContent='Job details';$('jobDetailMeta').textContent=id||'';
+      $('jobDetailStatus').textContent='Loading…';$('jobDetailProgress').textContent='';$('jobDetailReportStatus').textContent='';$('jobDetailErrors').hidden=true;$('retryDetail').hidden=true;$('jobDetailBar').removeAttribute('value');
+      selectResultTab('report');
+    }
+    $('newPage').hidden=area!=='new';$('jobsPage').hidden=area!=='jobs';$('toolsPage').hidden=area!=='tools';$('jobDetailPage').hidden=area!=='detail';
+    $('moreTools').open=false;
+    document.querySelectorAll('[data-area]').forEach(a=>{if(a.dataset.area===(area==='detail'?'jobs':area))a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
+    if(area==='detail')refreshDetail();
+    if(focus) (area==='new'?$ ('newTitle'):area==='jobs'?$('jobsTitle'):area==='detail'?$('jobDetailTitle'):$('toolsTitle')).focus();
   }
   window.addEventListener('hashchange',()=>setArea(location.hash.slice(1),true));
   function steps(){
@@ -155,14 +217,14 @@ if (typeof document !== 'undefined') {
   function goStep(n,focus=true){
     if((n>0&&!state.upload)||(n>1&&!state.series)||(n>2&&!state.selected.size)||state.starting)return;
     state.step=n;stepPanels.forEach((p,i)=>p.hidden=i!==n);steps();
-    if(n===2)renderCatalog();if(n===3)renderReview();
+    if(n===1&&state.series)loadSeriesViewer();if(n===2)renderCatalog();if(n===3)renderReview();
     if(focus){stepTitles[n].focus({preventScroll:true});window.scrollTo({top:0,behavior:'instant'});}
   }
   document.querySelectorAll('[data-step]').forEach(b=>b.addEventListener('click',()=>goStep(Number(b.dataset.step))));
   document.querySelectorAll('[data-back]').forEach(b=>b.addEventListener('click',()=>goStep(Number(b.dataset.back))));
   $('toSeries').onclick=()=>goStep(1);
   $('toModels').onclick=()=>{if(!state.series){showError($('seriesError'),'Select one image series.');return;}goStep(2);};
-  $('toReview').onclick=()=>{if(!state.selected.size){showError($('modelError'),'Choose at least one model.');return;}goStep(3);};
+  $('toReview').onclick=()=>{if(!state.selected.size){showError($('modelError'),'Choose segmentation, an AI draft report, or both.');return;}goStep(3);};
   function uploadStatus(c,text){c.progress.hidden=false;c.text.textContent=text;}
   function uploadBusy(c,busy){c.busy=busy;c.buttons.forEach(b=>b.disabled=busy);c.filesInput.disabled=busy;c.folderInput.disabled=busy;c.drop.setAttribute('aria-busy',String(busy));}
   async function entryFiles(entry){
@@ -175,7 +237,7 @@ if (typeof document !== 'undefined') {
     if(c.busy||!files.length)return;c.files=files;c.session=null;
     c.selection.textContent=`${files.length} files · ${formatBytes(files.reduce((n,f)=>n+f.size,0))}`;
     showError(c.error,'');c.progress.hidden=true;
-    if(c===uploads.seg){state.upload=null;state.series=null;state.selected.clear();$('assessment').textContent='';$('toSeries').hidden=true;resetPrompt();goStep(0,false);await inspect();}
+    if(c===uploads.seg){state.upload=null;state.series=null;state.selected.clear();seriesViewer?.destroy();seriesViewer=null;$('assessment').textContent='';$('toSeries').hidden=true;resetPrompt();goStep(0,false);await inspect();}
   }
   Object.values(uploads).forEach(c=>{
     c.buttons[0].onclick=()=>c.filesInput.click();c.buttons[1].onclick=()=>c.folderInput.click();
@@ -237,15 +299,22 @@ if (typeof document !== 'undefined') {
   $('resumeUpload').onclick=inspect;
   function previewURL(s,index){return `/api/uploads/${encodeURIComponent(state.upload.upload_id)}/preview?series_key=${encodeURIComponent(s.key)}&index=${index}`;}
   function renderSeries(){
-    $('series').innerHTML=state.upload.series.map((s,i)=>`<label class="series-card"><input type="radio" name="series_key" value="${esc(s.key)}" data-series-index="${i}" ${state.series?.key===s.key?'checked':''}><span class="series-thumb"><img src="${esc(previewURL(s,Math.floor(s.slices/2)))}" alt="Middle slice: ${esc(s.description||modalityName(s.modality)+' series')}" loading="lazy"></span><span class="series-info"><span class="pill">${esc(modalityName(s.modality))}</span>${s.cbct?' <span class="badge license">CBCT detected</span>':''}<strong>${esc(s.description||'No series description')}</strong><span>${s.slices} slices · ${s.rows} × ${s.columns}</span><br><small class="muted">Study date ${esc(studyDate(s.study_date))}</small></span></label>`).join('');
+    $('series').innerHTML=state.upload.series.map((s,i)=>`<label class="series-card"><input type="radio" name="series_key" value="${esc(s.key)}" data-series-index="${i}" ${state.series?.key===s.key?'checked':''}><span class="series-info"><span class="pill">${esc(modalityName(s.modality))}</span>${s.cbct?' <span class="badge license">CBCT detected</span>':''}<strong>${esc(s.description||'No series description')}</strong><span>${s.slices} slices · ${s.rows} × ${s.columns}</span><br><small class="muted">Study date ${esc(studyDate(s.study_date))}</small></span></label>`).join('');
     $('series').querySelectorAll('input').forEach(input=>input.onchange=()=>selectSeries(state.upload.series[Number(input.dataset.seriesIndex)]));
-    $('series').querySelectorAll('img').forEach(img=>img.onerror=()=>{const span=document.createElement('span');span.className='preview-unavailable';span.textContent='Preview unavailable';img.replaceWith(span);});
+    if(!seriesViewer)seriesViewer=new DicomUI.Viewer($('seriesViewer'));
+    loadSeriesViewer();
+  }
+  function loadSeriesViewer(){
+    if(!state.series||!state.upload)return;
+    if(!seriesViewer)seriesViewer=new DicomUI.Viewer($('seriesViewer'));
+    const base=`/api/v1/uploads/${encodeURIComponent(state.upload.upload_id)}/series/${encodeURIComponent(state.series.key)}/viewer`;
+    if(seriesViewer.base!==base)seriesViewer.load(base);
   }
   function selectSeries(s){
     if(state.series?.key!==s.key){state.series=s;state.selected.clear();$('prostatePostprocess').checked=false;resetPrompt();$('promptSlice').max=s.slices-1;$('promptSlice').value=Math.floor(s.slices/2);$('promptColumn').max=s.columns-1;$('promptRow').max=s.rows-1;}
     const warnings=[];if(s.cbct)warnings.push(`AI draft report unavailable for CBCT: ${s.cbct_reason || 'CBCT detected'}.`);
     if(s.modality==='PT'){const ct=pairedCT(s,state.upload.series);warnings.push(ct?`Paired CT found: ${ct.description||'CT series'} (${ct.slices} slices). PET1 ISRT models use a CT in the same Study and Frame of Reference. This check does not establish registration.`:'PET1 ISRT models require a CT in the same Study and Frame of Reference. No matching CT was found in this upload. PET-only models remain selectable when available.');}
-    $('seriesWarnings').textContent=warnings.join(' ');$('seriesWarnings').hidden=!warnings.length;showError($('seriesError'),'');steps();renderSelection();
+    $('seriesWarnings').textContent=warnings.join(' ');$('seriesWarnings').hidden=!warnings.length;showError($('seriesError'),'');steps();renderSelection();loadSeriesViewer();
   }
   function badges(t){
     const result=[];if(t.licensed)result.push(['Licence-restricted','license']);if(t.prompt)result.push(['Interactive prompt needed','prompt']);if(t.output==='report')result.push(['Research AI draft','ai']);if(isRemote(t))result.push(['Runs on remote GPU','remote']);
@@ -265,8 +334,7 @@ if (typeof document !== 'undefined') {
   function renderCatalog(){
     if(!state.series)return;
     $('modalityLabel').textContent=modalityName(state.series.modality)+' series';
-    const defaults=state.series.modality==='CT'?'TotalSegmentator total is the default starting model for CT.':state.series.modality==='MR'?'TotalSegmentator total_mr is the default starting model for MR.':'PET-only and paired PET/CT tasks are listed for this series.';
-    $('modelNote').textContent=defaults+' Choose each model explicitly; no models are selected automatically.';
+    $('modelNote').textContent='Choose either action or both. Nothing runs until you review and start.';
     const site=$('clinicalFilter').value,q=$('modelSearch').value.trim().toLowerCase(),show=$('showUnavailable').checked;
     const compatible=state.catalog.filter(t=>supports(t,state.series)),available=compatible.filter(t=>!reason(t));
     const visible=compatible.filter(t=>(show||!reason(t))&&(!site||(t.clinical_tags||[]).some(x=>x.id===site))&&(!q||[t.name,meta(t).title,meta(t).purpose,t.description,t.structures,...(t.clinical_tags||[]).map(x=>x.label)].join(' ').toLowerCase().includes(q)));
@@ -274,21 +342,43 @@ if (typeof document !== 'undefined') {
     const groups=GROUPS.map(([id,title])=>({id,title,tasks:visible.filter(t=>meta(t).group===id)})).filter(g=>g.tasks.length);
     $('modelResults').textContent=state.catalogReady?`${visible.length} models shown · ${available.length} available for this ${modalityName(state.series.modality)} series · ${compatible.length-available.length} unavailable`:'';
     $('modelGroups').innerHTML=groups.map((g,i)=>`<details class="model-group" data-group="${g.id}" ${q||site||opened.has(g.id)||(!opened.size&&i===0)?'open':''}><summary>${g.title}<span class="group-count">${g.tasks.length} models</span></summary>${g.tasks.map(modelRow).join('')}</details>`).join('')||(state.catalogReady?'<p class="empty">No models match these filters. Change the search or show unavailable models.</p>':'');
-    const names=state.series.modality==='CT'?['total',reportTask()]:state.series.modality==='MR'?['total_mr']:[];
-    const recommended=names.map(name=>state.catalog.find(t=>t.name===name)).filter(t=>t&&supports(t,state.series));
-    $('recommendations').hidden=!recommended.length;
-    $('recommended').innerHTML=recommended.map(t=>{const m=meta(t),blocked=reason(t);return `<article class="recommendation"><h3>${esc(m.title)}</h3><p>${esc(m.purpose)}</p><div class="badges">${badges(t)}</div>${availabilityNote(t,blocked)}<button type="button" data-recommend="${esc(t.name)}" ${blocked?'disabled':''}>${state.selected.has(t.name)?'Remove from job':'Add to job'}</button></article>`;}).join('');
     renderSelection();
   }
   function toggleModel(name){const task=state.catalog.find(t=>t.name===name);if(!task||reason(task))return;if(state.selected.has(name))state.selected.delete(name);else state.selected.add(name);showError($('modelError'),'');syncModelInputs();renderSelection();}
-  function syncModelInputs(){document.querySelectorAll('[name=models]').forEach(i=>i.checked=state.selected.has(i.value));$('recommended').querySelectorAll('[data-recommend]').forEach(b=>b.textContent=state.selected.has(b.dataset.recommend)?'Remove from job':'Add to job');}
+  function syncModelInputs(){document.querySelectorAll('[name=models]').forEach(i=>i.checked=state.selected.has(i.value));}
   $('modelGroups').addEventListener('change',e=>{if(e.target.name==='models')toggleModel(e.target.value);});
   $('modelGroups').addEventListener('click',e=>{const label=e.target.closest('[data-toggle-model]');if(label)toggleModel(label.dataset.toggleModel);});
-  $('recommended').addEventListener('click',e=>{const b=e.target.closest('[data-recommend]');if(b)toggleModel(b.dataset.recommend);});
   $('selectedChips').addEventListener('click',e=>{const b=e.target.closest('[data-remove]');if(b){state.selected.delete(b.dataset.remove);syncModelInputs();renderSelection();}});
   $('clearModels').onclick=()=>{state.selected.clear();syncModelInputs();renderSelection();};
   $('modelSearch').oninput=renderCatalog;$('clinicalFilter').onchange=renderCatalog;$('showUnavailable').onchange=renderCatalog;
+  function renderActions(){
+    const report=state.catalog.find(t=>t.name===reportTask());
+    const segments=chosen().filter(t=>t.output!=='report'&&t.name!==reportTask());
+    const defaultName=state.series?.modality==='CT'?'total':state.series?.modality==='MR'?'total_mr':null;
+    const defaultTask=state.catalog.find(t=>t.name===defaultName);
+    const segmentReason=segments.length?'':defaultTask?reason(defaultTask):state.catalogReady?(defaultName?'Default model is not supplied by the catalog. Choose another available model.':'Choose a PET model from the model catalog.'):'Loading model catalog…';
+    $('segmentAction').checked=segments.length>0;$('segmentAction').disabled=!!segmentReason;
+    $('segmentCard').classList.toggle('selected',segments.length>0);
+    $('segmentDefault').textContent=defaultName?`Default: TotalSegmentator ${defaultName}`:'PET segmentation';
+    $('segmentBadges').innerHTML=defaultTask?badges(defaultTask):'';
+    $('segmentSelection').textContent=segments.length?segments.map(t=>meta(t).title).join(' · '):defaultName?'Select this action to add the default model.':'Choose one or more models below.';
+    showError($('segmentReason'),segmentReason);
+    $('reportAction').checked=state.selected.has(reportTask());
+    $('reportCard').classList.toggle('selected',state.selected.has(reportTask()));
+    const blocked=report?reason(report):state.catalogReady?'NV-Reason-CT is not supplied by the model catalog.':'Loading model catalog…';
+    $('reportAction').disabled=!!blocked;showError($('reportReason'),blocked);
+    $('reportBadges').innerHTML=report?badges(report):'';
+    const reference=report?safeReference(report.reference):'';
+    $('reportDetails').hidden=!report;
+    $('reportModelDetails').innerHTML=report?`<p>${esc(report.description||'')}</p><p>${esc(report.limitations||'')}</p><p>${esc([report.license,report.license_note].filter(Boolean).join(' · '))}</p>${reference?`<a href="${esc(reference)}" target="_blank" rel="noopener noreferrer">Model reference (external)</a>`:''}`:'';
+  }
+  for(const [id,action] of [['segmentAction','segment'],['reportAction','report']])$(id).onchange=()=>{
+    state.selected=primarySelection(state.selected,action,$(id).checked,state.catalog,state.series,state.upload?.series||[],reportTask());
+    showError($('modelError'),'');syncModelInputs();renderSelection();
+  };
+  $('chooseModels').onclick=()=>{const open=$('catalogPicker').hidden;$('catalogPicker').hidden=!open;$('chooseModels').setAttribute('aria-expanded',String(open));if(open){renderCatalog();$('modelSearch').focus();}};
   function renderSelection(){
+    renderActions();
     $('selectionCount').textContent=`${state.selected.size} model${state.selected.size===1?'':'s'} selected`;
     $('selectedChips').innerHTML=chosen().map(t=>`<button type="button" class="chip" data-remove="${esc(t.name)}" aria-label="Remove ${esc(meta(t).title)}">${esc(meta(t).title)} <span aria-hidden="true">×</span></button>`).join('')||'<span class="small muted">Select models to build this job.</span>';
     steps();
@@ -355,7 +445,7 @@ if (typeof document !== 'undefined') {
   $('startJob').onclick=async()=>{
     if(state.starting)return;showError($('startError'),'');showError($('promptError'),'');showError($('postprocessError'),'');
     for(const t of chosen()){const error=reason(t);if(error){goStep(2);showError($('modelError'),`${meta(t).title}: ${error}`);return;}}
-    if(!state.selected.size){goStep(2);showError($('modelError'),'Choose at least one model.');return;}
+    if(!state.selected.size){goStep(2);showError($('modelError'),'Choose segmentation, an AI draft report, or both.');return;}
     let promptValue='';if(prompted().length){try{prompt=readPrompt();const error=boxCorner?'Complete the second box corner or clear the prompt.':validatePrompt(prompt,prompted(),state.series);if(error)throw Error(error);promptValue=JSON.stringify(prompt);}catch(error){showError($('promptError'),error.message);$('promptError').scrollIntoView({block:'center'});return;}}
     state.starting=true;steps();$('startJob').disabled=true;$('startJob').textContent='Starting…';
     let failure=null;
@@ -363,8 +453,8 @@ if (typeof document !== 'undefined') {
       if($('prostatePostprocess').checked&&cropSupported(state.series,state.selected,state.catalog,state.config,state.health))form.append('postprocess','prostate_sbrt_crop');
       const result=await request(`/api/uploads/${encodeURIComponent(state.upload.upload_id)}/start`,{method:'POST',body:form});
       rememberJob(result.id);$('jobNotice').textContent='Job queued. Follow progress and download results here.';$('jobNotice').hidden=false;
-      state.upload=null;state.series=null;state.selected.clear();uploads.seg.files=[];uploads.seg.session=null;uploads.seg.selection.textContent='No files selected';uploads.seg.progress.hidden=true;$('assessment').textContent='';$('toSeries').hidden=true;resetPrompt();
-      location.hash='jobs';pollJobs();
+      state.upload=null;state.series=null;state.selected.clear();seriesViewer?.destroy();seriesViewer=null;uploads.seg.files=[];uploads.seg.session=null;uploads.seg.selection.textContent='No files selected';uploads.seg.progress.hidden=true;$('assessment').textContent='';$('toSeries').hidden=true;resetPrompt();
+      location.hash='jobs/'+encodeURIComponent(result.id);pollJobs();
     }catch(error){failure=error.message;}
     finally{state.starting=false;$('startJob').disabled=false;steps();if(!state.upload)goStep(0,false);else renderReview();if(failure)routeStartError(failure);}
   };
@@ -385,7 +475,8 @@ if (typeof document !== 'undefined') {
   function updateJob(j){
     let row=jobRows.get(j.id);if(!row){row=$('jobTemplate').content.firstElementChild.cloneNode(true);row.dataset.job=j.id;jobRows.set(j.id,row);row.querySelector('[data-field=retry]').onclick=()=>retryJob(j.id,row);}
     const field=name=>row.querySelector(`[data-field="${name}"]`),busy=!TERMINAL.has(j.status),models=j.models||[],total=j.model_total||models.length,pct=Number.isFinite(j.progress)?Math.max(0,Math.min(100,j.progress)):null;
-    updateText(field('title'),j.tool?'Prostate SBRT crop':models.length===1&&models[0]===reportTask()?'AI draft report':`${models.length} model${models.length===1?'':'s'} · segmentation job`);
+    updateText(field('title'),j.tool?'Prostate SBRT crop':models.length===1&&models[0]===reportTask()?'AI draft report':models.includes(reportTask())?'Segmentation and AI draft report':`${models.length} model${models.length===1?'':'s'} · segmentation job`);
+    field('title').href=field('open').href='#jobs/'+encodeURIComponent(j.id);
     const elapsed=(busy?Date.now()/1000:(j.finished||j.completed||j.updated||j.created))-j.created;
     updateText(field('meta'),`${new Date(j.created*1000).toLocaleString()} · ${busy?'Elapsed':'Duration'} ${duration(elapsed)} · ${j.id}`);
     updateText(field('status'),humanize(j.status));field('status').className='pill '+(TERMINAL.has(j.status)||['processing','transferring','retrieving','queued'].includes(j.status)?j.status:'');
@@ -413,10 +504,105 @@ if (typeof document !== 'undefined') {
       if(jobs.length){$('jobs').querySelector('.empty')?.remove();jobs.forEach((j,i)=>{const row=updateJob(j),current=$('jobs').children[i];if(current!==row)$('jobs').insertBefore(row,current||null);});}
       else if(listSucceeded&&!failed&&!jobRows.size)$('jobs').innerHTML='<p class="empty panel">No jobs yet. Start with a study in New job.</p>';
       const count=(listSucceeded?summaries:jobs).filter(j=>j.status&&!TERMINAL.has(j.status)).length;updateText($('activeCount'),String(count));$('activeCount').setAttribute('aria-label',`${count} active jobs`);
+      if(detailId)refreshDetail();
     }finally{polling=false;}
   }
   async function retryJob(id,row){const button=row.querySelector('[data-field=retry]'),error=row.querySelector('[data-field=retryError]');button.disabled=true;showError(error,'');try{await request(`/api/v1/jobs/${encodeURIComponent(id)}/retry`,{method:'POST'});await pollJobs();}catch(e){showError(error,e.message);}finally{button.disabled=false;}}
   $('refreshJobs').onclick=pollJobs;
+  function selectResultTab(name, focus=false){
+    document.querySelectorAll('[data-result-tab]').forEach(button=>{
+      const selected=button.dataset.resultTab===name;button.setAttribute('aria-selected',String(selected));button.tabIndex=selected?0:-1;
+      $(button.getAttribute('aria-controls')).hidden=!selected;if(selected&&focus)button.focus();
+    });
+  }
+  document.querySelectorAll('[data-result-tab]').forEach(button=>{
+    button.onclick=()=>selectResultTab(button.dataset.resultTab);
+    button.onkeydown=e=>{
+      const names=['report','structures','downloads'],i=names.indexOf(button.dataset.resultTab);
+      let next;if(e.key==='ArrowRight')next=(i+1)%3;else if(e.key==='ArrowLeft')next=(i+2)%3;else if(e.key==='Home')next=0;else if(e.key==='End')next=2;else return;
+      e.preventDefault();selectResultTab(names[next],true);
+    };
+  });
+  let detailRequest=0, deleting=false;
+  async function refreshDetail(){
+    const id=detailId,token=detailToken,serial=++detailRequest;if(!id)return;
+    try{
+      const job=await request(`/api/v1/jobs/${encodeURIComponent(id)}`);
+      if(token!==detailToken||serial!==detailRequest)return;
+      jobData.set(id,job);showError($('jobDetailError'),'');
+      const models=job.models||[],reportOnly=models.length===1&&models[0]===reportTask();
+      $('jobDetailTitle').textContent=job.tool?'Prostate SBRT crop':reportOnly?'AI draft report':models.includes(reportTask())?'Segmentation and AI draft report':'Segmentation results';
+      $('jobDetailMeta').textContent=`${id} · ${new Date(job.created*1000).toLocaleString()} · ${models.map(name=>meta(state.catalog.find(t=>t.name===name)||{name}).title).join(' · ')}`;
+      $('jobDetailStatus').textContent=humanize(job.status);$('jobDetailStatus').className='pill '+(TERMINAL.has(job.status)||['queued','processing','retrieving','transferring'].includes(job.status)?job.status:'');
+      $('jobDetailProgress').textContent=[job.detail,job.model_index?`Model ${job.model_index} of ${job.model_total||models.length}`:'',Number.isFinite(job.progress)?`${job.progress}%`:'',job.total_bytes?`${formatBytes(job.transferred_bytes||0)} / ${formatBytes(job.total_bytes)}`:''].filter(Boolean).join(' · ');
+      if(Number.isFinite(job.progress))$('jobDetailBar').value=Math.max(0,Math.min(100,job.progress));else $('jobDetailBar').removeAttribute('value');
+      $('jobDetailBar').hidden=TERMINAL.has(job.status);
+      $('jobDetailReportStatus').textContent=job.report_status?`AI report: ${humanize(job.report_status)}${job.report_reason?' · '+job.report_reason:''}`:'';
+      $('jobDetailErrors').hidden=!job.error;$('jobDetailFailure').textContent=job.error||'';
+      $('retryDetail').hidden=job.status!=='failed';$('deleteJob').disabled=deleting||!canDeleteJob(job);
+      $('deleteJob').title=canDeleteJob(job)?'Delete job and its files':'Deletion is available after the job stops running';
+      if($('deleteDialog').open)$('confirmDelete').disabled=deleting||!canDeleteJob(job);
+      $('jobResults').hidden=job.status!=='complete';
+      if(job.status==='complete'&&!detailLoaded&&!detailLoading)loadResults(job,token);
+      if(job.status!=='complete'&&detailLoaded){detailLoaded=false;jobViewer?.destroy();jobViewer=null;}
+    }catch(error){if(token===detailToken&&serial===detailRequest){showError($('jobDetailError'),`Could not load this job: ${error.message}`);$('deleteJob').disabled=true;}}
+  }
+  async function loadResults(job,token){
+    detailLoading=true;detailReport=null;detailInfo=null;
+    const base=`/api/v1/jobs/${encodeURIComponent(job.id)}`;
+    $('reportContent').textContent='Loading report…';$('structuresContent').textContent='Loading structures…';$('reportDownloads').hidden=true;showError($('downloadError'),'');
+    $('resultDownload').href=base+'/result';$('jsonDownload').href=base+'/report';$('htmlDownload').href=base+'/report/html';
+    jobViewer?.destroy();jobViewer=new DicomUI.Viewer($('jobViewer'),{overlays:true});
+    const [metadata,report]=await Promise.allSettled([jobViewer.load(base+'/viewer'),request(base+'/report')]);
+    if(token!==detailToken)return;
+    detailInfo=metadata.status==='fulfilled'?metadata.value:null;
+    if(report.status==='fulfilled'){
+      detailReport=report.value;$('reportDownloads').hidden=false;
+      $('reportContent').innerHTML=`<p class="report-link"><a href="/jobs/${encodeURIComponent(job.id)}/report" target="_blank" rel="noopener">Open full report ↗</a></p>`+reportMarkup(detailReport);
+    }else{
+      const expected=detailInfo?.report||job.report_status||(job.models||[]).includes(reportTask());
+      $('reportContent').textContent=expected?`Report unavailable: ${report.reason.message}. Use Refresh to retry.`:'No AI report was requested for this job.';
+    }
+    renderStructures();detailLoaded=true;detailLoading=false;
+  }
+  function renderStructures(){
+    if(!detailInfo){$('structuresContent').textContent='Structure metadata is unavailable. Use Refresh to retry. Downloads remain available.';return;}
+    const rows=detailInfo.structure_sets.flatMap(set=>set.rois.map(roi=>({model:set.model,roi})));
+    if(!rows.length){$('structuresContent').textContent='No RTSTRUCT structures are available for this job.';return;}
+    $('structuresContent').innerHTML=`<div class="table-scroll"><table><thead><tr><th>Model</th><th>ROI</th><th>Slice range (index)</th><th>Approx. mL</th></tr></thead><tbody>${rows.map(({model,roi})=>{
+      const candidates=(detailReport?.segmentation_summary||[]).filter(s=>s.model===model).flatMap(s=>s.rois||[]).filter(r=>r.name===roi.name);
+      const volume=candidates.length===1?candidates[0].approx_volume_ml:null;
+      return `<tr><td>${esc(model)}</td><td>${esc(roi.name)}</td><td>${roi.slices.length?`${roi.slices[0]}–${roi.slices.at(-1)}`:'No matching slices'}</td><td>${Number.isFinite(volume)?esc(volume):'—'}</td></tr>`;
+    }).join('')}</tbody></table></div>`;
+  }
+  $('refreshDetail').onclick=()=>{detailLoaded=false;refreshDetail();};
+  $('retryDetail').onclick=async()=>{
+    const id=detailId,token=detailToken;$('retryDetail').disabled=true;
+    try{await request(`/api/v1/jobs/${encodeURIComponent(id)}/retry`,{method:'POST'});if(token===detailToken){detailLoaded=false;refreshDetail();}pollJobs();}
+    catch(error){if(token===detailToken)showError($('jobDetailError'),error.message);}
+    finally{$('retryDetail').disabled=false;}
+  };
+  $('markdownDownload').onclick=()=>{
+    if(!detailReport)return;
+    const url=URL.createObjectURL(new Blob([reportMarkdown(detailReport)],{type:'text/markdown;charset=utf-8'}));
+    const link=document.createElement('a');link.href=url;link.download=`${detailId}-report.md`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
+  $('deleteJob').onclick=()=>{
+    if(!canDeleteJob(jobData.get(detailId)))return;
+    $('deleteIdentity').textContent=detailId;$('deleteDialog').dataset.job=detailId;showError($('deleteError'),'');$('confirmDelete').disabled=false;$('deleteDialog').showModal();
+  };
+  $('deleteDialog').addEventListener('cancel',e=>{if(deleting)e.preventDefault();});
+  $('confirmDelete').onclick=async()=>{
+    const id=$('deleteDialog').dataset.job;if(deleting||!canDeleteJob(jobData.get(id)))return;
+    deleting=true;$('confirmDelete').disabled=true;$('cancelDelete').disabled=true;$('deleteJob').disabled=true;
+    try{
+      await request(`/api/v1/jobs/${encodeURIComponent(id)}`,{method:'DELETE'});
+      jobRows.get(id)?.remove();jobRows.delete(id);jobData.delete(id);remembered=remembered.filter(value=>value!==id);
+      try{localStorage.setItem('dicomJobs',JSON.stringify(remembered));}catch(_){}
+      $('deleteDialog').close();$('jobNotice').textContent=`Deleted job ${id} and its files.`;$('jobNotice').hidden=false;location.hash='jobs';pollJobs();
+    }catch(error){showError($('deleteError'),error.message);}
+    finally{deleting=false;$('cancelDelete').disabled=false;$('confirmDelete').disabled=false;if(detailId)refreshDetail();}
+  };
   async function refreshHealth(){
     try{const h=await request('/api/v1/health');state.health=h;const pieces=[];
       if(Number.isFinite(h.gpu_total_mb)&&h.gpu_total_mb>0){pieces.push(`GPU available · ${(h.gpu_free_mb/1024).toFixed(1)} / ${(h.gpu_total_mb/1024).toFixed(1)} GiB free`);}else pieces.push(h.worker_mode==='local'?'GPU unavailable / memory not reported':h.worker_reachable?'Worker reachable · GPU memory not reported':'Worker unreachable');
@@ -438,4 +624,4 @@ if (typeof document !== 'undefined') {
   }
   initialize();setInterval(pollJobs,4000);setInterval(refreshHealth,30000);
 }
-if(typeof module!=='undefined'&&module.exports)module.exports={presentation,executesRemotely,supports,pairedCT,blockedReason,cropSupported,validatePrompt,structureInfo,humanize,safeReference,GROUPS};
+if(typeof module!=='undefined'&&module.exports)module.exports={presentation,executesRemotely,supports,pairedCT,blockedReason,cropSupported,validatePrompt,structureInfo,humanize,safeReference,primarySelection,canDeleteJob,reportMarkdown,reportMarkup,GROUPS};
