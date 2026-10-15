@@ -74,28 +74,41 @@ def test_independent_masks_full_geometry_matrix(synthetic_ct, tmp_path, iop, spa
     print(f"MASK_WRITER iop={iop} spacing={spacing} reverse={reverse} gaps={gaps}: {json.dumps(report)}")
 
 
-@pytest.mark.parametrize("iop,spacing,reverse,gaps,orientation", [GEOMETRIES[i] for i in (0, 1, 2, 4)])
-def test_regular_stack_equivalence_to_rt_utils(synthetic_ct, tmp_path, iop, spacing, reverse, gaps, orientation):
+def contour_equivalence(before, after):
+    """Compare every point, contour type, point count and referenced source plane."""
+    assert len(before) == len(after)
+    maximum, points = 0.0, 0
+    for a, b in zip(before, after):
+        assert a.ContourImageSequence == b.ContourImageSequence
+        assert a.ContourGeometricType == b.ContourGeometricType
+        assert a.NumberOfContourPoints == b.NumberOfContourPoints
+        aa, bb = np.asarray(a.ContourData).reshape(-1, 3), np.asarray(b.ContourData).reshape(-1, 3)
+        assert aa.shape == bb.shape
+        assert np.isfinite(aa).all() and np.isfinite(bb).all()
+        maximum = max(maximum, float(np.linalg.norm(aa - bb, axis=1).max()))
+        points += len(aa)
+    return maximum, points
+
+
+@pytest.mark.parametrize("with_edges", [False, True])
+@pytest.mark.parametrize("iop,spacing,reverse,gaps,orientation",
+                         [g for g in GEOMETRIES if g.values[1][0] == g.values[1][1] and not g.values[3]])
+def test_regular_stack_equivalence_to_rt_utils(synthetic_ct, tmp_path, iop, spacing, reverse, gaps,
+                                              orientation, with_edges):
     source = tmp_path / "source"
     make_series(synthetic_ct, source, iop, spacing, reverse, gaps)
-    image_path, prediction, mask = inputs(source, tmp_path)
+    from test_rtstruct_degenerate import edge_mask
+    image_path, prediction, mask = inputs(source, tmp_path, edge_mask() if with_edges else None)
     result, output = convert(source, tmp_path, image_path, prediction)
     assert result.returncode == 0, result.stdout + result.stderr
     old = RTStructBuilder.create_new(dicom_series_path=str(source))
     old.add_roi(mask=mask.transpose(1, 0, 2), name="Asymmetric L")
     new = pydicom.dcmread(output)
     before, after = old.ds.ROIContourSequence[0].ContourSequence, new.ROIContourSequence[0].ContourSequence
-    assert len(before) == len(after)
-    maximum = 0.0
-    points = 0
-    for a, b in zip(before, after):
-        assert a.ContourImageSequence == b.ContourImageSequence
-        aa, bb = np.asarray(a.ContourData).reshape(-1, 3), np.asarray(b.ContourData).reshape(-1, 3)
-        assert aa.shape == bb.shape
-        maximum = max(maximum, float(np.linalg.norm(aa - bb, axis=1).max()))
-        points += len(aa)
+    maximum, points = contour_equivalence(before, after)
     assert maximum <= 1e-3
-    print(f"EQUIVALENCE iop={iop} reverse={reverse}: {points} points, max distance={maximum:.9f} mm")
+    print(f"EQUIVALENCE iop={iop} reverse={reverse} edges={with_edges}: "
+          f"{points} points, max distance={maximum:.9f} mm")
 
 
 def test_per_slice_origin_orientation_and_spacing(synthetic_ct, tmp_path):

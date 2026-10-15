@@ -38,7 +38,7 @@ def main():
             continue
         if not add_roi(rtstruct, binary, class_name, deterministic_color(class_name)):
             omitted.append({"name": class_name, "voxels": int(binary.sum()),
-                            "reason": "no non-degenerate contour polygon"})
+                            "reason": "no contour returned for nonempty mask"})
             continue
         expected_bounds[class_name] = mask_bounds(binary, rtstruct.series_data)
         expected_masks[class_name] = binary

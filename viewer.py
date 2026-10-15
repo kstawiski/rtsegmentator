@@ -252,8 +252,12 @@ def read_structure(path):
             if kind not in {"CLOSED_PLANAR", "CLOSEDPLANAR_XOR"}:
                 raise HTTPException(422, "Viewer supports only CLOSED_PLANAR or CLOSEDPLANAR_XOR contours")
             points = np.asarray(contour.ContourData, dtype=float).reshape(-1, 3)
-            if len(points) < 3 or not np.isfinite(points).all():
+            # rt-utils keeps single-pixel and line components as degenerate
+            # closed contours. Preserve them in the independent pixel mapping.
+            if not len(points) or not np.isfinite(points).all():
                 raise HTTPException(422, "RTSTRUCT contains invalid contour coordinates")
+            if int(getattr(contour, "NumberOfContourPoints", 0)) != len(points):
+                raise HTTPException(422, "RTSTRUCT contour point count does not match coordinates")
             refs = tuple(str(im.ReferencedSOPInstanceUID) for im in getattr(contour, "ContourImageSequence", []))
             paths.append((refs, points))
         rois.append(({"number": number, "name": name, "color": color}, frame, paths))
