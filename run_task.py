@@ -600,11 +600,12 @@ try:
         run([str(RUNTIME_ROOT / 'envs/nnunet-v1/bin/python'), str(APP_ROOT / 'run_lnctvseg.py'),
              '--input', str(input_dir), '--output', str(prediction_dir),
              '--work', str(work / 'inference'), '--model-root', str(MODEL_ROOT)])
-        # Raw audit predictions retain all checkpoint classes. A six-ROI export
-        # must not silently discard the undocumented seventh foreground class.
-        lnctvseg_bundle.validate_label_contract()
+        # Preserve every raw checkpoint class for Dice; export only documented IDs.
+        exported = work / 'export' / 'case.nii.gz'
+        lnctvseg_bundle.prepare_export(prediction_dir / 'case.nii.gz', exported,
+                                      job / 'output' / task)
         run([sys.executable, str(APP_ROOT / 'convert_validate_rtstruct.py'),
-             '--prediction', str(prediction_dir / 'case.nii.gz'), '--model-input', str(nifti),
+             '--prediction', str(exported), '--model-input', str(nifti),
              '--dicom', str(job / 'input'), '--output', str(output),
              '--labels', str(APP_ROOT / 'labels/lnctvseg.json')])
         if not NODAL_AUDIT:

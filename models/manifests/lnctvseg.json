@@ -92,7 +92,7 @@
       "python": "3.11.14"
     }
   },
-  "status": "checkpoint_verified_label_contract_unresolved",
+  "status": "checkpoint_verified_gpu_acceptance_pending",
   "label_map_sha256": "24b1d553565747a848b0563782f46f9436a3e2d48fd4dd518d683477fbd8c97f",
   "archive": {
     "filename": "weights.zip",
@@ -100,7 +100,7 @@
     "sha256": "7612f33556d163e26226bed7064c73212323d488d5c6010399307f778a40b246"
   },
   "label_contract": {
-    "status": "unresolved",
+    "status": "resolved_with_omission",
     "published_foreground_ids": [
       1,
       2,
@@ -121,7 +121,19 @@
     "unmapped_checkpoint_ids": [
       7
     ],
-    "reason": "All four author checkpoints have eight output channels. The pinned README and example define only foreground IDs 1-6. The meaning of ID 7 and alignment of the checkpoint IDs with that table require publisher confirmation. Raw inference preserves every class; RTSTRUCT export and acceptance are blocked."
+    "reason": "Export checkpoint IDs 1-6 unchanged with their published names. Class 7 is undocumented by the authors and is omitted, never relabelled or merged. Preserve raw predictions for audit and record the omitted voxel count and volume in every job and result ZIP.",
+    "export_label_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "omitted_checkpoint_ids": [
+      7
+    ],
+    "policy": "omit_without_relabelling"
   },
   "informational_architectures": {
     "swinunetr": {

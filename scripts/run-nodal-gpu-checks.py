@@ -128,6 +128,7 @@ def main(argv=None):
         is_lnctvseg = task in lnctvseg_bundle.INTEGRATED_TASKS
         work = job / 'external' / task
         prediction = work / ('prediction' if is_lnctvseg else 'ensemble') / 'case.nii.gz'
+        exported = work / 'export/case.nii.gz' if is_lnctvseg else prediction
         dice = None
         try:
             if is_lnctvseg:
@@ -138,8 +139,7 @@ def main(argv=None):
                                             '--nodal-acceptance-audit'], env, log, job / 'performance.json',
                                            int(os.environ.get('TASK_TIME_LIMIT_SECONDS', 12 * 3600)))
                 finally:
-                    # Keep overlap evidence even if the dispatcher refuses an
-                    # undocumented class before RTSTRUCT conversion.
+                    # Audit raw IDs, including class 7, even if conversion fails.
                     if is_lnctvseg and prediction.is_file():
                         dice = fixture_dice(prediction, model, job / 'dice.json')
                 if is_lnctvseg:
@@ -151,7 +151,7 @@ def main(argv=None):
                 # These further checks use retained predictions and the produced RTSTRUCT.
                 orientation_audit.run_command([
                     python, str(APP / 'audit_nodal_laterality.py'), '--ct', str(work / 'input/case_0000.nii.gz'),
-                    '--prediction', str(prediction), '--labels', str(labels), '--output', str(job / 'laterality.json'),
+                    '--prediction', str(exported), '--labels', str(labels), '--output', str(job / 'laterality.json'),
                 ], env=env, log=log, timeout=300)
                 orientation_audit.run_command([
                     python, str(APP / 'audit_rtstruct_orientation.py'), '--task', task,

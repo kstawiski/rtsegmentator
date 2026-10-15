@@ -849,7 +849,10 @@ def retrieve_worker_results(job, remote, task=None):
     """Whole SSH jobs copy all output; routed tasks copy only the output they own."""
     (job / "output").mkdir(exist_ok=True)
     source = "output/." if task is None else ("output/report" if task == REPORT_TASK else f"output/{task}_RTSTRUCT.dcm")
-    subprocess.run(["scp", "-q", "-r", f"{WORKER}:{remote}/{source}", str(job / "output") + "/"],
+    sources = [f"{WORKER}:{remote}/{source}"]
+    if task == "lnctvseg_nnunet_v1":
+        sources.append(f"{WORKER}:{remote}/output/{task}")
+    subprocess.run(["scp", "-q", "-r", *sources, str(job / "output") + "/"],
                    check=True, timeout=600)
 
 
@@ -1183,8 +1186,12 @@ def finalize_results(job: Path, empty=()):
         detail = "Results ready; AI draft " + report["status"].replace("_", " ")
         save_metadata(job, report_status=report["status"], report_reason=report.get("reason", ""))
     notes = metadata(job).get("postprocess_notes", [])
+    conversion_note = job / "output/lnctvseg_nnunet_v1/OMITTED_LABELS.txt"
+    conversion_notes = [conversion_note.read_text().strip()] if conversion_note.is_file() else []
+    notes = notes + conversion_notes
     if notes: detail += "; " + "; ".join(notes)
-    save_metadata(job,status="complete",detail=detail,progress=100,no_structures_found=empty)
+    save_metadata(job,status="complete",detail=detail,progress=100,no_structures_found=empty,
+                  conversion_notes=conversion_notes)
 
 def validate_postprocess(value: str, models: list[str]) -> list[str]:
     if not value: return []

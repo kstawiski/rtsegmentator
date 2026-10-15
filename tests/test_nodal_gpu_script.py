@@ -25,9 +25,8 @@ def test_publish_only_after_all_checks_pass(tmp_path, monkeypatch, failure):
     monkeypatch.setenv('RTSEG_WORKER_PYTHON', '/fake/worker/python')
     monkeypatch.setattr(audit.lnctvseg_bundle, 'validate_assets', lambda root: {})
     spec = audit.lnctvseg_bundle.manifest()
-    if failure != 'label_contract':
-        spec['label_contract']['status'] = 'verified'
-        spec['nnunet']['output_label_ids'] = list(range(7))
+    if failure == 'label_contract':
+        spec['label_contract']['omitted_checkpoint_ids'] = []
     monkeypatch.setattr(audit.lnctvseg_bundle, 'manifest', lambda: spec)
     monkeypatch.setattr(audit.subprocess, 'run', lambda *a, **kw: SimpleNamespace(stdout='fake GPU\n'))
     def measured(*args):
@@ -39,6 +38,7 @@ def test_publish_only_after_all_checks_pass(tmp_path, monkeypatch, failure):
         return {'seconds': 10, 'peak_vram_mib': 512}
     monkeypatch.setattr(audit, 'measured_run', measured)
     def dice(prediction, model, output):
+        assert prediction.parts[-2:] == ('prediction', 'case.nii.gz')
         if failure == 'dice': raise ValueError('reference grid mismatch')
         result = {'labels': [{'label': n, 'dice': 0.5} for n in range(1, 7)]}
         output.write_text(json.dumps(result))
@@ -47,6 +47,9 @@ def test_publish_only_after_all_checks_pass(tmp_path, monkeypatch, failure):
     def run(command, **kwargs):
         output = Path(command[command.index('--output') + 1])
         kind = 'laterality' if 'audit_nodal_laterality.py' in command[1] else 'orientation'
+        if kind == 'laterality':
+            prediction = Path(command[command.index('--prediction') + 1])
+            assert prediction.parts[-2] == ('export' if audit.TASKS[0] in prediction.parts else 'ensemble')
         if failure == kind: raise ValueError(f'{kind} failed')
         payload = {'result': 'passed', 'components': [{'label': n} for n in range(1, 7)]}
         if failure == 'missing_labels': payload['components'] = []

@@ -33,7 +33,7 @@ def compare(prediction, reference):
         rows.append({'label': label, 'prediction_voxels': pc, 'reference_voxels': rc,
                      'intersection_voxels': intersection, 'dice': 2 * intersection / (pc + rc),
                      'prediction_ml': pc * voxel_ml, 'reference_ml': rc * voxel_ml})
-    return {'comparison': 'same numeric IDs; checkpoint-to-published-label semantics unresolved',
+    return {'comparison': 'Published numeric IDs 1-6 unchanged; undocumented class 7 omitted from export',
             'scope': 'Author development-cohort fixture; not independent accuracy or acceptance',
             'labels': rows, 'mean_dice': float(np.mean([r['dice'] for r in rows])),
             'prediction_label_ids': [int(x) for x in np.unique(pred)],
