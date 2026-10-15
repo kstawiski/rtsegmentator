@@ -149,5 +149,9 @@
   "cerr_ct_lung_oar_mrrn",
   "cerr_mr_hn_nodule_smit",
   "cerr_mr_rectum_gtv_smit",
-  "cerr_mr_prostate_deeplab"
+  "cerr_mr_prostate_deeplab",
+  "nv_segment_ct_auto",
+  "nv_segment_ctmr_ct_body",
+  "nv_segment_ctmr_mri_body",
+  "nv_segment_ctmr_mri_brain"
 ]

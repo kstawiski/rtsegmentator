@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import pydicom
+from nv_segment_logic import MODES as NV_SEGMENT_MODES
 
 job=Path(sys.argv[1]); task=sys.argv[2]
 if not re.fullmatch(r"[A-Za-z0-9_]+",task): raise SystemExit("Invalid task")
@@ -20,7 +21,8 @@ _venv_totalsegmentator = Path(sys.executable).parent / "TotalSegmentator"
 TOTAL_SEGMENTATOR = (str(_venv_totalsegmentator) if _venv_totalsegmentator.is_file()
                      else shutil.which("TotalSegmentator") or str(_venv_totalsegmentator))
 SCRATCH_ROOT = Path(os.environ.get(
-    "RTSEG_SCRATCH_ROOT", MODEL_ROOT / "runtime-homes" / "tmp"
+    "RTSEG_SCRATCH_ROOT", job / "external" / task / "tmp" if task in NV_SEGMENT_MODES
+    else MODEL_ROOT / "runtime-homes" / "tmp"
 ))
 NNUNET_V2_TASKS = json.loads((APP_ROOT / "catalog/nnunet-v2.json").read_text())
 MULTITALENT_V1_TASKS = json.loads((APP_ROOT / "catalog/multitalent-v1.json").read_text())
@@ -152,6 +154,44 @@ try:
              "--worker-python", sys.executable], env=env)
         if not (job / "output/report/nv_reason_ct_report.json").is_file():
             raise SystemExit("Report worker did not create its expected JSON")
+    elif task in NV_SEGMENT_MODES:
+        from nv_segment_logic import check_modality, validate_acceptance
+        # Only the explicit operator audit CLI can bootstrap acceptance. The
+        # portal and generic SSH route never supply this argument.
+        if sys.argv[3:] != ["--nv-segment-acceptance-audit"]:
+            if sys.argv[3:]:
+                raise SystemExit("Unexpected NV-Segment dispatcher arguments")
+            validate_acceptance(json.loads((MODEL_ROOT / "validation" / f"{task}.json").read_text()), task)
+        modalities = set()
+        for source_file in (job / "input").iterdir():
+            if not source_file.is_file():
+                continue
+            try:
+                ds = pydicom.dcmread(source_file, stop_before_pixels=True,
+                                    specific_tags=["Modality", "SOPInstanceUID"])
+            except pydicom.errors.InvalidDicomError:
+                continue
+            if getattr(ds, "SOPInstanceUID", None):
+                modalities.add(str(getattr(ds, "Modality", "")))
+        if len(modalities) != 1:
+            raise SystemExit(f"Expected one input modality, found {sorted(modalities)}")
+        modality = modalities.pop()
+        check_modality(task, modality)
+        work = job / "external" / task
+        work.mkdir(parents=True, exist_ok=True)
+        nifti, prediction, labels = work / "input.nii.gz", work / "prediction.nii.gz", work / "labels.json"
+        run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"),
+             str(job / "input"), str(nifti)])
+        run([str(RUNTIME_ROOT / "envs/lnq/bin/python"), str(APP_ROOT / "run_nv_segment.py"),
+             "--mode", task, "--input", str(nifti), "--output", str(prediction),
+             "--labels-out", str(labels), "--input-modality", modality,
+             "--model-root", str(MODEL_ROOT),
+             "--runtime-python", str(RUNTIME_ROOT / "envs/lnq/bin/python"),
+             "--brain-python", str(MODEL_ROOT / "runtime-envs/nv-segment/bin/python"),
+             "--work", str(work / "pipeline"), "--device", "cuda"])
+        run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
+             "--prediction", str(prediction), "--model-input", str(nifti),
+             "--dicom", str(job / "input"), "--output", str(output), "--labels", str(labels)])
     elif task in CERR_TASKS:
         spec = CERR_TASKS[task]
         if spec.get("runner") not in {"smit", "legacy_mrrn", "legacy_prostate"}:

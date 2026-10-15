@@ -72,3 +72,25 @@ Install the isolated runtime with `scripts/bootstrap-nv-reason-ct-runtime.sh /ru
 Use sm_80-class or newer CUDA hardware. The worker waits up to 120 seconds for 14 GiB free before coverage/model loading and checks for 4 GiB free before generation. Resource refusal returns a reason. Model caches use `RTSEG_NV_REASON_CT_CACHE`, defaulting to `RTSEG_SCRATCH_ROOT/nv-reason-ct-cache`; use writable persistent storage for warm Triton/Inductor caches. This supports read-only model/runtime mounts. Set a short writable scratch path for nnU-Net multiprocessing sockets.
 
 Enable the task through `ENABLED_EXTERNAL_MODELS` or the enabled-model file in local mode. The marker at `validation/nv_reason_ct_report.json` requires `status: "passed"`, the pinned `revision`, checks `chest`, `abdomen`, `pelvis`, `cbct`, and `coverage_mode` matching the configured mode. Older markers without a mode attest only `full`. Remote tasks use the remote worker's marker. Reports and input share job retention; retained remote results after failed retrieval also need operator retention. See the [ledger](../EXTERNAL_MODELS.md) for observed diagnostic failures and historical GPU measurements.
+
+
+## Automatic NV-Segment tasks
+
+`nv_segment_ct_auto` and `nv_segment_ctmr_ct_body` accept a single CT series. `nv_segment_ctmr_mri_body` accepts one body MR series. `nv_segment_ctmr_mri_brain` uses T1 brain MR; skull stripping, normalization, registration and inverse mapping run internally. No prompt is needed. The dispatcher checks DICOM Modality before conversion; that tag does not establish the MR sequence. Review the sequence and field of view before selecting a task. CT modes exclude the publisher's tumour heads. Tiny spurious labels may occur. CTMR weights are restricted to noncommercial research or evaluation.
+
+Each task requires installed assets, a matching `validation/<task>.json` acceptance marker and an `orientation-validation/<task>.json` marker. Acceptance must contain `task`, `result: "passed"`, `source_commit`, `checkpoint_revision` and `checkpoint_sha256` matching `nv_segment_logic.py`. Missing, malformed or mismatched markers block selection and ordinary dispatch. The runner also verifies the actual checkpoint, source files and ROI map. The marker is a technical execution gate, not clinical approval.
+
+In local mode, add accepted tasks to `ENABLED_MODELS_FILE` or `ENABLED_EXTERNAL_MODELS`. No enabled-models file is changed by this integration. To route any of them to an SSH worker, use the existing comma-separated `REMOTE_GPU_TASKS` setting. Install this same code and the pinned assets on that worker; its preflight and markers are authoritative. Keep the existing task timeout and process-tree cancellation enabled. Pascal sm_61 compatibility remains untested.
+
+Run the orientation audit only on the chosen GPU worker, with writable marker directories. Set `RTSEG_APP_ROOT`, `RTSEG_MODEL_ROOT`, `RTSEG_RUNTIME_ROOT`, and `RTSEG_WORKER_PYTHON` (the worker interpreter with DICOM/conversion dependencies). Set `RTSEG_ORIENTATION_RUN_ROOT` to a fresh directory on project storage **outside** the model bundle, which is read-only during ordinary jobs. Use a short task-owned `RTSEG_SCRATCH_ROOT`/`TMPDIR` such as a `mktemp -d /tmp/nvs.XXXXXX` directory for multiprocessing sockets, and remove it after the audit. Keep images, copied bundles and logs on project storage.
+
+```bash
+WORKER_MODE=local REMOTE_GPU_TASKS= "$RTSEG_WORKER_PYTHON" \
+  "$RTSEG_APP_ROOT/scripts/run-orientation-audit.py" --nv-segment-acceptance \
+  nv_segment_ct_auto nv_segment_ctmr_ct_body \
+  nv_segment_ctmr_mri_body nv_segment_ctmr_mri_brain
+```
+
+This operator-only audit option runs fresh checks even if a marker already exists. It passes an explicit bootstrap argument to the local dispatcher; normal portal and SSH jobs do not pass it. Old markers for the audited task are removed before the run. New markers are written only after GPU inference, exact-grid uint16 output, RTSTRUCT conversion/round-trip validation and orientation auditing succeed. Failure returns a nonzero exit status and leaves that task unaccepted. `TASK_TIME_LIMIT_SECONDS` applies to each inference task; the default is 12 hours. Logs and retained predictions are under `RTSEG_ORIENTATION_RUN_ROOT`. The audit does not edit the enabled-models list.
+
+The four fixture assignments are in `catalog/orientation-audit-fixtures.json`. Brain uses the existing public OpenNeuro-derived T1 DICOM fixture; the publisher's NIfTI-only brain example cannot check DICOM contour orientation. No entries are needed in the prompt map for these automatic tasks. The manager's additional model-agreement, laterality and GPU compatibility checks remain separate evidence.

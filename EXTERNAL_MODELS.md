@@ -3,6 +3,42 @@
 This ledger distinguishes automatic models from prompted tools and records whether a release can be reproduced. The records below describe historical integration runs. Current selection depends on runtime preflight, segmentation orientation evidence or separate report acceptance, and the enabled-model policy. Research use only; execution and geometry results do not establish clinical accuracy.
 
 
+## NVIDIA NV-Segment automatic tasks (2026-10-15)
+
+Four automatic tasks are integrated behind separate installation, acceptance and orientation gates. No acceptance marker is included in this change. The existing `vista3d_prompted_ct` source, runner and acceptance remain unchanged.
+
+| Task | Input | Foreground labels | Scope |
+|---|---|---:|---|
+| `nv_segment_ct_auto` | CT | 117 | NV-Segment-CT automatic selection |
+| `nv_segment_ctmr_ct_body` | CT | 117 | NV-Segment-CTMR `CT_BODY` |
+| `nv_segment_ctmr_mri_body` | MR | 50 | NV-Segment-CTMR `MRI_BODY`, TotalSegmentator-MRI classes |
+| `nv_segment_ctmr_mri_brain` | T1 MR | 132 | NV-Segment-CTMR `MRI_BRAIN`, LUMIR regions |
+
+The publisher's automatic CT selection excludes 15 of 132 CT classes, including the solid-tumour heads: IDs 2, 16, 18, 20, 21, 23–27 and 128–132. Renal cyst labels use “Lesion candidate”. This mode does not generate automatic tumour targets. Brain's stated 133 classes include background; label 255 is a foreground region and is preserved. All exported labels use uint16 and retain the publisher's sparse IDs.
+
+**Provenance and licences.** [NV-Segment-CT](https://huggingface.co/nvidia/NV-Segment-CT/tree/afb51518689f71e6abb367ee6301b2cd0225c66a) uses the NVIDIA Open Model License. Its checkpoint revision is `afb51518689f71e6abb367ee6301b2cd0225c66a`; `weights/vista3d/NV-Segment-CT/model.pt` is 871,970,895 bytes, SHA-256 `c92bab26d00b4a5d89fa8a383900cdeb88302fd318e5e816df0bbec7106d9a1b`. The [source](https://github.com/NVIDIA-Medtech/NV-Segment-CTMR/tree/f9f5f51b589e5dc9c23c453cf5138398e4084056) is pinned to `f9f5f51b589e5dc9c23c453cf5138398e4084056` under `sources/NV-Segment-CTMR/NV-Segment-CT`.
+
+[NV-Segment-CTMR](https://huggingface.co/nvidia/NV-Segment-CTMR/tree/4fb8b4a6b2532be9f1c449a3726fe5440ab4213a) uses checkpoint revision `4fb8b4a6b2532be9f1c449a3726fe5440ab4213a`. `weights/vista3d/NV-Segment-CTMR/model.pt` is 871,950,375 bytes, SHA-256 `6c6d86a48a7a9d377ddb41d663d487cfedd6456df3b828ecd931e5cba5e71f99`. The [source](https://github.com/NVIDIA-Medtech/NV-Segment-CTMR/tree/cb921f5c58837c0f42a713855d68b32af88e1cdd) is pinned separately to `cb921f5c58837c0f42a713855d68b32af88e1cdd` under `sources/NV-Segment-CTMR-cb921f5c/NV-Segment-CTMR`. Code is Apache-2.0. The [weight licence, section 3.3](https://huggingface.co/nvidia/NV-Segment-CTMR/blob/4fb8b4a6b2532be9f1c449a3726fe5440ab4213a/LICENSE) restricts use to noncommercial research or evaluation, with the stated NVIDIA/affiliate exception. CTMR weights do not use the CT Open Model licence. Source-file and label-map hashes for all modes are recorded in `nv_segment_manifest.json` and checked before inference.
+
+**Runtime and brain preprocessing.** Segmentation uses `envs/lnq` (prepared with Python 3.11.14, PyTorch 2.13.0+cu130 and MONAI 1.6.0). The brain pipeline also needs `runtime-envs/nv-segment` (NumPy 1.26.4, SciPy 1.15.3, antspyx 0.6.1, Surfa 0.6.3 and pymedio 0.2.14), with its recorded package lock and lnq package linkage. These prepared runtime versions are provenance, not a claim of Pascal support. No packages or checkpoints are downloaded during a job.
+
+Brain mode runs SynthStrip internally, then the publisher's N4/intensity-normalization and affine registration to the LUMIR template. It inverts the transform with nearest-neighbour labels and restores the exact original grid. Repairs are applied only to a job copy: MONAI point conversion, NaN background 0, strict checkpoint loading, uint16 export and exact inverse-grid dimensions. The output writer rejects noninteger, unknown or empty labels and grid mismatches.
+
+SynthStrip 1.8 is extracted under `runtime-homes/nv-segment/synthstrip-1.8`; Docker is not needed for inference. Image digest: `sha256:ebbc177221194371f16362513ace68312a22922bb581bdfa618ac7ff9c1d2c06`. The standard checkpoint SHA-256 is `37417f802196186441aae3e7f385d94f8a98c64a88acaeaa2723af995c653e33`; the script SHA-256 is `fa18eb301568dc7c99bd9f69805545a7ce6d68e3fa3e1775c68053c9069cc4a1`. The [publisher](https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/#code) offers weights under MIT or CC BY 4.0; cite [Hoopes et al., NeuroImage 260 (2022), 119474](https://doi.org/10.1016/j.neuroimage.2022.119474).
+
+**MRI sequence scope.** MRI_BODY selects the publisher's 50 TotalSegmentator-MRI classes. Sequence and field of view affect output; this integration establishes no sequence-specific performance. For brain, the [pinned model card](https://huggingface.co/nvidia/NV-Segment-CTMR/blob/4fb8b4a6b2532be9f1c449a3726fe5440ab4213a/README.md) specifies standard T1, while the [pinned source documentation](https://github.com/NVIDIA-Medtech/NV-Segment-CTMR/blob/cb921f5c58837c0f42a713855d68b32af88e1cdd/NV-Segment-CTMR/docs/README.md) also names T2 and FLAIR. The configured audit uses T1 only. Non-T1 brain acceptance remains unresolved.
+
+**Reported GPU observations.** The manager supplied these preliminary H100 measurements for `nv_segment_ct_auto`; this implementation worker did not repeat GPU inference.
+
+| Public fixture | Runtime | Peak VRAM | RTSTRUCT ROIs |
+|---|---:|---:|---:|
+| KiTS19 case00000 | 60.7 s | 21.3 GiB | 68 |
+| MSD lung_053 | 28.7 s | 16.2 GiB | 100 |
+
+The manager reported valid output grids and correct lung, kidney, spleen and liver sides. The chest CT also contained spurious left/right femur labels of 277/1,068 voxels and hip labels of 4/327 voxels. Small false labels are therefore an observed limitation; review every contour in its anatomical context. The manager's complete rerun and final evidence remain pending. Compatibility and memory use on Pascal sm_61 with 24 GiB are unknown. These measurements and technical markers do not establish clinical or manuscript readiness.
+
+**Orientation fixtures and acceptance.** The configured public DICOM fixtures are MSD lung for CT automatic, KiTS19 case00000 for CTMR CT body, TotalSegmentator-MRI s0052 for MRI body, and the existing `hippunfold-ds002168-T1w/dicom` fixture for brain. The latter contains 256 DICOM files and derives from the public [OpenNeuro ds002168 dataset](https://openneuro.org/datasets/ds002168); the publisher's separate brain NIfTI example is not used as a substitute for a DICOM round trip. The audit checks execution, source-grid conversion, physical contour round trips and model identity. It does not assess segmentation accuracy. See [operations](docs/OPERATIONS.md) for marker generation and local/remote activation.
+
 ## NVIDIA NV-Reason-CT draft reports (2026-10-15)
 
 Task `nv_reason_ct_report` produces JSON, Markdown and HTML for diagnostic chest/abdomen CT; it does not produce RTSTRUCTs. [Publisher and license](https://huggingface.co/nvidia/NV-Reason-CT): OpenMDW-1.1, revision `386b93e034983f6c1fc841a43833a1b6a0cd9c13`. The checkpoint SHA-256 is `655c15e59dfa1957f7d5f475b1702d689fb7107160f21256028391bb5f6e6ba5` (10,644,167,648 bytes).

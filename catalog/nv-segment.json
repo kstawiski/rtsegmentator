@@ -1,0 +1,62 @@
+{
+  "nv_segment_ct_auto": {
+    "modality": "CT",
+    "modalities": [
+      "CT"
+    ],
+    "enabled": true,
+    "licensed": true,
+    "status": "available",
+    "structures": "117 foreground labels; organs and anatomical structures",
+    "description": "Automatic CT segmentation with the official NV-Segment-CT checkpoint. The official automatic selection includes 117 of 132 CT classes and excludes the solid-tumour heads. Renal cysts are lesion candidates, not radiotherapy targets. NVIDIA Open Model License.",
+    "reference": "https://huggingface.co/nvidia/NV-Segment-CT/tree/afb51518689f71e6abb367ee6301b2cd0225c66a",
+    "license_note": "NVIDIA Open Model License.",
+    "limitations": "The scan field of view limits anatomical coverage. Solid-tumour heads are excluded from automatic mode. Tiny spurious labels are possible; review every contour against the scan.",
+    "requires_preflight": true
+  },
+  "nv_segment_ctmr_ct_body": {
+    "modality": "CT",
+    "modalities": [
+      "CT"
+    ],
+    "enabled": true,
+    "licensed": true,
+    "status": "available",
+    "structures": "117 foreground labels; organs and anatomical structures",
+    "description": "Automatic CT body segmentation with the NV-Segment-CTMR checkpoint. The official automatic selection includes 117 of 132 CT classes and excludes the solid-tumour heads. Renal cysts are lesion candidates, not radiotherapy targets. NVIDIA OneWay Noncommercial weight licence: research or evaluation only; code is Apache-2.0.",
+    "reference": "https://huggingface.co/nvidia/NV-Segment-CTMR/tree/4fb8b4a6b2532be9f1c449a3726fe5440ab4213a",
+    "license_note": "NVIDIA OneWay Noncommercial weight licence: research or evaluation only; code is Apache-2.0.",
+    "limitations": "The scan field of view limits anatomical coverage. Solid-tumour heads are excluded from automatic mode. Tiny spurious labels are possible; review every contour against the scan.",
+    "requires_preflight": true
+  },
+  "nv_segment_ctmr_mri_body": {
+    "modality": "MR",
+    "modalities": [
+      "MR"
+    ],
+    "enabled": true,
+    "licensed": true,
+    "status": "available",
+    "structures": "50 foreground labels; organs and anatomical structures",
+    "description": "Automatic body MRI segmentation with the NV-Segment-CTMR checkpoint. Segments the 50 TotalSegmentator-MRI classes. Coverage depends on the acquired field of view. NVIDIA OneWay Noncommercial weight licence: research or evaluation only; code is Apache-2.0.",
+    "reference": "https://huggingface.co/nvidia/NV-Segment-CTMR/tree/4fb8b4a6b2532be9f1c449a3726fe5440ab4213a",
+    "license_note": "NVIDIA OneWay Noncommercial weight licence: research or evaluation only; code is Apache-2.0.",
+    "limitations": "The publisher defines MRI_BODY by the 50 TotalSegmentator-MRI classes. Sequence and field of view affect output; no sequence-specific performance is established by this integration. Tiny spurious labels are possible.",
+    "requires_preflight": true
+  },
+  "nv_segment_ctmr_mri_brain": {
+    "modality": "MR",
+    "modalities": [
+      "MR"
+    ],
+    "enabled": true,
+    "licensed": true,
+    "status": "available",
+    "structures": "132 foreground labels; brain regions (133 classes including background)",
+    "description": "Automatic brain MRI segmentation with the NV-Segment-CTMR checkpoint. Segments 132 foreground brain regions after internal skull stripping and affine alignment to the LUMIR template, then returns labels to the original image grid. GitHub documentation covers multiple MRI sequences, while the pinned model card specifies T1 only. The orientation audit uses public T1 DICOM. NVIDIA OneWay Noncommercial weight licence: research or evaluation only; code is Apache-2.0.",
+    "reference": "https://huggingface.co/nvidia/NV-Segment-CTMR/tree/4fb8b4a6b2532be9f1c449a3726fe5440ab4213a",
+    "license_note": "NVIDIA OneWay Noncommercial weight licence: research or evaluation only; code is Apache-2.0.",
+    "limitations": "Publisher documents disagree on non-T1 sequence support. Only a T1 fixture is provided; skull stripping and affine registration are required. Tiny spurious labels are possible; review every contour against the scan.",
+    "requires_preflight": true
+  }
+}

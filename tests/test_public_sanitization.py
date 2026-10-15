@@ -27,6 +27,7 @@ MEDICAL_OR_ARCHIVE = re.compile(r"\.(?:dcm|dicom|nii(?:\.gz)?|nrrd|mha|mhd|raw|n
 
 # One existing anatomical sacral-level label is not a deployment host.
 ANATOMIC_LABEL = '"structures": "C1–C7, T1–T12, L1–L5 and S' + '1 vertebrae",'
+NV_SACRAL_LABEL = '"127": "vertebrae S' + '1"'
 
 
 # The published cuRAND package uses four version components, which resemble an IPv4 address.
@@ -34,6 +35,8 @@ NV_CURAND_PIN = "nvidia-curand==" + ".".join(("10", "4", "0", "35"))
 
 
 def site_matches(name, line):
+    if name in {"labels/nv_segment_ct_auto.json", "labels/nv_segment_ctmr_ct_body.json"} and line.strip() == NV_SACRAL_LABEL:
+        return []
     if name == "requirements-nv-reason-ct.txt" and line.strip() == NV_CURAND_PIN:
         return []
     if name == "catalog/pycad-model-zoo.json" and line.lstrip("+- ").rstrip() == ANATOMIC_LABEL:
@@ -71,3 +74,10 @@ def test_cuda_version_exception_is_limited_to_one_requirement():
     assert not site_matches("requirements-nv-reason-ct.txt", NV_CURAND_PIN)
     assert site_matches("docs/DEPLOYMENT.md", NV_CURAND_PIN)
     assert site_matches("requirements-nv-reason-ct.txt", "# host " + NV_CURAND_PIN.split("==")[1])
+
+
+def test_nv_sacral_label_exception_is_limited_to_exact_label_files():
+    assert not site_matches("labels/nv_segment_ct_auto.json", NV_SACRAL_LABEL)
+    assert not site_matches("labels/nv_segment_ctmr_ct_body.json", NV_SACRAL_LABEL)
+    assert site_matches("docs/OPERATIONS.md", NV_SACRAL_LABEL)
+    assert site_matches("labels/nv_segment_ct_auto.json", NV_SACRAL_LABEL + ' host')

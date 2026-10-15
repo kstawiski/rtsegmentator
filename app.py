@@ -201,6 +201,9 @@ for _name, _structures in MOOSE_TASKS.items():
         "structures": _structures, "reference": "https://pypi.org/project/moosez/",
     }
 
+NV_SEGMENT_TASKS = json.loads((Path(__file__).parent / "catalog/nv-segment.json").read_text())
+EXTERNAL_TASKS.update(NV_SEGMENT_TASKS)
+
 NNUNET_V2_TASKS = json.loads((Path(__file__).parent / "catalog/nnunet-v2.json").read_text())
 for _name, _details in NNUNET_V2_TASKS.items():
     EXTERNAL_TASKS[_name] = {k: v for k, v in _details.items()
@@ -1507,6 +1510,8 @@ def build_catalog():
         if (WORKER_MODE == "colab" and name not in COLAB_EXTERNAL_TASKS) or (WORKER_MODE == "local" and name not in enabled):
             item.update(enabled=False, status="model_bundle_required")
         check = preflight.get(name)
+        if item.pop("requires_preflight", False) and not check:
+            item.update(enabled=False, status="preflight_unavailable")
         if check and not check["ready"]:
             item.update(enabled=False,
                         status=item.get("blocked_status", "dependencies_missing"),

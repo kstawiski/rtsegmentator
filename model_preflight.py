@@ -9,6 +9,8 @@ import os
 import sys
 from pathlib import Path
 
+from nv_segment_logic import MODES as NV_SEGMENT_MODES, validate_acceptance
+
 MODEL_ROOT = Path(os.environ.get("RTSEG_MODEL_ROOT", "/models"))
 RUNTIME_ROOT = Path(os.environ.get("RTSEG_RUNTIME_ROOT", MODEL_ROOT))
 APP_ROOT = Path(os.environ.get("RTSEG_APP_ROOT", Path(__file__).resolve().parent))
@@ -411,6 +413,27 @@ REQUIREMENTS["nv_reason_ct_report"] = ["@run_nv_reason_ct.py", "@nv_reason_ct_re
     "validation/nv_reason_ct_report.json"]
 
 
+NV_SEGMENT_MANIFEST = json.loads((APP_ROOT / "nv_segment_manifest.json").read_text())["modes"]
+for _task, _spec in NV_SEGMENT_MODES.items():
+    REQUIREMENTS[_task] = [
+        "@run_nv_segment.py", "@nv_segment_bundle.py", "@nv_segment_logic.py",
+        "@nv_segment_manifest.json", f"@labels/{_task}.json", "envs/lnq/bin/python",
+        *[f"{_spec['source']}/{name}" for name in NV_SEGMENT_MANIFEST[_task]["source_files"]],
+        f"weights/vista3d/{_spec['bundle']}/model.pt", f"validation/{_task}.json",
+    ]
+    if _spec['upstream_mode'] == "MRI_BRAIN":
+        REQUIREMENTS[_task] += [
+            "runtime-envs/nv-segment/bin/python",
+            *[f"runtime-envs/nv-segment/lib/python3.11/site-packages/{name}" for name in (
+                "ants/__init__.py", "surfa/__init__.py", "pymedio/image.py",
+                "pydicom/__init__.py", "zz_nv_segment_lnq.pth")],
+            "runtime-envs/nv-segment/requirements-nv-segment.txt",
+            "runtime-homes/nv-segment/synthstrip-1.8/manifest.json",
+            "runtime-homes/nv-segment/synthstrip-1.8/freesurfer/mri_synthstrip",
+            "runtime-homes/nv-segment/synthstrip-1.8/freesurfer/models/synthstrip.1.pt",
+        ]
+
+
 def audit(tasks=None) -> dict[str, dict]:
     report = {}
     for task, requirements in REQUIREMENTS.items():
@@ -427,11 +450,22 @@ def audit(tasks=None) -> dict[str, dict]:
                 path = MODEL_ROOT / requirement
             if not path.exists():
                 missing.append(requirement.lstrip("@"))
+        acceptance_ready = False
+        if task in NV_SEGMENT_MODES:
+            marker = MODEL_ROOT / "validation" / f"{task}.json"
+            try:
+                validate_acceptance(json.loads(marker.read_text()), task)
+                acceptance_ready = True
+            except (OSError, ValueError, TypeError, AttributeError):
+                if f"validation/{task}.json" not in missing:
+                    missing.append(f"validation/{task}.json (inconsistent acceptance contents)")
         orientation = MODEL_ROOT / "orientation-validation" / f"{task}.json"
         report[task] = {"ready": not missing, "missing": missing,
                         "orientation_ready": orientation.is_file()}
         if task == "nv_reason_ct_report":
             report[task]["acceptance_ready"] = report_acceptance_ready()
+        elif task in NV_SEGMENT_MODES:
+            report[task]["acceptance_ready"] = acceptance_ready
     # Native tasks have the same installed-runtime contract as the production catalog.
     for task in set(tasks or []) - REQUIREMENTS.keys():
         missing = []

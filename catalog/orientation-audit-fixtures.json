@@ -38,5 +38,9 @@
   "matto_gbm_enhancing_t1ce_mr": "rano2-kcl-p003-tp002-t1c-axial",
   "mnms_cardiac_cine_mr": "msd-heart/dicom",
   "multitalent_v1_resenc_ct": "msd-spleen/dicom",
-  "multitalent_v1_unet_ct": "msd-spleen/dicom"
+  "multitalent_v1_unet_ct": "msd-spleen/dicom",
+  "nv_segment_ct_auto": "msd-lung/dicom",
+  "nv_segment_ctmr_ct_body": "kits19-case00000/dicom",
+  "nv_segment_ctmr_mri_body": "totalsegmentator-mri/s0052/dicom",
+  "nv_segment_ctmr_mri_brain": "hippunfold-ds002168-T1w/dicom"
 }
