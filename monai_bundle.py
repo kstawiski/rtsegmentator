@@ -34,10 +34,34 @@ def compatible_config(bundle: Path, spec: dict, work: Path) -> Path:
         for transform in transforms[index + 1:]:
             if isinstance(transform, dict) and transform.get("_target_", "").split(".")[-1] == "Invertd":
                 transform["device"] = "cpu"
-    work.mkdir(parents=True, exist_ok=True)
-    target = work / "inference-compatible.json"
+    target = bundle_overlay(bundle, work) / "inference-compatible.json"
     target.write_text(json.dumps(config, indent=2) + "\n")
     return target
+
+
+def bundle_overlay(bundle: Path, work: Path) -> Path:
+    """Return a job-local ``configs`` directory inside a symlink mirror of the bundle.
+
+    MONAI puts a config's bundle root (the parent of a directory named ``configs``) on
+    ``sys.path`` and reads ``metadata.json``/``logging.conf`` beside the config. A modified
+    config outside the bundle would lose bundle-local code such as ``scripts.networks``;
+    the mirror keeps every official file in place and read-only.
+    """
+    overlay = work / "bundle-overlay"
+    configs = overlay / "configs"
+    configs.mkdir(parents=True, exist_ok=True)
+    for entry in sorted(bundle.iterdir()):
+        if entry.name == "configs" or entry == work or entry in work.parents:
+            continue
+        link = overlay / entry.name
+        if not link.is_symlink():
+            link.symlink_to(entry)
+    if (bundle / "configs").is_dir():
+        for entry in sorted((bundle / "configs").iterdir()):
+            link = configs / entry.name
+            if not link.is_symlink():
+                link.symlink_to(entry)
+    return configs
 
 
 def bundle_command(runtime_python, bundle, spec, config, nifti, inference_output):

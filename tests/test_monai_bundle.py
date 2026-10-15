@@ -42,7 +42,7 @@ def test_job_local_config_preserves_inference_and_official_file(tmp_path, extens
     assert yaml.safe_load(target.read_text()) == expected
     assert source.read_bytes() == before
     if cpu or remove_size:
-        assert target == work / 'inference-compatible.json'
+        assert target == work / 'bundle-overlay/configs/inference-compatible.json'
     else:
         assert target == source and not work.exists()
 
@@ -181,3 +181,27 @@ def test_gpu_harness_runs_both_flags_and_keeps_failure_evidence(tmp_path, monkey
         assert result['comparison']['exact_voxel_agreement'] == 1
         assert all(r['dice'] == 1 for r in result['comparison']['labels'])
     assert source.read_bytes() == original_bytes
+
+
+def test_overlay_keeps_bundle_code_and_metadata_importable(tmp_path):
+    bundle = tmp_path / 'bundle'
+    (bundle / 'configs').mkdir(parents=True)
+    (bundle / 'scripts/networks').mkdir(parents=True)
+    (bundle / 'scripts/__init__.py').write_text('')
+    (bundle / 'scripts/networks/__init__.py').write_text('VALUE = 7\n')
+    (bundle / 'configs/metadata.json').write_text('{}')
+    (bundle / 'configs/inference.json').write_text(json.dumps({'postprocessing': {'transforms': [
+        {'_target_': 'Invertd', 'keys': 'pred'}]}}))
+    target = compatible_config(bundle, {'config': 'configs/inference.json', 'postprocess_on_cpu': True},
+                               tmp_path / 'job')
+    # MONAI adds the parent of a directory named "configs" to sys.path.
+    assert target.parent.name == 'configs'
+    root = target.parent.parent
+    assert (root / 'scripts').resolve() == (bundle / 'scripts').resolve()
+    assert (target.parent / 'metadata.json').resolve() == (bundle / 'configs/metadata.json').resolve()
+    assert (target.parent / 'inference.json').resolve() == (bundle / 'configs/inference.json').resolve()
+    import subprocess, sys
+    probe = subprocess.run([sys.executable, '-c', 'import sys; sys.path.insert(1, sys.argv[1]); '
+                            'import scripts.networks as n; print(n.VALUE)', str(root)],
+                           capture_output=True, text=True, check=True)
+    assert probe.stdout.strip() == '7'
