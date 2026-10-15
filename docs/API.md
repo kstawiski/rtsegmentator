@@ -22,7 +22,8 @@ curl -fLo rtstruct.zip http://localhost:8080/api/v1/jobs/JOB_ID/result
 
 Other routes:
 
-- `GET /api/v1/health` — portal mode and worker reachability.
+- `GET /api/v1/config` (alias `/api/config`) — public configuration, without credentials or storage paths. The response has exactly these fields: `{"retention_hours": 24, "max_upload_bytes": 8589934592, "worker_mode": "local", "remote_gpu_tasks": [], "version": "1.0.0", "report_task": "nv_reason_ct_report"}`. Retention and upload limits are integers reflecting the configured values; mode/version are strings and remote tasks are a sorted list of strings.
+- `GET /api/v1/health` — portal mode, worker reachability, `catalog_built_at` (Unix timestamp of the last successful build, or `null`), `catalog_refreshing` (boolean), and `catalog_error` (`null` or a short failure summary). A refresh error makes health `degraded`; the last good catalog remains available. Errors clear after a successful refresh. The models endpoint returns HTTP `503` if the first build fails.
 - `GET /api/v1/models` — model catalog, modalities, outputs, availability, and curated `clinical_tags` for tumor-site discovery. Tags mean a model may be useful in that planning workflow; they do not imply tumor-segmentation capability or a clinical indication.
 - `GET /api/v1/jobs` — recent jobs.
 
@@ -39,7 +40,7 @@ The service handles medical data and does not implement user identity or tenant 
 3. `POST /api/v1/upload-sessions/{session_id}/assess` starts assessment; poll `GET /api/v1/upload-sessions/{session_id}` for `ready` or `failed`. A ready result contains the assessed `upload_id` and series list.
 4. `POST /api/uploads/{upload_id}/start` selects `series_key`, repeated `models`, optional `prompt_json` and optional `postprocess`. This route supplies paired-series/prompt contracts.
 
-For one unambiguous series without prompts or pairing, `/api/v1/upload-sessions/{session_id}/jobs` accepts repeated `models`. It has a four-second catalog wait and can return `503` while the catalog warms. Use assessed uploads for paired/prompted tasks; the direct and session-job routes do not supply those inputs. Request chunks over 32 MiB return `413`; stalled bodies return `408`; a busy session lock returns `429`. Finalization is idempotent for the same operation/options.
+For one unambiguous series without prompts or pairing, `/api/v1/upload-sessions/{session_id}/jobs` accepts repeated `models`. It has a four-second catalog wait and can return `503` while the catalog warms. Use assessed uploads for paired/prompted tasks; the direct and session-job routes return HTTP `400` for them because they do not supply those inputs. All creation routes check the catalog's prompt and paired-input contract. Assessed submission requires a JSON object in `prompt_json` with the task's required points, box and/or text. Coordinates must be finite numbers within the selected series. Paired CT requires present, matching Study and Frame of Reference identifiers. Request chunks over 32 MiB return `413`; stalled bodies return `408`; a busy session lock returns `429`. Finalization is idempotent for the same operation/options.
 
 ## Prostate SBRT crop
 

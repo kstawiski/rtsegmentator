@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import io
 import os
 import re
@@ -71,6 +72,7 @@ app = FastAPI(title="DICOM RT Segmentation Portal", version="1.0.0",
               docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json")
 queue_lock = threading.Lock()
 metadata_lock = threading.Lock()
+logger = logging.getLogger(__name__)
 
 FALLBACK_TASKS = ["total", "total_mr", "total_v3", "body", "body_mr", "vertebrae_mr", "lung_vessels", "lung_vessels_LEGACY", "cerebral_bleed", "hip_implant", "coronary_arteries", "coronary_arteries_LEGACY", "pleural_pericard_effusion", "head_glands_cavities", "head_muscles", "headneck_bones_vessels", "headneck_muscles", "liver_vessels", "liver_segments", "liver_segments_mr", "liver_lesions", "liver_lesions_mr", "oculomotor_muscles", "lung_nodules", "kidney_cysts", "breasts", "ventricle_parts", "tissue_types", "tissue_types_mr", "tissue_4_types", "brain_structures", "vertebrae_body", "face", "thigh_shoulder_muscles", "thigh_shoulder_muscles_mr", "appendicular_bones", "appendicular_bones_mr", "aortic_sinuses", "heartchambers_highres", "trunk_cavities", "brain_aneurysm"]
 EXTERNAL_TASKS = {
@@ -1411,34 +1413,54 @@ def enabled_models_mtime():
 
 catalog_build_lock = threading.Lock()
 catalog_flag_lock = threading.Lock()
-catalog_state = {"value": None, "built": 0.0, "enabled_mtime": None, "refreshing": False}
+catalog_state = {"value": None, "built": 0.0, "enabled_mtime": None, "refreshing": False, "error": None}
 
-def refresh_catalog():
-    mtime = enabled_models_mtime()
-    value = build_catalog()
-    catalog_state.update(value=value, built=time.time(), enabled_mtime=mtime)
-    return value
+
+def refresh_catalog(*, only_if_missing=False):
+    with catalog_build_lock:
+        if only_if_missing and catalog_state["value"] is not None:
+            return catalog_state["value"]
+        with catalog_flag_lock:
+            catalog_state["refreshing"] = True
+        try:
+            mtime = enabled_models_mtime()
+            value = build_catalog()
+            with catalog_flag_lock:
+                catalog_state.update(value=value, built=time.time(), enabled_mtime=mtime, error=None)
+            return value
+        except Exception as exc:
+            # Exception messages may contain paths, command lines or credentials.
+            with catalog_flag_lock:
+                catalog_state["error"] = f"Catalog refresh failed ({type(exc).__name__})"
+            logger.exception("Model catalog refresh failed; retaining the last good catalog")
+            raise
+        finally:
+            with catalog_flag_lock:
+                catalog_state["refreshing"] = False
+
 
 def refresh_catalog_in_background():
     with catalog_flag_lock:
         if catalog_state["refreshing"]: return False
         catalog_state["refreshing"] = True
+        cold = catalog_state["value"] is None
     def run():
-        try: refresh_catalog()
-        except Exception: pass
-        finally: catalog_state["refreshing"] = False
+        try: refresh_catalog(only_if_missing=cold)
+        except Exception:
+            pass  # refresh_catalog logs the traceback and records the public error.
     threading.Thread(target=run, daemon=True).start()
     return True
+
 
 @app.get("/api/tasks")
 @app.get("/api/v1/models", tags=["automation"])
 def tasks():
-    """Serve the cached catalog. Building it runs model preflight across the model bundle, which can take minutes,
-    so requests never wait for a refresh once a catalog exists."""
+    """Serve the last good catalog while a stale catalog refreshes in the background."""
     if catalog_state["value"] is None:
-        with catalog_build_lock:
-            if catalog_state["value"] is None:
-                refresh_catalog()
+        try:
+            refresh_catalog(only_if_missing=True)
+        except Exception as exc:
+            raise HTTPException(503, "Model catalog is unavailable; retry after the refresh succeeds") from exc
     elif (time.time() - catalog_state["built"] > CATALOG_TTL_SECONDS
           or enabled_models_mtime() != catalog_state["enabled_mtime"]):
         refresh_catalog_in_background()
@@ -1452,6 +1474,37 @@ def remote_preflight():
     result = json.loads(cp.stdout.strip().splitlines()[-1])
     if not isinstance(result, dict): raise ValueError("Remote preflight did not return an object")
     return result
+
+
+def apply_model_gates(item, check, enabled):
+    name = item["name"]
+    blocked = item.pop("blocked_status", None)
+    requires_preflight = item.pop("requires_preflight", False)
+    if check and not check["ready"]:
+        item["missing"] = check["missing"]
+    if blocked:
+        item.update(enabled=False, status=blocked)
+    elif not item.get("enabled", False):
+        pass  # Preserve the catalog's declared restriction.
+    elif requires_preflight and not check:
+        item.update(enabled=False, status="preflight_unavailable")
+    elif check and not check["ready"]:
+        item.update(enabled=False, status="dependencies_missing", missing=check["missing"])
+    elif name == REPORT_TASK:
+        if WORKER_MODE == "colab":
+            item.update(enabled=False, status="report_requires_managed_gpu_worker")
+        elif not check or not check.get("acceptance_ready"):
+            item.update(enabled=False, status="report_acceptance_pending")
+    else:
+        orientation_ready = (check.get("orientation_ready", False) if check is not None
+                             else (ORIENTATION_VALIDATION / f"{name}.json").is_file())
+        if not orientation_ready:
+            item.update(enabled=False, status="orientation_revalidation_pending")
+    if item.get("enabled", False):
+        if WORKER_MODE == "local" and name not in enabled:
+            item.update(enabled=False, status="not_enabled_on_this_server")
+        elif WORKER_MODE == "colab" and name not in COLAB_EXTERNAL_TASKS:
+            item.update(enabled=False, status="model_bundle_required")
 
 
 def build_catalog():
@@ -1507,27 +1560,7 @@ def build_catalog():
               "reference":"https://github.com/wasserth/TotalSegmentator"} for n in names]
     for name, details in EXTERNAL_TASKS.items():
         item={"name":name,"licensed":False,"enabled":True,**details}
-        if (WORKER_MODE == "colab" and name not in COLAB_EXTERNAL_TASKS) or (WORKER_MODE == "local" and name not in enabled):
-            item.update(enabled=False, status="model_bundle_required")
-        check = preflight.get(name)
-        if item.pop("requires_preflight", False) and not check:
-            item.update(enabled=False, status="preflight_unavailable")
-        if check and not check["ready"]:
-            item.update(enabled=False,
-                        status=item.get("blocked_status", "dependencies_missing"),
-                        missing=check["missing"])
-        if name == REPORT_TASK:
-            if WORKER_MODE == "colab":
-                item.update(enabled=False, status="report_requires_managed_gpu_worker")
-            elif not check or not check.get("acceptance_ready"):
-                item.update(enabled=False, status="report_acceptance_pending")
-        else:
-            orientation_ready = (check.get("orientation_ready", False) if check is not None
-                                 else (ORIENTATION_VALIDATION / f"{name}.json").is_file())
-            if not orientation_ready:
-                item.update(enabled=False,
-                            status=item.get("blocked_status", "orientation_revalidation_pending"))
-        item.pop("blocked_status", None)
+        apply_model_gates(item, preflight.get(name), enabled)
         if name.startswith("lnsegfm_"):
             item.update(structures="Visible/pathologic head-and-neck lymph-node candidate mask (not elective nodal levels)", reference="https://github.com/HiLab-git/LN-Seg-FM")
         elif name.startswith("isrt_"):
@@ -1541,15 +1574,7 @@ def build_catalog():
         catalog.append(item)
     for name, details in INFORMATIONAL_MODELS.items():
         item={"name":name,"licensed":False,**details}
-        if (WORKER_MODE == "colab" and name not in COLAB_EXTERNAL_TASKS) or (WORKER_MODE == "local" and name not in enabled):
-            item.update(enabled=False, status="model_bundle_required")
-        check = preflight.get(name)
-        if check and not check["ready"]:
-            item.update(enabled=False, status="dependencies_missing", missing=check["missing"])
-        orientation_ready = (check.get("orientation_ready", False) if check is not None
-                             else (ORIENTATION_VALIDATION / f"{name}.json").is_file())
-        if item.get("enabled", False) and not orientation_ready:
-            item.update(enabled=False, status="orientation_revalidation_pending")
+        apply_model_gates(item, preflight.get(name), enabled)
         catalog.append(item)
     for item in catalog:
         if task_uses_remote(item["name"]):
@@ -1794,9 +1819,7 @@ def finish_session_job(session: Path, data: dict, job: Path, crop: bool):
         if crop: process_prostate_sbrt_crop(job)
         else:
             slices, modality = validate_series(job / "input")
-            reject_report_cbct(job / "input", metadata(job)["models"])
-            wrong = [m for m in metadata(job)["models"] if task_modality(m) != modality]
-            if wrong: raise ValueError(f"The uploaded series is {modality}, but incompatible tasks were selected: {', '.join(wrong)}")
+            validate_job_series(metadata(job)["models"], inspect_upload(job / "input")["series"][0])
             save_metadata(job, detail=f"{slices} {modality} DICOM slices received")
             process(job)
     except Exception as exc:
@@ -1838,11 +1861,7 @@ async def create_session_job(session_id: str, models: list[str]=Form(...), postp
     # bound the wait; its existing build lock prevents duplicate catalog builds.
     try: catalog = await asyncio.wait_for(run_in_threadpool(tasks), timeout=4)
     except asyncio.TimeoutError: raise HTTPException(503, "Model catalog is warming; retry")
-    available = {x["name"] for x in catalog["tasks"] if x.get("enabled", True)}
-    if any(not re.fullmatch(r"[A-Za-z0-9_]+", m) or m not in available for m in models):
-        raise HTTPException(400, "Invalid model selection")
-    if "total" in models and "total_mr" in models:
-        raise HTTPException(400, "Select either total (CT) or total_mr (MR), not both")
+    validate_job_selection(models, catalog)
     return queue_session_job(session_id, {"models":ordered_tasks(models),"report_status":"pending" if REPORT_TASK in models else None, "postprocess":postprocessing}, False)
 
 
@@ -1912,31 +1931,41 @@ def preview_slice(uid: str, series_key: str, index: int = 0):
         "X-Slice-Index":str(index), "X-Slice-Count":str(len(ordered)),
         "X-Columns":str(int(ds.Columns)), "X-Rows":str(int(ds.Rows))})
 
-@app.post("/api/uploads/{uid}/start")
-async def start_assessed(uid: str, series_key: str=Form(...), models: list[str]=Form(...), prompt_json: str=Form(""), postprocess: str=Form("")):
-    postprocessing = validate_postprocess(postprocess, models)
-    if not re.fullmatch(r"upload-[A-Za-z0-9-]+",uid): raise HTTPException(404)
-    stage=BASE/uid
-    try: data=json.loads((stage/"upload.json").read_text())
-    except Exception: raise HTTPException(404,"Upload not found or expired")
-    selected=next((g for g in data["series"] if g["key"]==series_key),None)
-    if not selected: raise HTTPException(400,"Selected series was not found")
+def model_details(name: str) -> dict:
+    return EXTERNAL_TASKS.get(name) or INFORMATIONAL_MODELS.get(name, {})
+
+
+def validate_job_selection(models, catalog, *, assessed=False):
+    """Validate every creation route against the same catalog and input contract."""
+    items = {item["name"]: {**model_details(item["name"]), **item} for item in catalog["tasks"]}
+    if not models:
+        raise HTTPException(400, "Select at least one model")
+    if any(not re.fullmatch(r"[A-Za-z0-9_]+", name) or name not in items
+           or not items[name].get("enabled", True) for name in models):
+        raise HTTPException(400, "Invalid model selection")
+    if "total" in models and "total_mr" in models:
+        raise HTTPException(400, "Select either total (CT) or total_mr (MR), not both")
+    if not assessed:
+        if any(items[name].get("prompt") for name in models):
+            raise HTTPException(400, "A valid prompt is required; use the assessed-upload start route with prompt_json")
+        if any(items[name].get("requires_ct") for name in models):
+            raise HTTPException(400, "A paired CT series is required; use the assessed-upload start route")
+    return items
+
+
+def validate_job_series(models, selected, items=None):
+    items = items or {name: model_details(name) for name in models}
     if REPORT_TASK in models and selected.get("cbct"):
-        raise HTTPException(400, "CBCT is not supported for AI reports: " + selected["cbct_reason"])
-    available={x["name"] for x in tasks()["tasks"] if x.get("enabled",True)}
-    if not models or any(m not in available for m in models): raise HTTPException(400,"Invalid model selection")
-    modality=selected["modality"]
-    wrong=[]
-    for model in models:
-        details = EXTERNAL_TASKS.get(model) or INFORMATIONAL_MODELS.get(model, {})
-        supported = details.get("modalities")
-        if supported:
-            if modality not in supported: wrong.append(model)
-        elif task_modality(model) != modality:
-            wrong.append(model)
-    if wrong: raise HTTPException(400,f"Incompatible {modality} tasks: {', '.join(wrong)}")
-    needs_ct = any(EXTERNAL_TASKS.get(m, {}).get("requires_ct") for m in models)
-    prompt_models = [m for m in models if (EXTERNAL_TASKS.get(m) or INFORMATIONAL_MODELS.get(m,{})).get("prompt")]
+        raise ValueError("CBCT is not supported for AI reports; diagnostic CT is required")
+    modality = selected["modality"]
+    wrong = [name for name in models if modality not in
+             (items[name].get("modalities") or [items[name].get("modality", task_modality(name))])]
+    if wrong:
+        raise ValueError(f"Incompatible {modality} tasks: {', '.join(wrong)}")
+
+
+def validate_assessed_prompt(models, items, selected, prompt_json):
+    prompt_models = [name for name in models if items[name].get("prompt")]
     prompt_data = None
     if prompt_models:
         try: prompt_data = json.loads(prompt_json)
@@ -1952,8 +1981,20 @@ async def start_assessed(uid: str, series_key: str=Form(...), models: list[str]=
         if box is not None and (not isinstance(box, list) or len(box) != 2):
             raise HTTPException(400,"A box prompt must contain exactly two [column,row,slice] corners")
         coordinates = positives + negatives + (box or [])
-        if not coordinates and not str(prompt_data.get("text","")).strip():
-            raise HTTPException(400,"The selected prompted model requires a point, box, mask, or text prompt")
+        text_prompt = prompt_data.get("text", "")
+        if not isinstance(text_prompt, str):
+            raise HTTPException(400, "Prompt text must be a string")
+        if not coordinates and not text_prompt.strip():
+            raise HTTPException(400,"The selected prompted model requires a point, box, or text prompt")
+        for name in prompt_models:
+            kind = items[name]["prompt"]
+            if kind in {"points", "points_or_box"} and not (positives or (box and kind == "points_or_box")):
+                raise HTTPException(400, f"{name} requires a positive point" +
+                                    (" or a two-corner box prompt" if kind == "points_or_box" else " prompt"))
+            if kind in {"box", "text_and_box"} and not box:
+                raise HTTPException(400, f"{name} requires a two-corner box prompt")
+            if kind in {"text", "text_and_box"} and not text_prompt.strip():
+                raise HTTPException(400, f"{name} requires a non-empty text prompt")
         if "pam_prompted" in prompt_models and not (prompt_data.get("positive_points") or prompt_data.get("box")):
             raise HTTPException(400,"PAM requires a positive point or a two-corner box on one axial slice")
         coordinate_prompt_models = {"sam_med2d_prompted", "medsam_vit_b_box_2d", "medical_sam3_3d_prompted", "sat3d_prompted", "nninteractive_v1_prompted", "vista3d_prompted_ct"}
@@ -1978,16 +2019,37 @@ async def start_assessed(uid: str, series_key: str=Form(...), models: list[str]=
             if len(text_prompt) > 512 or any(ord(char) < 32 for char in text_prompt):
                 raise HTTPException(400,"VoxTell text must be at most 512 printable characters")
         for point in coordinates:
-            if not isinstance(point,list) or len(point)!=3 or any(not isinstance(v,(int,float)) for v in point):
+            if not isinstance(point,list) or len(point)!=3 or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not np.isfinite(v) for v in point):
                 raise HTTPException(400,"Every prompt coordinate must be [column,row,slice]")
             if not (0<=point[0]<columns and 0<=point[1]<rows and 0<=point[2]<slices):
                 raise HTTPException(400,f"Prompt coordinate {point} is outside the selected series")
         if box and box[0][2] != box[1][2] and any(m != "segvol_prompted_ct" for m in prompt_models):
             raise HTTPException(400,"Both box corners must be on the same slice")
+    return prompt_data
+
+
+@app.post("/api/uploads/{uid}/start")
+async def start_assessed(uid: str, series_key: str=Form(...), models: list[str]=Form(...), prompt_json: str=Form(""), postprocess: str=Form("")):
+    postprocessing = validate_postprocess(postprocess, models)
+    if not re.fullmatch(r"upload-[A-Za-z0-9-]+",uid): raise HTTPException(404)
+    stage=BASE/uid
+    try: data=json.loads((stage/"upload.json").read_text())
+    except Exception: raise HTTPException(404,"Upload not found or expired")
+    selected=next((g for g in data["series"] if g["key"]==series_key),None)
+    if not selected: raise HTTPException(400,"Selected series was not found")
+    items = validate_job_selection(models, tasks(), assessed=True)
+    try:
+        validate_job_series(models, selected, items)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    modality = selected["modality"]
+    needs_ct = any(items[name].get("requires_ct") for name in models)
+    prompt_data = validate_assessed_prompt(models, items, selected, prompt_json)
     companion = None
     if needs_ct:
         companion = next((g for g in data["series"]
             if g["modality"] == "CT"
+            and selected.get("study_uid") and selected.get("frame_uid")
             and g.get("study_uid") == selected.get("study_uid")
             and g.get("frame_uid") == selected.get("frame_uid")), None)
         if companion is None:
@@ -2007,10 +2069,7 @@ async def start_assessed(uid: str, series_key: str=Form(...), models: list[str]=
 @app.post("/api/v1/jobs", status_code=202, tags=["automation"])
 async def create_job(files: list[UploadFile]=File(...), models: list[str]=Form(...), postprocess: str=Form("")):
     postprocessing = validate_postprocess(postprocess, models)
-    if not models: raise HTTPException(400,"Select at least one model")
-    available={x["name"] for x in tasks()["tasks"] if x.get("enabled",True)}
-    if any(not re.fullmatch(r"[A-Za-z0-9_]+",m) or m not in available for m in models): raise HTTPException(400,"Invalid model selection")
-    if "total" in models and "total_mr" in models: raise HTTPException(400,"Select either total (CT) or total_mr (MR), not both")
+    items = validate_job_selection(models, tasks())
     jid=time.strftime("%Y%m%d-%H%M%S-")+secrets.token_hex(4); job=BASE/jid; inp=job/"input"; out=job/"output"; inp.mkdir(parents=True); out.mkdir()
     total=0
     try:
@@ -2024,9 +2083,8 @@ async def create_job(files: list[UploadFile]=File(...), models: list[str]=Form(.
             if zipfile.is_zipfile(target): safe_extract(target,inp); target.unlink()
             else: shutil.move(target,inp/(secrets.token_hex(4)+"_"+name))
         slices, modality=validate_series(inp)
-        reject_report_cbct(inp, models)
-        wrong=[m for m in models if task_modality(m) != modality]
-        if wrong: raise ValueError(f"The uploaded series is {modality}, but incompatible tasks were selected: {', '.join(wrong)}")
+        selected = inspect_upload(inp)["series"][0]
+        validate_job_series(models, selected, items)
         (job/"job.json").write_text(json.dumps({"id":jid,"status":"queued","detail":f"{slices} {modality} DICOM slices received","models":ordered_tasks(models),"report_status":"pending" if REPORT_TASK in models else None,"created":time.time(),"error":None,"postprocess":postprocessing},indent=2))
     except Exception as exc:
         shutil.rmtree(job,ignore_errors=True); raise HTTPException(400,str(exc))
@@ -2107,6 +2165,14 @@ def remote_worker_reachable():
         return False
 
 
+@app.get("/api/config")
+@app.get("/api/v1/config", tags=["automation"])
+def config():
+    return {"retention_hours": RETENTION_HOURS, "max_upload_bytes": MAX_BYTES,
+            "worker_mode": WORKER_MODE, "remote_gpu_tasks": sorted(REMOTE_GPU_TASKS),
+            "version": app.version, "report_task": REPORT_TASK}
+
+
 @app.get("/api/v1/health", tags=["automation"])
 def health():
     worker_ok = True
@@ -2128,11 +2194,15 @@ def health():
         detail = f"worker GPU first; Colab {COLAB_GPU} fallback on GPU OOM"
     free_mb, total_mb = gpu_memory_mb() if WORKER_MODE in {"local", "auto"} else (None, None)
     remote_ok = remote_worker_reachable() if REMOTE_GPU_TASKS and WORKER_MODE != "ssh" else (worker_ok if WORKER_MODE == "ssh" else None)
-    return {"status":"ok" if worker_ok and remote_ok is not False else "degraded", "worker_mode":WORKER_MODE,
+    with catalog_flag_lock:
+        catalog_health = {"catalog_built_at": catalog_state["built"] or None,
+                          "catalog_refreshing": catalog_state["refreshing"],
+                          "catalog_error": catalog_state["error"]}
+    return {"status":"ok" if worker_ok and remote_ok is not False and not catalog_health["catalog_error"] else "degraded", "worker_mode":WORKER_MODE,
             "worker":detail, "worker_reachable":worker_ok, "gpu_free_mb":free_mb,
             "gpu_total_mb":total_mb, "gpu_release_command_configured":bool(GPU_RELEASE_COMMAND.strip()),
             "remote_gpu_tasks":sorted(REMOTE_GPU_TASKS), "remote_worker_reachable":remote_ok,
-            "remote_worker":WORKER if REMOTE_GPU_TASKS else None, "version":app.version}
+            "remote_worker":WORKER if REMOTE_GPU_TASKS else None, "version":app.version, **catalog_health}
 
 def cleanup_once():
     cutoff=time.time()-RETENTION_HOURS*3600
@@ -2222,6 +2292,6 @@ def recover_interrupted_jobs():
 
 @app.on_event("startup")
 def startup():
-    threading.Thread(target=tasks, daemon=True).start()  # warm the catalog; tasks() builds once under the lock
+    refresh_catalog_in_background()  # Warm the catalog; log and expose any initial failure.
     recover_interrupted_jobs()
     threading.Thread(target=cleanup_loop,daemon=True).start()

@@ -1,5 +1,7 @@
 """Catalog, preflight and real dispatcher control flow with CPU-only subprocess fakes."""
 import json
+import os
+import tempfile
 from pathlib import Path
 import runpy
 import shutil
@@ -132,7 +134,12 @@ def dispatch(tmp_path, monkeypatch, synthetic_ct, mode, marker=True, modality=No
         def wait(self): return 0
         def poll(self): return 0
     monkeypatch.setattr(subprocess, 'Popen', Process)
-    runpy.run_path(str(ROOT / 'run_task.py'), run_name='__main__')
+    fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        monkeypatch.setattr(tempfile, 'tempdir', f'/proc/self/fd/{fd}')
+        runpy.run_path(str(ROOT / 'run_task.py'), run_name='__main__')
+    finally:
+        os.close(fd)
     return job, calls
 
 
@@ -147,7 +154,8 @@ def test_dispatches_all_modes_without_prompts(tmp_path, monkeypatch, synthetic_c
     assert command[command.index('--device') + 1] == 'cuda'
     assert command[command.index('--work') + 1].startswith(str(job))
     assert all(options['start_new_session'] for _, options in calls)
-    assert all(options['env']['TMPDIR'].startswith(str(job)) for _, options in calls)
+    assert all(len(options['env']['TMPDIR'].encode()) <= 60 for _, options in calls)
+    assert all(not Path(options['env']['TMPDIR']).exists() for _, options in calls)
     ds = pydicom.dcmread(job / 'output' / f'{mode}_RTSTRUCT.dcm')
     assert ds.StructureSetName == f'RTSEG: {mode}'
 

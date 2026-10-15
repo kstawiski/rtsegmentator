@@ -1,4 +1,7 @@
 import re
+import atexit
+import logging
+import tempfile
 import os
 import json
 import signal
@@ -20,10 +23,53 @@ RUNTIME_ROOT = Path(os.environ.get("RTSEG_RUNTIME_ROOT", MODEL_ROOT))
 _venv_totalsegmentator = Path(sys.executable).parent / "TotalSegmentator"
 TOTAL_SEGMENTATOR = (str(_venv_totalsegmentator) if _venv_totalsegmentator.is_file()
                      else shutil.which("TotalSegmentator") or str(_venv_totalsegmentator))
-SCRATCH_ROOT = Path(os.environ.get(
-    "RTSEG_SCRATCH_ROOT", job / "external" / task / "tmp" if task in NV_SEGMENT_MODES
-    else MODEL_ROOT / "runtime-homes" / "tmp"
-))
+logger = logging.getLogger(__name__)
+_owned_scratch = []
+
+
+def cleanup_scratch():
+    for path in _owned_scratch:
+        shutil.rmtree(path, ignore_errors=True)
+    _owned_scratch.clear()
+
+
+def short_job_temp():
+    # Leave room for multiprocessing's pymp-*/listener-* Unix socket names.
+    for base in dict.fromkeys([tempfile.gettempdir(), "/tmp", "/var/tmp"]):
+        if len(os.fsencode(str(Path(base).absolute()))) + len("/rtseg-") + 8 > 60:
+            continue
+        try:
+            path = Path(tempfile.mkdtemp(prefix="rtseg-", dir=base)).absolute()
+        except OSError:
+            continue
+        _owned_scratch.append(path)
+        return path
+    raise RuntimeError("No writable system temporary directory with a short enough path for inference")
+
+
+def scratch_directories():
+    configured = os.environ.get("RTSEG_SCRATCH_ROOT")
+    if not configured:
+        path = short_job_temp()
+        return path, path
+    root = Path(configured).absolute()
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        # Check real write access, including read-only mounts and ACLs.
+        with tempfile.TemporaryFile(dir=root):
+            pass
+    except OSError:
+        logger.warning("RTSEG_SCRATCH_ROOT is not writable; using a short per-job temporary directory")
+        path = short_job_temp()
+        return path, path
+    if len(os.fsencode(str(root))) > 60:
+        logger.warning("RTSEG_SCRATCH_ROOT exceeds 60 bytes; using a short per-job TMPDIR/TEMP/TMP")
+        return root, short_job_temp()
+    return root, root
+
+
+atexit.register(cleanup_scratch)
+SCRATCH_ROOT, TEMP_ROOT = scratch_directories()
 NNUNET_V2_TASKS = json.loads((APP_ROOT / "catalog/nnunet-v2.json").read_text())
 MULTITALENT_V1_TASKS = json.loads((APP_ROOT / "catalog/multitalent-v1.json").read_text())
 NNUNET_V1_TASKS = json.loads((APP_ROOT / "catalog/nnunet-v1.json").read_text())
@@ -40,10 +86,9 @@ CERR_TASKS = json.loads((APP_ROOT / "catalog/cerr.json").read_text())
 
 def run(cmd, env=None, cwd=None):
     global child
-    SCRATCH_ROOT.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy() if env is None else env.copy()
     for name in ("TMPDIR", "TEMP", "TMP"):
-        env[name] = str(SCRATCH_ROOT)
+        env[name] = str(TEMP_ROOT)
     child = subprocess.Popen(cmd, start_new_session=True, env=env, cwd=cwd)
     code = child.wait()
     child = None
@@ -1332,3 +1377,4 @@ finally:
     if child is not None and child.poll() is None:
         try: os.killpg(child.pid, signal.SIGKILL)
         except ProcessLookupError: pass
+    cleanup_scratch()

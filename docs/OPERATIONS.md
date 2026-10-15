@@ -16,7 +16,7 @@ Prompt coordinates are `[column, row, slice]` on the selected series. Keep promp
 - MedSAM, SAM-Med3D, MedSAM2/Medical-SAM2, Medical-SAM3, SegVol, nnInteractive, VISTA3D and VoxTell have separate prompt, license and field-of-view restrictions. Read their catalog entries and the model ledger before selecting them.
 - BiomedParse remains blocked by its approval-gated checkpoint.
 
-The assessed-upload endpoint accepts `prompt_json`. Do not use the direct multipart job endpoint for paired or prompted models. See [API](API.md) for route differences.
+The assessed-upload endpoint accepts `prompt_json` and validates the required prompt type and coordinate bounds. Direct multipart and direct session-job submission reject paired or prompted models with HTTP 400. Paired series must have present, matching Study and Frame of Reference identifiers. See [API](API.md) for route differences.
 
 ## RTSTRUCT geometry gate
 
@@ -32,7 +32,9 @@ Pixel data are unchanged. Whole contours outside the retained slice range are re
 
 ## Catalog and job lifecycle
 
-A cold model catalog waits for its first preflight. Subsequent requests use the cache while background refresh runs. The default cache lifetime is 600 seconds; editing the enabled-model file also requests refresh. Enabled flags depend on installation, orientation markers and local policy.
+A cold model catalog waits for its first preflight. Subsequent requests use the cache while background refresh runs. The default cache lifetime is 600 seconds; editing the enabled-model file also requests refresh. Enabled flags depend on installation, orientation markers and local policy. A local task that passes its technical gates but is absent from the enabled list reports `not_enabled_on_this_server`. Missing dependencies, pending markers and declared blockers keep their specific status.
+
+Refresh exceptions are logged with a traceback. The portal continues serving the last good catalog, and health exposes `catalog_built_at`, `catalog_refreshing` and `catalog_error`. A successful refresh clears the error. An initial build failure returns HTTP 503 from the models endpoint. Inspect service logs for the full exception; the health response omits exception messages and paths.
 
 Jobs run under one worker lock. Local and SSH inference use a default 12-hour per-task limit. The portal snapshots the local process tree, sends SIGTERM, waits up to 45 seconds, then kills survivors with PID start-time checks. The SSH path also requests termination of the matching remote runner. Colab compatibility paths retain their separate timeout behavior.
 
@@ -46,7 +48,7 @@ Historical acceptance metadata retains measured counts and model limitations. Pr
 
 ## Privacy and checks
 
-Restrict the portal to authenticated users over TLS. Job IDs are not credentials. Do not commit uploads, patient prompts, model weights, license files or logs. Retention defaults to 24 hours; set `RETENTION_HOURS` and review storage permissions and backup policies.
+Restrict the portal to authenticated users over TLS. Job IDs are not credentials. Do not commit uploads, patient prompts, model weights, license files or logs. Retention defaults to 24 hours; set `RETENTION_HOURS` and review storage permissions and backup policies. `/api/v1/config` exposes the active retention and upload limits.
 
 ```bash
 curl -fsS http://localhost:8080/api/v1/health
@@ -69,7 +71,7 @@ Contour volumes are approximate polygon area × source slice spacing / 1000; hol
 
 Install the isolated runtime with `scripts/bootstrap-nv-reason-ct-runtime.sh /runtimes/envs/nv-reason-ct`. Runtime resolution checks `RTSEG_NV_REASON_CT_PYTHON`, then `RTSEG_RUNTIME_ROOT/envs/nv-reason-ct/bin/python`, then `RTSEG_MODEL_ROOT/runtime-envs/nv-reason-ct/bin/python`. Store the pinned snapshot under `RTSEG_MODEL_ROOT/weights/nv-reason-ct/<revision>/`. Set `TOTALSEG_WEIGHTS_PATH` to installed total weights: Dataset297 for fast coverage, Dataset291–295 for full. Missing coverage weights fail before a download attempt. Usage reporting is disabled in a job-local TotalSegmentator configuration. Model loading uses local files, offline Hub settings and pinned custom model code.
 
-Use sm_80-class or newer CUDA hardware. The worker waits up to 120 seconds for 14 GiB free before coverage/model loading and checks for 4 GiB free before generation. Resource refusal returns a reason. Model caches use `RTSEG_NV_REASON_CT_CACHE`, defaulting to `RTSEG_SCRATCH_ROOT/nv-reason-ct-cache`; use writable persistent storage for warm Triton/Inductor caches. This supports read-only model/runtime mounts. Set a short writable scratch path for nnU-Net multiprocessing sockets.
+Use sm_80-class or newer CUDA hardware. The worker waits up to 120 seconds for 14 GiB free before coverage/model loading and checks for 4 GiB free before generation. Resource refusal returns a reason. Model caches use `RTSEG_NV_REASON_CT_CACHE`, defaulting to `RTSEG_SCRATCH_ROOT/nv-reason-ct-cache`; use writable persistent storage for warm Triton/Inductor caches. This supports read-only model/runtime mounts. When `RTSEG_SCRATCH_ROOT` is unset, the dispatcher creates a short per-job `rtseg-*` directory under system temp and removes it on exit. Configured scratch longer than 60 bytes uses a separate short directory for child `TMPDIR`, `TEMP` and `TMP`; an unwritable setting also redirects scratch there. The runner logs each configured-path fallback. This leaves room for nnU-Net's multiprocessing Unix sockets. Output locations are unchanged; configured scratch and persistent caches are not deleted. Forced termination with SIGKILL cannot run exit cleanup, so inspect abandoned `rtseg-*` directories after a forced stop.
 
 Enable the task through `ENABLED_EXTERNAL_MODELS` or the enabled-model file in local mode. The marker at `validation/nv_reason_ct_report.json` requires `status: "passed"`, the pinned `revision`, checks `chest`, `abdomen`, `pelvis`, `cbct`, and `coverage_mode` matching the configured mode. Older markers without a mode attest only `full`. Remote tasks use the remote worker's marker. Reports and input share job retention; retained remote results after failed retrieval also need operator retention. See the [ledger](../EXTERNAL_MODELS.md) for observed diagnostic failures and historical GPU measurements.
 

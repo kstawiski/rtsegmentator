@@ -9,7 +9,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LOCAL_RUNNER=/app/run_task.py
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3 python3-venv python3-pip python3-dev build-essential openssh-server rsync ca-certificates git && \
+      python3 python3-venv python3-pip python3-dev build-essential openssh-server rsync ca-certificates git \
+      libgl1 libglib2.0-0 libxcb1 libx11-6 libxext6 libsm6 libice6 && \
     rm -rf /var/lib/apt/lists/* && mkdir -p /run/sshd /data /models /runtimes
 
 WORKDIR /app
@@ -17,7 +18,8 @@ COPY requirements.txt requirements-worker.txt constraints-worker.txt ./
 RUN python3 -m venv /opt/rtsegmentator/venv && \
     /opt/rtsegmentator/venv/bin/pip install --no-cache-dir --upgrade pip && \
     /opt/rtsegmentator/venv/bin/pip install --no-cache-dir torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124 && \
-    /opt/rtsegmentator/venv/bin/pip install --no-cache-dir -c constraints-worker.txt -r requirements-worker.txt
+    /opt/rtsegmentator/venv/bin/pip install --no-cache-dir -c constraints-worker.txt -r requirements-worker.txt && \
+    /opt/rtsegmentator/venv/bin/python -c "import cv2; import rt_utils"
 
 COPY . /app
 RUN chmod +x /app/docker/entrypoint.sh && \

@@ -15,11 +15,23 @@ curl -fsS http://localhost:8080/api/v1/health
 curl -fsS http://localhost:8080/api/v1/models
 ```
 
-The source Dockerfile is a generic CUDA image, not an export of a site-specific production image. Check the built image's imports, drivers and model runtimes before use. See the model ledger for retained input and licensing restrictions.
+The source Dockerfile is a generic CUDA image, not an export of a site-specific production image. The image installs the GL/X11/glib runtime libraries required by OpenCV and checks `cv2` and `rt_utils` imports during the build. Check the built image's drivers and model runtimes before use. See the model ledger for retained input and licensing restrictions.
 
 ## Portal and SSH GPU worker
 
-Run `compose.remote-worker.yaml` on the GPU host. Supply `SSH_AUTHORIZED_KEY` from an external environment. The example publishes SSH on port 2222. Install the portal's private SSH key and known-hosts file outside the repository. Configure the portal account's SSH alias so ordinary `ssh worker@rtsegmentator-worker` and `scp` use the correct host, port and identity; the application does not consume `WORKER_SSH_PORT` itself.
+Run `compose.remote-worker.yaml` on the GPU host. Supply `SSH_AUTHORIZED_KEY` from an external environment. The example publishes SSH on port 2222. Install the portal's private SSH key and known-hosts file outside the repository. Configure the portal account's SSH alias so ordinary `ssh worker@rtsegmentator-worker` and `scp` use the correct host, port and identity; there is no separate application port variable. Mount `config` alongside the private key and `known_hosts` in the portal account's SSH directory. For example:
+
+```sshconfig
+Host rtsegmentator-worker
+    HostName gpu-worker.example.org
+    User worker
+    Port 2222
+    IdentityFile ~/.ssh/rtsegmentator_worker
+    UserKnownHostsFile ~/.ssh/known_hosts
+    IdentitiesOnly yes
+```
+
+The alias applies to every SSH, SCP and rsync transfer. This avoids separate port settings drifting between those clients.
 
 On the portal, set:
 
@@ -35,7 +47,7 @@ REMOTE_RUNTIME_ROOT=/runtimes
 PORTAL_DATA=/data
 ```
 
-Start a single application process with `uvicorn app:app --host 0.0.0.0 --port 8080 --workers 1`. Generic systemd and Supervisor examples are in `dicom-rt-portal.service` and `deploy/`. The worker receives only the selected series and required paired inputs/prompts. Configure writable scratch storage on the worker. SSH environment forwarding depends on the SSH server configuration; verify the worker runtime sees the intended variables.
+Start a single application process with `uvicorn app:app --host 0.0.0.0 --port 8080 --workers 1`. Generic systemd and Supervisor examples are in `dicom-rt-portal.service` and `deploy/`. The worker receives only the selected series and required paired inputs/prompts. Configure writable scratch storage on the worker. Whole-job SSH mode and per-task SSH routing explicitly pass `REMOTE_SCRATCH_ROOT` as `RTSEG_SCRATCH_ROOT`, `REMOTE_NV_REASON_CT_CACHE` as `RTSEG_NV_REASON_CT_CACHE`, and `REMOTE_TOTALSEG_WEIGHTS_PATH` as `TOTALSEG_WEIGHTS_PATH` when set. They also pass application/model/runtime roots and the coverage mode. These settings do not require SSH `AcceptEnv`.
 
 ## Configuration
 
@@ -46,7 +58,7 @@ Start a single application process with `uvicorn app:app --host 0.0.0.0 --port 8
 | `RTSEG_APP_ROOT` | Runner scripts and catalogs; defaults to the script directory, examples `/app` |
 | `RTSEG_MODEL_ROOT` | Model assets; default `/models` |
 | `RTSEG_RUNTIME_ROOT` | Isolated runtimes; runner fallback is the model root, examples explicitly `/runtimes` |
-| `RTSEG_SCRATCH_ROOT` | Runner temporary storage; fallback is `runtime-homes/tmp` in the model root, examples explicitly `/scratch` |
+| `RTSEG_SCRATCH_ROOT` | Optional runner scratch; unset creates a per-job `rtseg-*` directory under system temp and removes it at exit. An unwritable setting falls back to short system temp. A writable path over 60 bytes retains scratch/cache placement but uses short system temp for `TMPDIR`/`TEMP`/`TMP`. Examples use `/scratch` |
 | `ENABLED_EXTERNAL_MODELS` | Comma-separated external tasks allowed in local mode |
 | `ENABLED_MODELS_FILE` | Additional task names, one per line; default `<PORTAL_DATA>/enabled-models.txt`; blank/comment lines ignored |
 | `CATALOG_TTL_SECONDS` | Cache lifetime, default 600; enabled-file changes also trigger refresh |
