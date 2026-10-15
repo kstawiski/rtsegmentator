@@ -199,3 +199,86 @@ test('report coverage remains distinct from generated regions and the viewer sli
   assert.ok(md.includes('Regions covered: chest'));
   assert.ok(md.includes('closest-canonical'));
 });
+
+test('counts distinguish zero, one and multiple models and structures',()=>{
+  for(const noun of ['model','structure','active job','file','image','slice']){
+    assert.equal(ui.counted(0,noun),`0 ${noun}s`);
+    assert.equal(ui.counted(1,noun),`1 ${noun}`);
+    assert.equal(ui.counted(2,noun),`2 ${noun}s`);
+  }
+  assert.equal(ui.structureInfo(task('one',{structures:['Heart']}),{}).label,'1 structure · details');
+  assert.equal(ui.structureInfo(task('one',{description:'TotalSegmentator task',structures:'Heart'}),{}).label,'1 structure · details');
+});
+
+test('licence badges use explicit catalog flags independently of descriptions',()=>{
+  assert.deepEqual(ui.licenceBadges({licensed:true}),['Licence key required']);
+  assert.deepEqual(ui.licenceBadges({licensed:false,noncommercial:true}),['Non-commercial weights']);
+  assert.deepEqual(ui.licenceBadges({licensed:true,noncommercial:true}),['Licence key required','Non-commercial weights']);
+  assert.deepEqual(ui.licenceBadges({licensed:false,license_note:'NVIDIA Open Model License.'}),[]);
+  assert.deepEqual(ui.licenceBadges({description:'Research-only UI; requires review.',license:'OpenMDW-1.1'}),[]);
+});
+
+test('empty anatomical report labels are headings and real unmapped statements remain findings',()=>{
+  const findings=[
+    {heading:'CHEST',text:'',organ_status:'unmapped'},
+    {heading:'ABDOMEN',text:'  ',organ_status:'unmapped'},
+    {heading:'Medical devices',text:'Synthetic 12.5 mm device [1].',organ_status:'unmapped'},
+    {heading:'CHEST',text:'Synthetic observation [2].',organ_status:'unmapped'},
+    {heading:'UNKNOWN',text:'',organ_status:'unmapped'},
+    {heading:'Liver',text:'Statement withheld',organ_status:'absent'}
+  ];
+  const report={status:'generated',regions:[{region:'chest',sections:{findings},unchecked_headings:['CHEST','ABDOMEN','Medical devices','UNKNOWN']}]};
+  const html=ui.reportMarkup(report),md=ui.reportMarkdown(report);
+  assert.equal((html.match(/class="report-section-heading"/g)||[]).length,2);
+  assert.match(html,/<h5[^>]*>CHEST<\/h5>/);
+  assert.match(html,/<h5[^>]*>ABDOMEN<\/h5>/);
+  assert.equal((html.match(/class="finding"/g)||[]).length,4);
+  assert.ok(html.includes('not checked against segmentation'));
+  assert.ok(!html.includes('>unmapped<'));
+  assert.ok(html.includes('12.5 mm device [1]'));
+  assert.ok(html.includes('Synthetic observation [2]'));
+  assert.ok(html.includes('Withheld · absent anatomy'));
+  assert.ok(html.includes('Not checked against segmentation: Medical devices; UNKNOWN.'));
+  assert.match(md,/#### CHEST\n#### ABDOMEN/);
+  assert.ok(md.includes('Medical devices [not checked against segmentation]: Synthetic 12.5 mm device [1].'));
+  assert.equal(report.regions[0].sections.findings[0].organ_status,'unmapped');
+});
+
+test('report status distinguishes earlier failures, report failures and uncertain legacy jobs',()=>{
+  const report='nv_reason_ct_report';
+  const base={status:'failed',models:['total','lung',report],report_status:'failed',report_reason:'Task failed; see job error'};
+  const notRun='AI report: not run (an earlier step failed)';
+  const failed='AI report: Failed · Task failed; see job error';
+  assert.equal(ui.reportStatusText({...base,model_index:1,completed_models:[]}),notRun);
+  assert.equal(ui.reportStatusText({...base,model_index:2,completed_models:['total']}),notRun);
+  assert.equal(ui.reportStatusText({...base,completed_models:[]}),notRun);
+  assert.equal(ui.reportStatusText({...base,model_index:0}),notRun);
+  assert.equal(ui.reportStatusText({...base,model_index:2}),notRun);
+  assert.equal(ui.reportStatusText({...base,model_index:3}),failed);
+  assert.equal(ui.reportStatusText({...base,model_index:2,remote_task_active:report}),failed);
+  // The report can fail before its first heartbeat, leaving the segmentation index.
+  assert.equal(ui.reportStatusText({...base,model_index:2,completed_models:['total','lung']}),failed);
+  assert.equal(ui.reportStatusText({...base,model_index:2,completed_models:['total','lung',report]}),failed);
+  assert.equal(ui.reportStatusText(base),failed);
+  assert.equal(ui.reportStatusText({...base,models:[report],model_index:0}),failed);
+  assert.equal(ui.reportStatusText({...base,status:'processing',report_status:'running',report_reason:'',model_index:2}),'AI report: Running');
+  assert.equal(ui.reportStatusText({...base,status:'queued',report_status:'pending',report_reason:''}),'AI report: Pending');
+  assert.equal(ui.reportStatusText({...base,status:'complete',report_status:'not_generated',report_reason:'Coverage insufficient'}),'AI report: Not generated · Coverage insufficient');
+  assert.equal(ui.reportStatusText({...base,status:'complete',report_status:'generated',report_reason:''}),'AI report: Generated');
+  assert.equal(ui.reportStatusText({status:'failed',models:['total']}),'');
+  assert.equal(ui.reportStatusText({...base,models:['total','custom_report'],model_index:1},'custom_report'),notRun);
+});
+
+
+test('section labels do not appear as failed coverage checks in report flags',()=>{
+  const sectionFlag={region:'chest',section:'findings',heading:'CHEST',status:'unmapped'};
+  const actualFlag={region:'chest',section:'findings',heading:'Devices',status:'unmapped'};
+  const report={status:'generated',regions:[{region:'chest',sections:{findings:[
+    {heading:'CHEST',text:'',organ_status:'unmapped'},{heading:'Devices',text:'12 mm [1].',organ_status:'unmapped'}]},
+    flags:[sectionFlag,actualFlag]}],flags:[sectionFlag,actualFlag]};
+  const html=ui.reportMarkup(report);
+  assert.ok(html.includes('<h5 class="report-section-heading">CHEST</h5>'));
+  assert.ok(!html.includes(': CHEST'));
+  assert.ok(html.includes(': Devices'));
+  assert.equal(report.flags.length,2,'Original JSON evidence remains unchanged');
+});

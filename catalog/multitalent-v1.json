@@ -1,6 +1,8 @@
 {
   "multitalent_v1_unet_ct": {
     "modality": "CT",
+    "noncommercial": true,
+    "license_note": "Non-commercial weights (Zenodo release); constituent datasets may impose additional terms.",
     "description": "MultiTalent V1 standard U-Net trained jointly on 13 public CT segmentation datasets; single all-data checkpoint",
     "structures": "47 overlapping dataset-specific heads covering abdominal and thoracic organs, pelvic OARs, lung nodule and liver, pancreas, colon and kidney tumors",
     "reference": "https://zenodo.org/records/8297767",
@@ -9,6 +11,8 @@
   },
   "multitalent_v1_resenc_ct": {
     "modality": "CT",
+    "noncommercial": true,
+    "license_note": "Non-commercial weights (Zenodo release); constituent datasets may impose additional terms.",
     "description": "MultiTalent V1 residual U-Net trained jointly on 13 public CT segmentation datasets; single all-data checkpoint",
     "structures": "47 overlapping dataset-specific heads covering abdominal and thoracic organs, pelvic OARs, lung nodule and liver, pancreas, colon and kidney tumors",
     "reference": "https://zenodo.org/records/8297767",

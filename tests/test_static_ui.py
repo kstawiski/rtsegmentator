@@ -110,7 +110,7 @@ def test_javascript_contract_checks():
     node = shutil.which("node")
     if not node:
         pytest.skip("Node is unavailable")
-    for source in ("static/app.js", "static/viewer.js"):
+    for source in ("static/app.js", "static/viewer.js", "tests/ui_fixture.js", "tests/ui_browser_checks.js"):
         check = subprocess.run([node, "--check", source], cwd=ROOT, capture_output=True, text=True)
         assert check.returncode == 0, check.stdout + check.stderr
     result = subprocess.run([node, "--test", "tests/test_ui_logic.cjs"], cwd=ROOT,
@@ -145,3 +145,28 @@ def test_primary_actions_viewers_results_and_secondary_tools_contract():
     script = (STATIC / "viewer.js").read_text()
     assert "ctx.fill('evenodd')" in script
     assert 'role="img"' in script and 'aria-label="DICOM slice"' in script
+
+
+def test_catalog_licence_badges_have_separate_key_and_noncommercial_flags(tmp_path):
+    load_app(tmp_path)
+    module = sys.modules["app"]
+    entries = {**module.EXTERNAL_TASKS, **module.INFORMATIONAL_MODELS}
+    # The licensed flag is reserved for runtime TotalSegmentator commercial tasks.
+    assert not [name for name, item in entries.items() if item.get("licensed")]
+    noncommercial = {
+        "nv_segment_ctmr_ct_body", "nv_segment_ctmr_mri_body", "nv_segment_ctmr_mri_brain",
+        "medsam2_ct_lesion_prompted", "medical_sam2_prompted_ct", "nninteractive_v1_prompted",
+        "multitalent_v1_unet_ct", "multitalent_v1_resenc_ct", "lnq_atlas",
+    }
+    for name in noncommercial:
+        assert entries[name]["noncommercial"] is True, name
+    ct = entries["nv_segment_ct_auto"]
+    assert ct["licensed"] is False
+    assert not ct.get("noncommercial")
+    assert ct["license_note"] == "NVIDIA Open Model License."
+    # Research-draft presentation wording is not itself a weight licence restriction.
+    assert not entries["nv_reason_ct_report"].get("noncommercial")
+    for name, item in entries.items():
+        notes = " ".join(str(item.get(key, "")) for key in ("license", "license_note", "description"))
+        if re.search(r"non[ -]?commercial|CC BY-NC|research(?:/education)? use only", notes, re.I):
+            assert item.get("noncommercial") is True, name

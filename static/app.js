@@ -76,16 +76,47 @@ function primarySelection(selected, action, checked, catalog, series, allSeries 
   return next;
 }
 function canDeleteJob(job) { return !!job && TERMINAL.has(job.status); }
+// Catalog flags describe separate licence requirements; descriptive text is not a flag.
+function licenceBadges(task) {
+  return [task.licensed ? 'Licence key required' : '', task.noncommercial ? 'Non-commercial weights' : ''].filter(Boolean);
+}
+function counted(count, noun, plural = noun + 's') { return `${count} ${Number(count) === 1 ? noun : plural}`; }
+function reportStatusText(job, reportName = 'nv_reason_ct_report') {
+  if (!job.report_status) return '';
+  const models = job.models || [], reportIndex = models.indexOf(reportName);
+  if (job.status === 'failed' && ['failed', 'pending'].includes(job.report_status) && reportIndex > 0) {
+    const completed = job.completed_models;
+    // Report execution follows every segmentation task. A report may fail before its
+    // first progress heartbeat, so completed_models takes precedence over an old index.
+    const reachedReport = completed?.includes(reportName) || job.remote_task_active === reportName || job.model_index >= reportIndex + 1;
+    const earlierIncomplete = Array.isArray(completed)
+      ? models.slice(0, reportIndex).some(name => !completed.includes(name))
+      : Number.isInteger(job.model_index) && job.model_index >= 0 && job.model_index < reportIndex + 1;
+    if (!reachedReport && earlierIncomplete) return 'AI report: not run (an earlier step failed)';
+  }
+  return `AI report: ${humanize(job.report_status)}${job.report_reason ? ' · ' + job.report_reason : ''}`;
+}
+function isReportSection(finding) {
+  // Empty anatomical labels emitted by the report parser are navigation, not findings.
+  const name = String(finding.heading || '').trim().replace(/:$/, '').replace(/\s+/g, ' ');
+  return !String(finding.text || '').trim() && (!finding.organ_status || finding.organ_status === 'unmapped') &&
+    /^(?:chest|thorax|abdomen|upper abdomen|pelvis|abdomen(?: and |[ /-])pelvis|chest(?:, | and |[ /-])abdomen(?: and |[ /-])pelvis)$/i.test(name);
+}
+function findingStatus(status) { return status === 'unmapped' ? 'not checked against segmentation' : status || 'Not checked'; }
+function reportSectionNames(region) {
+  return new Set((region.sections?.findings || []).filter(isReportSection).map(f => f.heading));
+}
 function reportMarkdown(report) {
   const lines = ['# NV-Reason-CT draft report', '', '**Research draft. Requires radiologist review.**', '',
     `Status: ${report.status || 'Not supplied'}`, report.reason || '', '', 'Segmentation can be wrong. Coverage checks do not verify diagnostic findings or image quality.'];
   lines.push('', 'Regions covered: ' + (report.covered_regions || (report.regions || []).map(r => r.region)).join(', '));
   for (const region of report.regions || []) {
     lines.push('', `## ${region.region}`, '', '### Technique', ...(region.sections?.technique || []), '', '### Findings');
-    for (const f of region.sections?.findings || []) lines.push(`${f.heading} [${f.organ_status || 'not checked'}]: ${f.text}`);
+    for (const f of region.sections?.findings || []) lines.push(isReportSection(f) ? `#### ${f.heading}` : `${f.heading} [${findingStatus(f.organ_status)}]: ${f.text}`);
     lines.push('', '### Impression', ...(region.sections?.impression || []), '', '### Abnormality labels', ...(region.sections?.labels || []));
     if (region.flags?.length) lines.push('', '### Flags', ...region.flags.map(f => JSON.stringify(f)));
-    if (region.unchecked_headings?.length) lines.push('', 'Not checked against segmentation: ' + region.unchecked_headings.join('; '));
+    const unchecked = (region.unchecked_headings || []).filter(name => !reportSectionNames(region).has(name));
+    if (unchecked.length) lines.push('', 'Not checked against segmentation: ' + unchecked.join('; '));
   }
   for (const [title, key] of [['Anatomical coverage','coverage'], ['Segmentation summary','segmentation_summary']]) {
     lines.push('', '## ' + title, '', '```json', JSON.stringify(report[key] || {}, null, 2), '```');
@@ -99,16 +130,19 @@ function reportMarkdown(report) {
 }
 function reportMarkup(report) {
   const paragraphs = values => (values || []).map(v => `<p>${esc(v)}</p>`).join('');
-  const flags = values => `<ul class="report-flags">${values.map(f => `<li><strong>${esc(humanize(f.status || (f.absent_organs ? 'Absent anatomy flag' : 'Report flag')))}</strong>${f.region ? ' · '+esc(f.region) : ''}${f.heading ? ': '+esc(f.heading) : ''}${f.section ? ' · '+esc(f.section) : ''}${Number.isInteger(f.index) ? ' (index '+esc(f.index)+')' : ''}${f.absent_organs?.length ? ': '+esc(f.absent_organs.join(', ')) : ''}${f.reason ? ' · '+esc(f.reason) : ''}</li>`).join('')}</ul>`;
+  const isSectionFlag = (flag, region) => flag.section === 'findings' && flag.status === 'unmapped' && reportSectionNames(region).has(flag.heading);
+  const regionFlags = region => (region.flags || []).filter(flag => !isSectionFlag(flag, region));
+  const allFlags = (report.flags || []).filter(flag => !(report.regions || []).some(region => flag.region === region.region && isSectionFlag(flag, region)));
+  const flags = values => `<ul class="report-flags">${values.map(f => `<li><strong>${esc(f.status === 'unmapped' ? findingStatus(f.status) : humanize(f.status || (f.absent_organs ? 'Absent anatomy flag' : 'Report flag')))}</strong>${f.region ? ' · '+esc(f.region) : ''}${f.heading ? ': '+esc(f.heading) : ''}${f.section ? ' · '+esc(f.section) : ''}${Number.isInteger(f.index) ? ' (index '+esc(f.index)+')' : ''}${f.absent_organs?.length ? ': '+esc(f.absent_organs.join(', ')) : ''}${f.reason ? ' · '+esc(f.reason) : ''}</li>`).join('')}</ul>`;
   return `<div class="notice report-banner"><strong>Research AI draft · requires radiologist review</strong><p>Coverage checks do not verify diagnostic findings or image quality.</p></div>
     <p><strong>Status: ${esc(humanize(report.status || 'Not supplied'))}</strong>${report.reason ? `<br>${esc(report.reason)}` : ''}</p>
     <p><strong>Regions covered:</strong> ${(report.covered_regions || (report.regions || []).map(r => r.region)).map(r => esc(humanize(r))).join(', ') || 'No region report generated'}</p>
     ${(report.regions || []).map(r => `<section class="region-report"><h3>${esc(humanize(r.region))}</h3><h4>Technique</h4>${paragraphs(r.sections?.technique)}<h4>Findings</h4>
-      ${(r.sections?.findings || []).map(f => `<div class="finding"><strong>${esc(f.heading)}</strong> <span class="badge ${f.organ_status === 'present' ? '' : 'license'}">${esc(f.organ_status === 'absent' ? 'Withheld · absent anatomy' : f.organ_status === 'partial' ? 'Partial coverage' : f.organ_status || 'Not checked')}</span><p>${esc(f.text)}</p></div>`).join('')}
+      ${(r.sections?.findings || []).map(f => isReportSection(f) ? `<h5 class="report-section-heading">${esc(f.heading)}</h5>` : `<div class="finding"><strong>${esc(f.heading)}</strong> <span class="badge ${f.organ_status === 'present' ? '' : 'license'}">${esc(f.organ_status === 'absent' ? 'Withheld · absent anatomy' : f.organ_status === 'partial' ? 'Partial coverage' : findingStatus(f.organ_status))}</span><p>${esc(f.text)}</p></div>`).join('')}
       <h4>Impression</h4>${paragraphs(r.sections?.impression)}<h4>Abnormality labels</h4>${paragraphs(r.sections?.labels)}
-      ${r.flags?.length ? `<h4>Flags</h4>${flags(r.flags)}` : ''}
-      ${r.unchecked_headings?.length ? `<p class="notice">Not checked against segmentation: ${esc(r.unchecked_headings.join('; '))}.</p>` : ''}</section>`).join('')}
-    ${report.flags?.length ? `<details><summary>All report flags</summary>${flags(report.flags)}</details>` : ''}
+      ${regionFlags(r).length ? `<h4>Flags</h4>${flags(regionFlags(r))}` : ''}
+      ${r.unchecked_headings?.some(name => !reportSectionNames(r).has(name)) ? `<p class="notice">Not checked against segmentation: ${esc(r.unchecked_headings.filter(name => !reportSectionNames(r).has(name)).join('; '))}.</p>` : ''}</section>`).join('')}
+    ${allFlags.length ? `<details><summary>All report flags</summary>${flags(allFlags)}</details>` : ''}
     <details class="coverage-details"><summary>Anatomical coverage measurements</summary><p class="small muted">${esc(report.coverage_slice_convention || 'Zero-based indices in the report coverage grid; these can differ from the viewer series.')}</p><div class="table-scroll"><table><thead><tr><th>Organ</th><th>mL</th><th>Slices (index)</th><th>Truncated</th></tr></thead><tbody>${Object.entries(report.coverage || {}).map(([name,r]) => `<tr><td>${esc(name)}</td><td>${esc(r.volume_ml)}</td><td>${esc(r.slice_range?.join('–') || '—')}</td><td>${r.touches_first_slice || r.touches_last_slice ? 'Yes' : 'No'}</td></tr>`).join('')}</tbody></table></div></details>
     ${report.model || report.revision ? `<p class="small muted">Model: ${esc(report.model || 'Not supplied')} · Revision: ${esc(report.revision || 'Not supplied')}</p>` : ''}`;
 }
@@ -147,15 +181,15 @@ function validatePrompt(value, tasks, series) {
 function structureInfo(task, meta) {
   if (task.output === 'report') return {label:'Report formats and model details', text:task.structures || 'JSON, Markdown and HTML; no RTSTRUCT'};
   const structures = task.structures || 'Structure list not supplied by the catalog.';
-  if (Array.isArray(structures)) return {label:`${structures.length} structures · details`, text:structures.join(', ')};
+  if (Array.isArray(structures)) return {label:`${counted(structures.length,'structure')} · details`, text:structures.join(', ')};
   // Prefer the runtime label list to a packaged list when TotalSegmentator supplies one.
   if (String(task.description).startsWith('TotalSegmentator ') && structures !== 'Task-specific TotalSegmentator structures') {
     const count = structures.split(',').filter(x => x.trim()).length;
-    return {label:`${count} structures · details`, text:structures};
+    return {label:`${counted(count,'structure')} · details`, text:structures};
   }
-  if (Number.isInteger(meta.count)) return {label:`${meta.count} ${meta.count === 1 ? 'structure' : 'structures'} · details`, text:meta.structures?.join(', ') || structures};
+  if (Number.isInteger(meta.count)) return {label:`${counted(meta.count,'structure')} · details`, text:meta.structures?.join(', ') || structures};
   const count = structures.match(/^(\d+) (?:foreground labels|organs|major|whole-body|bilateral|head-and-neck|anatomy classes)/);
-  return {label:count ? `${count[1]} structures · details` : 'Structures · count not supplied', text:structures};
+  return {label:count ? `${counted(count[1],'structure')} · details` : 'Structures · count not supplied', text:structures};
 }
 function modalityName(m) { return m === 'PT' ? 'PET' : m; }
 function esc(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -177,6 +211,14 @@ if (typeof document !== 'undefined') {
   let seriesViewer=null, jobViewer=null, detailId=null, detailToken=0, detailLoaded=false, detailInfo=null, detailReport=null, detailLoading=false;
   const stepPanels=[$('uploadStep'),$('seriesStep'),$('modelsStep'),$('reviewStep')];
   const stepTitles=[$('uploadTitle'),$('seriesTitle'),$('modelsTitle'),$('reviewTitle')];
+  const selectionTray = document.querySelector('.selection-tray');
+  function reserveSelectionSpace() {
+    const height = selectionTray.getBoundingClientRect().height;
+    document.documentElement.style.setProperty('--selection-tray-space', height ? `${Math.ceil(height) + 28}px` : '0px');
+  }
+  new ResizeObserver(reserveSelectionSpace).observe(selectionTray);
+  window.addEventListener('resize', reserveSelectionSpace);
+
   const uploads={
     seg:{files:[],session:null,busy:false,selection:$('selection'),drop:$('dropZone'),filesInput:$('files'),folderInput:$('folder'),buttons:[$('chooseFiles'),$('chooseFolder')],progress:$('uploadProgress'),bar:$('uploadBar'),text:$('uploadText'),error:$('uploadError')},
     crop:{files:[],session:null,busy:false,selection:$('cropSelection'),drop:$('cropDropZone'),filesInput:$('cropFiles'),folderInput:$('cropFolder'),buttons:[$('chooseCropFiles'),$('chooseCropFolder')],progress:$('cropProgress'),bar:$('cropBar'),text:$('cropText'),error:$('cropError')}
@@ -209,9 +251,9 @@ if (typeof document !== 'undefined') {
   }
   window.addEventListener('hashchange',()=>setArea(location.hash.slice(1),true));
   function steps(){
-    $('uploadSummary').textContent=state.upload?`${state.upload.series.length} series · ${state.upload.series.reduce((n,s)=>n+s.slices,0)} images`:'Files, folder or ZIP';
-    $('seriesSummary').textContent=state.series?`${modalityName(state.series.modality)} · ${state.series.description || state.series.slices+' slices'}`:'Choose the image series';
-    $('modelsSummary').textContent=state.selected.size?`${state.selected.size} model${state.selected.size===1?'':'s'} selected`:'Choose the outputs';
+    $('uploadSummary').textContent=state.upload?`${state.upload.series.length} series · ${counted(state.upload.series.reduce((n,s)=>n+s.slices,0),'image')}`:'Files, folder or ZIP';
+    $('seriesSummary').textContent=state.series?`${modalityName(state.series.modality)} · ${state.series.description || counted(state.series.slices,'slice')}`:'Choose the image series';
+    $('modelsSummary').textContent=state.selected.size?`${counted(state.selected.size,'model')} selected`:'Choose the outputs';
     document.querySelectorAll('[data-step]').forEach(b=>{const n=Number(b.dataset.step);b.disabled=state.starting || (n===1&&!state.upload)||(n===2&&!state.series)||(n===3&&(!state.series||!state.selected.size));b.classList.toggle('done',n<state.step);if(n===state.step)b.setAttribute('aria-current','step');else b.removeAttribute('aria-current');});
   }
   function goStep(n,focus=true){
@@ -235,7 +277,7 @@ if (typeof document !== 'undefined') {
   }
   async function setFiles(c,files){
     if(c.busy||!files.length)return;c.files=files;c.session=null;
-    c.selection.textContent=`${files.length} files · ${formatBytes(files.reduce((n,f)=>n+f.size,0))}`;
+    c.selection.textContent=`${counted(files.length,'file')} · ${formatBytes(files.reduce((n,f)=>n+f.size,0))}`;
     showError(c.error,'');c.progress.hidden=true;
     if(c===uploads.seg){state.upload=null;state.series=null;state.selected.clear();seriesViewer?.destroy();seriesViewer=null;$('assessment').textContent='';$('toSeries').hidden=true;resetPrompt();goStep(0,false);await inspect();}
   }
@@ -289,7 +331,7 @@ if (typeof document !== 'undefined') {
       if(!result?.series?.length)throw Error('No valid CT, MR or PET image series found.');
       state.upload=result;state.series=null;state.selected.clear();
       const valid=result.series.reduce((n,s)=>n+s.slices,0);
-      $('assessment').textContent=`${valid} valid image files in ${result.series.length} series · ${result.ignored || 0} ignored files`;
+      $('assessment').textContent=`${counted(valid,'valid image file')} in ${result.series.length} series · ${counted(result.ignored || 0,'ignored file')}`;
       uploadStatus(c,'Upload and inspection complete.');$('toSeries').hidden=false;
       if(result.series.length===1)selectSeries(result.series[0]);
       renderSeries();steps();if(location.hash===''||location.hash==='#new')goStep(1);
@@ -299,7 +341,7 @@ if (typeof document !== 'undefined') {
   $('resumeUpload').onclick=inspect;
   function previewURL(s,index){return `/api/uploads/${encodeURIComponent(state.upload.upload_id)}/preview?series_key=${encodeURIComponent(s.key)}&index=${index}`;}
   function renderSeries(){
-    $('series').innerHTML=state.upload.series.map((s,i)=>`<label class="series-card"><input type="radio" name="series_key" value="${esc(s.key)}" data-series-index="${i}" ${state.series?.key===s.key?'checked':''}><span class="series-info"><span class="pill">${esc(modalityName(s.modality))}</span>${s.cbct?' <span class="badge license">CBCT detected</span>':''}<strong>${esc(s.description||'No series description')}</strong><span>${s.slices} slices · ${s.rows} × ${s.columns}</span><br><small class="muted">Study date ${esc(studyDate(s.study_date))}</small></span></label>`).join('');
+    $('series').innerHTML=state.upload.series.map((s,i)=>`<label class="series-card"><input type="radio" name="series_key" value="${esc(s.key)}" data-series-index="${i}" ${state.series?.key===s.key?'checked':''}><span class="series-info"><span class="pill">${esc(modalityName(s.modality))}</span>${s.cbct?' <span class="badge license">CBCT detected</span>':''}<strong>${esc(s.description||'No series description')}</strong><span>${counted(s.slices,'slice')} · ${s.rows} × ${s.columns}</span><br><small class="muted">Study date ${esc(studyDate(s.study_date))}</small></span></label>`).join('');
     $('series').querySelectorAll('input').forEach(input=>input.onchange=()=>selectSeries(state.upload.series[Number(input.dataset.seriesIndex)]));
     if(!seriesViewer)seriesViewer=new DicomUI.Viewer($('seriesViewer'));
     loadSeriesViewer();
@@ -313,12 +355,11 @@ if (typeof document !== 'undefined') {
   function selectSeries(s){
     if(state.series?.key!==s.key){state.series=s;state.selected.clear();$('prostatePostprocess').checked=false;resetPrompt();$('promptSlice').max=s.slices-1;$('promptSlice').value=Math.floor(s.slices/2);$('promptColumn').max=s.columns-1;$('promptRow').max=s.rows-1;}
     const warnings=[];if(s.cbct)warnings.push(`AI draft report unavailable for CBCT: ${s.cbct_reason || 'CBCT detected'}.`);
-    if(s.modality==='PT'){const ct=pairedCT(s,state.upload.series);warnings.push(ct?`Paired CT found: ${ct.description||'CT series'} (${ct.slices} slices). PET1 ISRT models use a CT in the same Study and Frame of Reference. This check does not establish registration.`:'PET1 ISRT models require a CT in the same Study and Frame of Reference. No matching CT was found in this upload. PET-only models remain selectable when available.');}
+    if(s.modality==='PT'){const ct=pairedCT(s,state.upload.series);warnings.push(ct?`Paired CT found: ${ct.description||'CT series'} (${counted(ct.slices,'slice')}). PET1 ISRT models use a CT in the same Study and Frame of Reference. This check does not establish registration.`:'PET1 ISRT models require a CT in the same Study and Frame of Reference. No matching CT was found in this upload. PET-only models remain selectable when available.');}
     $('seriesWarnings').textContent=warnings.join(' ');$('seriesWarnings').hidden=!warnings.length;showError($('seriesError'),'');steps();renderSelection();loadSeriesViewer();
   }
   function badges(t){
-    const result=[];if(t.licensed)result.push(['Licence-restricted','license']);if(t.prompt)result.push(['Interactive prompt needed','prompt']);if(t.output==='report')result.push(['Research AI draft','ai']);if(isRemote(t))result.push(['Runs on remote GPU','remote']);
-    if(/non[ -]?commercial|by-nc|research.or.education.use.only/i.test([t.license,t.license_note,t.description,t.limitations].join(' ')))result.push(['Non-commercial / restricted weights','license']);
+    const result=licenceBadges(t).map(text=>[text,'license']);if(t.prompt)result.push(['Interactive prompt needed','prompt']);if(t.output==='report')result.push(['Research AI draft','ai']);if(isRemote(t))result.push(['Runs on remote GPU','remote']);
     if(t.requires_ct)result.push(['Paired CT required','']);
     return result.map(([text,cls])=>`<span class="badge ${cls}">${text}</span>`).join('');
   }
@@ -340,8 +381,8 @@ if (typeof document !== 'undefined') {
     const visible=compatible.filter(t=>(show||!reason(t))&&(!site||(t.clinical_tags||[]).some(x=>x.id===site))&&(!q||[t.name,meta(t).title,meta(t).purpose,t.description,t.structures,...(t.clinical_tags||[]).map(x=>x.label)].join(' ').toLowerCase().includes(q)));
     const opened=new Set([...$('modelGroups').querySelectorAll('details[data-group][open]')].map(el=>el.dataset.group));
     const groups=GROUPS.map(([id,title])=>({id,title,tasks:visible.filter(t=>meta(t).group===id)})).filter(g=>g.tasks.length);
-    $('modelResults').textContent=state.catalogReady?`${visible.length} models shown · ${available.length} available for this ${modalityName(state.series.modality)} series · ${compatible.length-available.length} unavailable`:'';
-    $('modelGroups').innerHTML=groups.map((g,i)=>`<details class="model-group" data-group="${g.id}" ${q||site||opened.has(g.id)||(!opened.size&&i===0)?'open':''}><summary>${g.title}<span class="group-count">${g.tasks.length} models</span></summary>${g.tasks.map(modelRow).join('')}</details>`).join('')||(state.catalogReady?'<p class="empty">No models match these filters. Change the search or show unavailable models.</p>':'');
+    $('modelResults').textContent=state.catalogReady?`${counted(visible.length,'model')} shown · ${available.length} available for this ${modalityName(state.series.modality)} series · ${compatible.length-available.length} unavailable`:'';
+    $('modelGroups').innerHTML=groups.map((g,i)=>`<details class="model-group" data-group="${g.id}" ${q||site||opened.has(g.id)||(!opened.size&&i===0)?'open':''}><summary>${g.title}<span class="group-count">${counted(g.tasks.length,'model')}</span></summary>${g.tasks.map(modelRow).join('')}</details>`).join('')||(state.catalogReady?'<p class="empty">No models match these filters. Change the search or show unavailable models.</p>':'');
     renderSelection();
   }
   function toggleModel(name){const task=state.catalog.find(t=>t.name===name);if(!task||reason(task))return;if(state.selected.has(name))state.selected.delete(name);else state.selected.add(name);showError($('modelError'),'');syncModelInputs();renderSelection();}
@@ -379,7 +420,7 @@ if (typeof document !== 'undefined') {
   $('chooseModels').onclick=()=>{const open=$('catalogPicker').hidden;$('catalogPicker').hidden=!open;$('chooseModels').setAttribute('aria-expanded',String(open));if(open){renderCatalog();$('modelSearch').focus();}};
   function renderSelection(){
     renderActions();
-    $('selectionCount').textContent=`${state.selected.size} model${state.selected.size===1?'':'s'} selected`;
+    $('selectionCount').textContent=`${counted(state.selected.size,'model')} selected`;
     $('selectedChips').innerHTML=chosen().map(t=>`<button type="button" class="chip" data-remove="${esc(t.name)}" aria-label="Remove ${esc(meta(t).title)}">${esc(meta(t).title)} <span aria-hidden="true">×</span></button>`).join('')||'<span class="small muted">Select models to build this job.</span>';
     steps();
   }
@@ -394,16 +435,17 @@ if (typeof document !== 'undefined') {
   $('reloadCatalog').onclick=loadCatalog;
   function renderReview(){
     const s=state.series,tasks=chosen().sort((a,b)=>Number(a.output==='report')-Number(b.output==='report'));
-    $('reviewContent').innerHTML=`<div class="review-card"><h3>Selected series</h3><span class="pill">${esc(modalityName(s.modality))}</span><p><strong>${esc(s.description||'No series description')}</strong><br>${s.slices} slices · ${s.rows} × ${s.columns}<br>Study date ${esc(studyDate(s.study_date))}</p><button type="button" data-edit-series>Edit series</button></div><div class="review-card"><h3>${tasks.length} model${tasks.length===1?'':'s'} to run</h3><ul>${tasks.map(t=>`<li><strong>${esc(meta(t).title)}</strong><span class="small muted">${t.output==='report'?'AI draft report · JSON, Markdown and HTML':'RTSTRUCT contours'}${isRemote(t)?' · remote GPU':''}${t.requires_ct?' · paired CT included':''}</span><div class="badges">${badges(t)}</div></li>`).join('')}</ul></div>`;
+    $('reviewContent').innerHTML=`<div class="review-card"><h3>Selected series</h3><span class="pill">${esc(modalityName(s.modality))}</span><p><strong>${esc(s.description||'No series description')}</strong><br>${counted(s.slices,'slice')} · ${s.rows} × ${s.columns}<br>Study date ${esc(studyDate(s.study_date))}</p><button type="button" data-edit-series>Edit series</button></div><div class="review-card"><h3>${counted(tasks.length,'model')} to run</h3><ul>${tasks.map(t=>`<li><strong>${esc(meta(t).title)}</strong><span class="small muted">${t.output==='report'?'AI draft report · JSON, Markdown and HTML':'RTSTRUCT contours'}${isRemote(t)?' · remote GPU':''}${t.requires_ct?' · paired CT included':''}</span><div class="badges">${badges(t)}</div></li>`).join('')}</ul></div>`;
     $('reviewContent').querySelector('[data-edit-series]').onclick=()=>goStep(1);
     const crop=cropSupported(s,state.selected,state.catalog,state.config,state.health);$('postprocessPanel').hidden=!crop;if(!crop)$('prostatePostprocess').checked=false;
     $('promptPanel').hidden=!prompted().length;
     if(prompted().length){$('promptGuidance').innerHTML=prompted().map(t=>`<p>${esc(PROMPT_HELP[t.name]||`${meta(t).title}: ${t.prompt}. ${t.limitations||t.description||''}`)}</p>`).join('');loadPromptSlice();}
     const warnings=[];if(tasks.some(t=>t.output==='report'))warnings.push('AI output is a research draft requiring radiologist review. Diagnostic chest/abdomen CT only; coverage, HU or resource checks can refuse generation. Reports run after segmentation.');
-    if(tasks.some(t=>t.licensed))warnings.push('Selected models include licence-restricted weights. Their licence terms remain available in model details.');
+    if(tasks.some(t=>t.licensed))warnings.push('Selected models require a licence key. See the licence terms in model details.');
+    if(tasks.some(t=>t.noncommercial))warnings.push('Selected models have non-commercial weights. See the licence terms in model details.');
     if(tasks.some(t=>t.requires_ct))warnings.push('The matching CT is paired by Study and Frame of Reference. This does not establish registration.');
     $('reviewWarnings').textContent=warnings.join(' ');$('reviewWarnings').hidden=!warnings.length;
-    $('startJob').textContent=`Start job · ${tasks.length} model${tasks.length===1?'':'s'}`;
+    $('startJob').textContent=`Start job · ${counted(tasks.length,'model')}`;
   }
   function resetPrompt(){prompt={positive_points:[],negative_points:[],box:null,text:''};boxCorner=null;$('promptText').value='';writePrompt();showError($('promptError'),'');}
   function writePrompt(){ $('promptJson').value=JSON.stringify(prompt,null,2);$('promptText').value=prompt.text||'';drawPrompt(); }
@@ -475,17 +517,17 @@ if (typeof document !== 'undefined') {
   function updateJob(j){
     let row=jobRows.get(j.id);if(!row){row=$('jobTemplate').content.firstElementChild.cloneNode(true);row.dataset.job=j.id;jobRows.set(j.id,row);row.querySelector('[data-field=retry]').onclick=()=>retryJob(j.id,row);}
     const field=name=>row.querySelector(`[data-field="${name}"]`),busy=!TERMINAL.has(j.status),models=j.models||[],total=j.model_total||models.length,pct=Number.isFinite(j.progress)?Math.max(0,Math.min(100,j.progress)):null;
-    updateText(field('title'),j.tool?'Prostate SBRT crop':models.length===1&&models[0]===reportTask()?'AI draft report':models.includes(reportTask())?'Segmentation and AI draft report':`${models.length} model${models.length===1?'':'s'} · segmentation job`);
+    updateText(field('title'),j.tool?'Prostate SBRT crop':models.length===1&&models[0]===reportTask()?'AI draft report':models.includes(reportTask())?'Segmentation and AI draft report':`${counted(models.length,'model')} · segmentation job`);
     field('title').href=field('open').href='#jobs/'+encodeURIComponent(j.id);
     const elapsed=(busy?Date.now()/1000:(j.finished||j.completed||j.updated||j.created))-j.created;
     updateText(field('meta'),`${new Date(j.created*1000).toLocaleString()} · ${busy?'Elapsed':'Duration'} ${duration(elapsed)} · ${j.id}`);
     updateText(field('status'),humanize(j.status));field('status').className='pill '+(TERMINAL.has(j.status)||['processing','transferring','retrieving','queued'].includes(j.status)?j.status:'');
     updateText(field('models'),models.map(name=>meta(state.catalog.find(t=>t.name===name)||{name}).title).join(' · '));updateText(field('detail'),j.detail||'');
     field('progressWrap').hidden=!busy&&pct===null;if(pct===null)field('progress').removeAttribute('value');else field('progress').value=pct;
-    const progress=[];if(j.model_index&&total)progress.push(`Model ${j.model_index} of ${total}`);else if(busy&&total)progress.push(`${total} model${total===1?'':'s'} queued`);
+    const progress=[];if(j.model_index&&total)progress.push(`Model ${j.model_index} of ${total}`);else if(busy&&total)progress.push(`${counted(total,'model')} queued`);
     if(j.total_bytes&&(j.status==='transferring'||j.status==='retrieving'))progress.push(`${formatBytes(j.transferred_bytes||0)} / ${formatBytes(j.total_bytes)}`);
     if(pct!==null)progress.push(`${pct}%`);updateText(field('progressText'),progress.join(' · '));
-    field('report').hidden=!j.report_status;updateText(field('report'),`AI report: ${humanize(j.report_status||'')} ${j.report_reason||''}`.trim());
+    field('report').hidden=!j.report_status;updateText(field('report'),reportStatusText(j,reportTask()));
     field('errors').hidden=!j.error;updateText(field('error'),j.error||'');
     field('download').hidden=j.status!=='complete';field('download').href=`/api/v1/jobs/${encodeURIComponent(j.id)}/result`;
     const hasReport=j.status==='complete'&&['generated','not_generated'].includes(j.report_status);
@@ -503,7 +545,7 @@ if (typeof document !== 'undefined') {
       if(failed)showError($('jobsError'),`${failed} job detail request${failed===1?'':'s'} failed. Retained rows may be out of date; the next refresh will retry.`);
       if(jobs.length){$('jobs').querySelector('.empty')?.remove();jobs.forEach((j,i)=>{const row=updateJob(j),current=$('jobs').children[i];if(current!==row)$('jobs').insertBefore(row,current||null);});}
       else if(listSucceeded&&!failed&&!jobRows.size)$('jobs').innerHTML='<p class="empty panel">No jobs yet. Start with a study in New job.</p>';
-      const count=(listSucceeded?summaries:jobs).filter(j=>j.status&&!TERMINAL.has(j.status)).length;updateText($('activeCount'),String(count));$('activeCount').setAttribute('aria-label',`${count} active jobs`);
+      const count=(listSucceeded?summaries:jobs).filter(j=>j.status&&!TERMINAL.has(j.status)).length;updateText($('activeCount'),String(count));$('activeCount').setAttribute('aria-label',`${counted(count,'active job')}`);
       if(detailId)refreshDetail();
     }finally{polling=false;}
   }
@@ -537,7 +579,7 @@ if (typeof document !== 'undefined') {
       $('jobDetailProgress').textContent=[job.detail,job.model_index?`Model ${job.model_index} of ${job.model_total||models.length}`:'',Number.isFinite(job.progress)?`${job.progress}%`:'',job.total_bytes?`${formatBytes(job.transferred_bytes||0)} / ${formatBytes(job.total_bytes)}`:''].filter(Boolean).join(' · ');
       if(Number.isFinite(job.progress))$('jobDetailBar').value=Math.max(0,Math.min(100,job.progress));else $('jobDetailBar').removeAttribute('value');
       $('jobDetailBar').hidden=TERMINAL.has(job.status);
-      $('jobDetailReportStatus').textContent=job.report_status?`AI report: ${humanize(job.report_status)}${job.report_reason?' · '+job.report_reason:''}`:'';
+      $('jobDetailReportStatus').textContent=reportStatusText(job,reportTask());
       $('jobDetailErrors').hidden=!job.error;$('jobDetailFailure').textContent=job.error||'';
       $('retryDetail').hidden=job.status!=='failed';$('deleteJob').disabled=deleting||!canDeleteJob(job);
       $('deleteJob').title=canDeleteJob(job)?'Delete job and its files':'Deletion is available after the job stops running';
@@ -624,4 +666,4 @@ if (typeof document !== 'undefined') {
   }
   initialize();setInterval(pollJobs,4000);setInterval(refreshHealth,30000);
 }
-if(typeof module!=='undefined'&&module.exports)module.exports={presentation,executesRemotely,supports,pairedCT,blockedReason,cropSupported,validatePrompt,structureInfo,humanize,safeReference,primarySelection,canDeleteJob,reportMarkdown,reportMarkup,GROUPS};
+if(typeof module!=='undefined'&&module.exports)module.exports={presentation,executesRemotely,supports,pairedCT,blockedReason,cropSupported,validatePrompt,structureInfo,humanize,safeReference,primarySelection,canDeleteJob,reportMarkdown,reportMarkup,licenceBadges,counted,reportStatusText,isReportSection,GROUPS};

@@ -5,7 +5,7 @@
       "CT"
     ],
     "enabled": true,
-    "licensed": true,
+    "licensed": false,
     "status": "available",
     "structures": "117 foreground labels; organs and anatomical structures",
     "description": "Automatic CT segmentation with the official NV-Segment-CT checkpoint. The official automatic selection includes 117 of 132 CT classes and excludes the solid-tumour heads. Renal cysts are lesion candidates, not radiotherapy targets. NVIDIA Open Model License.",
@@ -20,7 +20,8 @@
       "CT"
     ],
     "enabled": true,
-    "licensed": true,
+    "licensed": false,
+    "noncommercial": true,
     "status": "available",
     "structures": "117 foreground labels; organs and anatomical structures",
     "description": "Automatic CT body segmentation with the NV-Segment-CTMR checkpoint. The official automatic selection includes 117 of 132 CT classes and excludes the solid-tumour heads. Renal cysts are lesion candidates, not radiotherapy targets. NVIDIA OneWay Noncommercial weight licence: research or evaluation only; code is Apache-2.0.",
@@ -35,7 +36,8 @@
       "MR"
     ],
     "enabled": true,
-    "licensed": true,
+    "licensed": false,
+    "noncommercial": true,
     "status": "available",
     "structures": "50 foreground labels; organs and anatomical structures",
     "description": "Automatic body MRI segmentation with the NV-Segment-CTMR checkpoint. Segments the 50 TotalSegmentator-MRI classes. Coverage depends on the acquired field of view. NVIDIA OneWay Noncommercial weight licence: research or evaluation only; code is Apache-2.0.",
@@ -50,7 +52,8 @@
       "MR"
     ],
     "enabled": true,
-    "licensed": true,
+    "licensed": false,
+    "noncommercial": true,
     "status": "available",
     "structures": "132 foreground labels; brain regions (133 classes including background)",
     "description": "Automatic brain MRI segmentation with the NV-Segment-CTMR checkpoint. Segments 132 foreground brain regions after internal skull stripping and affine alignment to the LUMIR template, then returns labels to the original image grid. GitHub documentation covers multiple MRI sequences, while the pinned model card specifies T1 only. The orientation audit uses public T1 DICOM. NVIDIA OneWay Noncommercial weight licence: research or evaluation only; code is Apache-2.0.",

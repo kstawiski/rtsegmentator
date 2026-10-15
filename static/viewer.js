@@ -187,7 +187,7 @@ const DicomUI = (() => {
     renderROIs() {
       this.el('overlays').hidden = !this.overlays;
       this.el('empty').textContent = this.rois.length ? '' : 'No RTSTRUCT structures are available for this job.';
-      this.el('groups').innerHTML = this.info.structure_sets.map(s => `<details open><summary>${escape(s.model)} <span class="muted">· ${escape(s.label)} · ${s.rois.length} ROIs</span></summary>${s.rois.map(r => `<div class="roi-row" data-search="${escape((s.model+' '+r.name).toLowerCase())}"><label><input type="checkbox" data-roi="${escape(r.key)}" checked><span class="swatch" style="background:${color(r.color)}" aria-hidden="true"></span><span>${escape(r.name)}</span></label><button type="button" data-jump="${escape(r.key)}" aria-label="Jump to middle slice of ${escape(r.name)}" ${middleSlice(r) === null ? 'disabled title="No matching source slices"' : ''}>Jump to</button></div>`).join('')}</details>`).join('');
+      this.el('groups').innerHTML = this.info.structure_sets.map(s => `<details open><summary>${escape(s.model)} <span class="muted">· ${escape(s.label)} · ${s.rois.length} ROI${s.rois.length === 1 ? '' : 's'}</span></summary>${s.rois.map(r => `<div class="roi-row" data-search="${escape((s.model+' '+r.name).toLowerCase())}"><label><input type="checkbox" data-roi="${escape(r.key)}" checked><span class="swatch" style="background:${color(r.color)}" aria-hidden="true"></span><span>${escape(r.name)}</span></label><button type="button" data-jump="${escape(r.key)}" aria-label="Jump to middle slice of ${escape(r.name)}" ${middleSlice(r) === null ? 'disabled title="No matching source slices"' : ''}>Jump to</button></div>`).join('')}</details>`).join('');
       this.syncROIs(); this.filterROIs();
     }
     syncROIs() {

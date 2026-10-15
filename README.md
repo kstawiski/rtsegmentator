@@ -47,6 +47,10 @@ python3 -m venv .venv
 WORKER_MODE=local .venv/bin/uvicorn app:app --host 127.0.0.1 --port 8080
 ```
 
+`Licence key required` identifies TotalSegmentator tasks that require a key (`licensed`). `Non-commercial weights` uses the separate catalog field `noncommercial`. Full licence notes remain in model details; research-draft wording alone does not set either badge.
+
+Run the browser UI regression checks with `python3 tests/ui_browser_server.py`, open `http://127.0.0.1:18743/__qa`, and choose **Run checks**. The harness serves synthetic API responses and checks the real UI at 1024, 1280 and 1440 pixels. It does not run models.
+
 CPU tests use synthetic images. Inference needs the separate model/runtime bundle and compatible GPU software. Colab and automatic fallback code are retained for compatibility; the documented deployment examples use local or SSH workers.
 
 ## Source and documentation
