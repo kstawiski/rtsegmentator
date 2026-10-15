@@ -49,6 +49,7 @@ Example job metadata (illustrative values):
   "series": {
     "modality": "CT", "rows": 512, "columns": 512, "slices": 96,
     "pixel_spacing": [0.8, 0.8], "slice_spacing": 2.0, "orientation": "axial",
+    "plane": "axial", "column_direction": [1, 0, 0], "row_direction": [0, 1, 0],
     "window_presets": [
       {"id": "soft-tissue", "label": "Soft tissue", "center": 40, "width": 400},
       {"id": "lung", "label": "Lung", "center": -600, "width": 1500},
@@ -66,7 +67,9 @@ Example job metadata (illustrative values):
 }
 ```
 
-`pixel_spacing` is `[row, column]` in mm. `slice_spacing` is the median distance between acquired planes (the spacing/thickness tag for a single image); it does not imply a regular stack. Missing slices are not inserted or interpolated. `orientation` is `axial`, `coronal` or `sagittal` when the normal is within 1 degree of that patient axis, otherwise `oblique`. This label does not change image rotation or laterality. Render the PNG without an implicit radiological flip, rotation, transpose or physical-aspect correction; apply any display transform equally to image and paths.
+`pixel_spacing` is `[row, column]` in mm. `slice_spacing` is the median distance between acquired planes (the spacing/thickness tag for a single image); it does not imply a regular stack. Missing slices are not inserted or interpolated. `orientation` is `axial`, `coronal` or `sagittal` when the normal is within 1 degree of that patient axis, otherwise `oblique`. `plane` repeats this derived plane label; the existing `orientation` field remains available. `column_direction` is the first `ImageOrientationPatient` triplet (increasing stored column/x); `row_direction` is the second triplet (increasing stored row/y). Both use DICOM patient LPS coordinates: positive x is left, positive y posterior, positive z head. These fields are identical in the job and upload viewer metadata.
+
+PNG pixels and contour coordinates remain in the stored grid. The UI enables **Standard orientation** by default. For signed patient-axis permutations (each cosine component within `1e-4` of 0 or ±1), it flips/transposes the display: axial A at top/R at left; coronal H at top/R at left; sagittal H at top/A at left. Oblique edges, including rotation within an axial plane, stay as stored. Disabling the option restores stored order. Image, contours, clipping and inverse cursor mapping use one affine; the prompt-placement preview uses it for point/box overlays and clicks, while JSON coordinates retain stored column/row/slice indices; pan and anchored zoom use that same mapping. There is no physical-aspect correction or resampling. Four edge markers show patient R/L, A/P and H/F after the display transform; an oblique edge adds its second strongest direction when its normalized component is at least 0.3 (at most two letters).
 
 All image routes accept either `?window=lung` (or another returned preset ID), or `?center=40&width=400`. Omission selects `default_window`. A valid first DICOM window takes precedence and appears as `dicom`. CT without that window defaults to soft tissue. MR/PT without a DICOM window use `auto`, computed once from the middle slice's 1st and 99th intensity percentiles. The selected window is applied after rescale slope/intercept, using DICOM LINEAR windowing; MONOCHROME1 is inverted. Width must be finite and at least 1; center must be finite. Do not combine a preset with numeric window parameters. PNG headers include `X-Slice-Index`, `X-Slice-Count`, `X-Columns` and `X-Rows`. Viewer JSON and images use `Cache-Control: no-store`.
 

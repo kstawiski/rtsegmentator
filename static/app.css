@@ -26,3 +26,8 @@ html{scroll-padding-bottom:var(--selection-tray-space,0px)}
 .selection-tray{position:fixed;bottom:14px;left:max(32px,calc((100vw - 1280px)/2));right:max(32px,calc((100vw - 1280px)/2));margin-top:0}
 .report-section-heading{font-size:.92rem;color:var(--primary);margin:20px 0 10px}
 @media(max-width:800px){.selection-tray{left:18px;right:18px}}
+
+/* Patient orientation stays legible at image edges, including zoomed/panned views. */
+.viewer-toolbar .viewer-orientation-option{display:flex;align-items:center;gap:7px;flex:0 1 auto;min-width:0;font-size:.8rem;padding-bottom:8px}
+.viewer-orientation-option input{width:auto;margin:0}
+.orientation-marker{position:absolute;transform:translate(-50%,-50%);pointer-events:none;color:#fff;background:#0a1119bb;border-radius:3px;padding:2px 4px;font-size:.8rem;font-weight:700;line-height:1.2;text-shadow:0 1px 2px #000}

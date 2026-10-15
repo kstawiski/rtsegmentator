@@ -178,7 +178,10 @@ def index_series(paths):
                             "width": max(1.0, float(high - low))})
         info = {"modality": str(first.Modality), "rows": int(first.Rows), "columns": int(first.Columns),
                 "slices": len(slices), "pixel_spacing": reference_spacing.tolist(), "slice_spacing": slice_spacing,
-                "orientation": orientation_name, "window_presets": presets, "default_window": presets[0]["id"]}
+                "orientation": orientation_name, "plane": orientation_name,
+                "column_direction": reference_orientation[:3].tolist(),
+                "row_direction": reference_orientation[3:].tolist(),
+                "window_presets": presets, "default_window": presets[0]["id"]}
         return Series(slices, reference_normal, info, tolerance, str(getattr(first, "FrameOfReferenceUID", "")))
     except (AttributeError, TypeError, ValueError, OverflowError) as exc:
         raise HTTPException(422, str(exc)) from exc
