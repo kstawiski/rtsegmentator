@@ -9,7 +9,7 @@ import nibabel as nib
 import numpy as np
 import pydicom
 from pydicom.uid import RTStructureSetStorage
-from rtstruct_geometry import add_roi, create_rtstruct, mask_bounds, report_omissions, dicom_grid
+from rtstruct_geometry import add_roi, create_rtstruct, mask_bounds, report_omissions, dicom_grid, unique_roi_names
 from orientation_contract import exact_orientation, restore_image, write_export_record
 from rtstruct_roundtrip import validate_roi_roundtrip
 
@@ -42,7 +42,7 @@ def main() -> None:
     expected_bounds: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     expected_masks: dict[str, tuple[nib.Nifti1Image, np.ndarray]] = {}
     omitted = []
-    for name, filename in mappings.items():
+    for name, filename in zip(unique_roi_names(mappings), mappings.values()):
         mask_image = nib.load(filename)
         exact_orientation(mask_image.shape, mask_image.affine, model_input.shape, model_input.affine)
         mask_image, mask_inverse = restore_image(mask_image, shape, affine)

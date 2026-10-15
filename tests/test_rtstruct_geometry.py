@@ -198,3 +198,25 @@ def test_crop_preserves_corrected_non_square_gapped_geometry(synthetic_ct, tmp_p
     after_contours = pydicom.dcmread(after).ROIContourSequence[0].ContourSequence
     assert [c.ContourData for c in before_contours] == [c.ContourData for c in after_contours]
     assert_viewer_exact(cropped / "CT", after, mask.transpose(1, 0, 2)[:, :, 1:5])
+
+
+@pytest.mark.parametrize("independent", [False, True])
+def test_padded_label_names_are_written_and_validated_stripped(synthetic_ct, tmp_path, independent):
+    # cervix_cbct's upstream label map names its tumour "CTVT "; DICOM drops the padding on read.
+    source = tmp_path / "source"
+    make_series(synthetic_ct, source, [1, 0, 0, 0, 1, 0], [1, 1], False, False)
+    image_path, prediction, mask = inputs(source, tmp_path)
+    result, output = convert(source, tmp_path, image_path, prediction, independent=independent,
+                             labels={"1": "CTVT "})
+    assert result.returncode == 0, result.stdout + result.stderr
+    names = [str(roi.ROIName) for roi in pydicom.dcmread(output).StructureSetROISequence]
+    assert names == ["CTVT"]
+
+
+def test_names_that_collide_after_stripping_are_refused(synthetic_ct, tmp_path):
+    source = tmp_path / "source"
+    make_series(synthetic_ct, source, [1, 0, 0, 0, 1, 0], [1, 1], False, False)
+    image_path, prediction, mask = inputs(source, tmp_path)
+    result, output = convert(source, tmp_path, image_path, prediction, labels={"1": "CTV", "2": "CTV "})
+    assert result.returncode != 0 and "duplicate ROI name" in result.stdout + result.stderr
+    assert not output.exists()

@@ -5,7 +5,7 @@ import nibabel as nib
 import numpy as np
 import pydicom
 from pydicom.uid import RTStructureSetStorage
-from rtstruct_geometry import add_roi, create_rtstruct, mask_bounds, report_omissions, dicom_grid
+from rtstruct_geometry import add_roi, create_rtstruct, mask_bounds, report_omissions, dicom_grid, unique_roi_names
 from orientation_contract import exact_orientation, restore_image, write_export_record
 from rtstruct_roundtrip import validate_roi_roundtrip
 
@@ -25,7 +25,8 @@ def main():
     pred, inverse = restore_image(pred, shape, affine)
     data=np.rint(np.asanyarray(pred.dataobj)).astype(np.int16)
     raw=json.loads(Path(a.labels).read_text())
-    labels={int(k):str(v) for k,v in raw.items() if int(k)>0}; present=set(np.unique(data))-set([0])
+    items=[(int(k),v) for k,v in raw.items() if int(k)>0]
+    labels=dict(zip((k for k,_ in items),unique_roi_names(v for _,v in items))); present=set(np.unique(data))-set([0])
     unknown=present-set(labels)
     if unknown: raise SystemExit(f"unmapped prediction labels: {sorted(unknown)}")
     if not present: raise SystemExit("empty prediction: no RTSTRUCT created")
