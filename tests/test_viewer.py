@@ -35,6 +35,10 @@ GEOMETRIES = [
     pytest.param([1, 0, 0, 0, 0, -1], [1.7, 0.6], True, False, "coronal", id="coronal-constant-z"),
     pytest.param([0, 1, 0, 0, 0, 1], [1.7, 0.6], True, False, "sagittal", id="sagittal-constant-z"),
     pytest.param([0.8, 0, 0.6, 0, 1, 0], [2.3, 0.7], True, False, "oblique", id="oblique"),
+    pytest.param([1, 0, 0, 0, -1, 0], [.9375, .9375], False, False, "axial", id="flipped-column"),
+    pytest.param([1, 0, 0, 0, -1, 0], [2.3, .7], True, True, "axial", id="flipped-column-gaps-anisotropic"),
+    pytest.param([0, 1, 0, 0, 0, -1], [1, 1], True, False, "sagittal", id="sagittal-negative-normal"),
+    pytest.param([0, 1, 0, 0, 0, -1], [1.7, .6], True, True, "sagittal", id="sagittal-negative-normal-gaps-anisotropic"),
 ]
 
 

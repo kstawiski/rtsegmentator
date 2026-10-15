@@ -22,7 +22,7 @@ from test_viewer import make_mask, make_series
 
 @pytest.mark.parametrize("independent", [False, True])
 @pytest.mark.parametrize("only_tiny", [False, True])
-def test_uncontourable_roi_is_reported(portal, monkeypatch, synthetic_ct, tmp_path, independent, only_tiny):
+def test_single_voxel_roi_reaches_result_archive(portal, monkeypatch, synthetic_ct, tmp_path, independent, only_tiny):
     source = tmp_path / "source"
     make_series(synthetic_ct, source)
     mask = make_mask().transpose(1, 0, 2).astype(np.uint8)
@@ -31,7 +31,7 @@ def test_uncontourable_roi_is_reported(portal, monkeypatch, synthetic_ct, tmp_pa
     mask[1, 2, 2] = 2
     image_path, prediction, _ = inputs(source, tmp_path, mask)
     if independent and not only_tiny:
-        # Separate files exercise omission without discarding the valid ROI.
+        # Keep the single-voxel ROI separate from the larger ROI.
         tiny = tmp_path / "tiny.nii.gz"
         image = nib.load(prediction)
         nib.save(nib.Nifti1Image((mask == 2).astype(np.uint8), image.affine), tiny)
@@ -45,44 +45,46 @@ def test_uncontourable_roi_is_reported(portal, monkeypatch, synthetic_ct, tmp_pa
     else:
         labels = {"2": "CTVT"} if only_tiny else {"1": "CTV", "2": "CTVT"}
         result, output = convert(source, tmp_path, image_path, prediction, independent, labels)
-    assert "RTSTRUCT_CONVERSION_NOTE" in result.stderr
-    assert '"name": "CTVT"' in result.stderr
-    assert '"voxels": 1' in result.stderr
-    if only_tiny:
-        assert result.returncode != 0 and not output.exists()
-        assert portal.is_empty_prediction(RuntimeError(result.stderr))
-    else:
-        assert result.returncode == 0, result.stdout + result.stderr
-        report = json.loads(result.stdout.splitlines()[-1])
-        assert report["rois"] == 1 and report["physical_roundtrip"]["CTV"]["roundtrip_dice"] == 1
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "RTSTRUCT_CONVERSION_NOTE" not in result.stderr
+    report = json.loads(result.stdout.splitlines()[-1])
+    assert report["rois"] == (1 if only_tiny else 2)
+    assert report["omitted_rois"] == []
+    assert report["physical_roundtrip"]["CTVT"] == {
+        "expected_voxels": 1, "roundtrip_voxels": 1,
+        "intersection_voxels": 1, "roundtrip_dice": 1.0}
+    if not only_tiny:
+        assert report["physical_roundtrip"]["CTV"]["roundtrip_dice"] == 1
 
     job = job_at(portal, ["cervix_cbct"])
     def run(*args):
         (job / "cervix_cbct.log").write_text(result.stderr)
-        if only_tiny:
-            raise RuntimeError(result.stderr)
         shutil.copyfile(output, job / "output/cervix_cbct_RTSTRUCT.dcm")
     monkeypatch.setattr(portal, "run_local_task", run)
     portal.process(job)
     metadata = portal.metadata(job)
     assert metadata["status"] == "complete"
-    assert "omitted ROI CTVT (1 voxels" in metadata["detail"]
+    assert not metadata.get("conversion_notes")
+    assert not metadata.get("no_structures_found")
     with zipfile.ZipFile(job / "rtstruct-results.zip") as archive:
-        assert "CTVT" in archive.read("CONVERSION_NOTES.txt").decode()
-        if only_tiny:
-            assert "cervix_cbct" in archive.read("NO_STRUCTURES_FOUND.txt").decode()
+        assert "CONVERSION_NOTES.txt" not in archive.namelist()
+        assert "NO_STRUCTURES_FOUND.txt" not in archive.namelist()
+        assert any(name.endswith("_RTSTRUCT.dcm") for name in archive.namelist())
 
 
-def test_partly_contourable_roi_must_still_pass_unchanged_gate(synthetic_ct, tmp_path):
+def test_polygon_and_isolated_voxel_both_pass_unchanged_gate(synthetic_ct, tmp_path):
     source = tmp_path / "source"
     make_series(synthetic_ct, source)
     mask = np.zeros((48, 32, 6), dtype=np.uint8)
     mask[2:4, 2:4, 1] = 1  # A valid four-pixel polygon.
-    mask[5, 2, 3] = 1      # 20% of the ROI cannot be represented by a polygon.
+    mask[5, 2, 3] = 1      # 20% of the ROI uses a single-point contour.
     image_path, prediction, _ = inputs(source, tmp_path, mask)
     result, _ = convert(source, tmp_path, image_path, prediction)
-    assert result.returncode != 0
-    assert "RTSTRUCT physical round-trip mismatch" in result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = json.loads(result.stdout.splitlines()[-1])
+    assert report["physical_roundtrip"]["Asymmetric L"] == {
+        "expected_voxels": 5, "roundtrip_voxels": 5,
+        "intersection_voxels": 5, "roundtrip_dice": 1.0}
     assert "RTSTRUCT_CONVERSION_NOTE" not in result.stderr
 
 

@@ -83,7 +83,7 @@ def create_rtstruct(source, model_input):
 
 
 def add_roi(rt, mask, name, color):
-    """Add a [column,row,slice] mask; return False only if no polygon exists."""
+    """Add a [column,row,slice] mask; return False only if no contour exists."""
     contours = []
     for k, ds in enumerate(rt.series_data):
         polygons, _ = cv2.findContours(mask[:, :, k].T.astype(np.uint8),
@@ -91,8 +91,9 @@ def add_roi(rt, mask, name, color):
         origin, column, row = slice_geometry(ds)
         for polygon in polygons:
             xy = polygon[:, 0, :]
-            if len(xy) < 3 or cv2.contourArea(polygon) == 0:
-                continue
+            # Match rt-utils' complete pixel-centre contour set, including
+            # single points and zero-area lines. Removing these pieces loses
+            # source voxels and can shrink an ROI's physical bounds.
             contour = Dataset()
             contour.ContourGeometricType = "CLOSED_PLANAR"
             contour.NumberOfContourPoints = len(xy)

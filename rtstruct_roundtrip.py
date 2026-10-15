@@ -28,10 +28,14 @@ def validate_roi_roundtrip(roi_contour, mask_image, expected_mask,
     for contour in getattr(roi_contour, "ContourSequence", []):
         values = getattr(contour, "ContourData", None)
         if not values:
-            continue
+            raise ValueError("empty contour coordinates")
         lps = np.asarray(values, dtype=float).reshape(-1, 3)
-        if not np.isfinite(lps).all() or len(lps) < 3:
+        if not np.isfinite(lps).all():
             raise ValueError("invalid contour coordinates")
+        if int(getattr(contour, "NumberOfContourPoints", 0)) != len(lps):
+            raise ValueError("contour point count does not match coordinates")
+        if contour.ContourGeometricType != "CLOSED_PLANAR":
+            raise ValueError("expected CLOSED_PLANAR contour")
         if by_uid is None:
             ras = lps * np.array([-1.0, -1.0, 1.0])
             ijk = nib.affines.apply_affine(inverse_affine, ras)
@@ -44,8 +48,6 @@ def validate_roi_roundtrip(roi_contour, mask_image, expected_mask,
             if len(refs) != 1 or refs[0] not in by_uid:
                 raise ValueError("contour must reference exactly one source SOP Instance UID")
             k, ds = by_uid[refs[0]]
-            if contour.ContourGeometricType != "CLOSED_PLANAR":
-                raise ValueError("expected CLOSED_PLANAR contour")
             column, row = np.asarray(ds.ImageOrientationPatient, dtype=float).reshape(2, 3)
             normal = np.cross(column, row)
             normal /= np.linalg.norm(normal)
@@ -72,6 +74,8 @@ def validate_roi_roundtrip(roi_contour, mask_image, expected_mask,
 
     for k, polygons in polygons_by_slice.items():
         # OpenCV points are (column, row), while its image is (row, column).
+        # fillPoly also reconstructs rt-utils' single points and zero-area
+        # lines; they undergo the same plane, reference and Dice checks.
         plane = np.zeros((expected.shape[1], expected.shape[0]), dtype=np.uint8)
         cv2.fillPoly(plane, polygons, 1)
         reconstructed[:, :, k] = plane.T.astype(bool)
