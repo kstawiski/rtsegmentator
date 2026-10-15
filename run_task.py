@@ -139,7 +139,20 @@ try:
         "hippunfold_adni_t1_subfields_mr": "ADNI_T1w_v1",
         "hippunfold_maguire_t2_subfields_mr": "maguire_T2w",
     }
-    if task in CERR_TASKS:
+    if task == "nv_reason_ct_report":
+        from model_preflight import nv_reason_python, NV_REASON_REVISION
+        env = os.environ.copy()
+        cache = Path(os.environ.get("RTSEG_NV_REASON_CT_CACHE", SCRATCH_ROOT / "nv-reason-ct-cache"))
+        cache.mkdir(parents=True, exist_ok=True)
+        env.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1",
+                   HF_HOME=str(cache / "huggingface"), TRITON_CACHE_DIR=str(cache / "triton"),
+                   TORCHINDUCTOR_CACHE_DIR=str(cache / "torchinductor"))
+        run([str(nv_reason_python()), str(APP_ROOT / "run_nv_reason_ct.py"),
+             "--job", str(job), "--model-dir", str(MODEL_ROOT / "weights/nv-reason-ct" / NV_REASON_REVISION),
+             "--worker-python", sys.executable], env=env)
+        if not (job / "output/report/nv_reason_ct_report.json").is_file():
+            raise SystemExit("Report worker did not create its expected JSON")
+    elif task in CERR_TASKS:
         spec = CERR_TASKS[task]
         if spec.get("runner") not in {"smit", "legacy_mrrn", "legacy_prostate"}:
             raise SystemExit(f"{task} has no accepted CERR runner: {spec.get('blocked_status', spec.get('runner'))}")
@@ -1271,9 +1284,10 @@ test_time_augmentation_iteration=0
              "--dicom", str(job / "input"), "--output", str(output),
              "--labels", str(labels)])
         shutil.rmtree(work, ignore_errors=True)
-    if not output.exists():
-        raise SystemExit(f"{task} did not create its expected RTSTRUCT")
-    identify_rtstruct(output, task)
+    if task != "nv_reason_ct_report":
+        if not output.exists():
+            raise SystemExit(f"{task} did not create its expected RTSTRUCT")
+        identify_rtstruct(output, task)
 finally:
     if child is not None and child.poll() is None:
         try: os.killpg(child.pid, signal.SIGKILL)

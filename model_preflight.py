@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import argparse
 import json
+import shutil
 import os
 import sys
 from pathlib import Path
@@ -10,6 +12,26 @@ from pathlib import Path
 MODEL_ROOT = Path(os.environ.get("RTSEG_MODEL_ROOT", "/models"))
 RUNTIME_ROOT = Path(os.environ.get("RTSEG_RUNTIME_ROOT", MODEL_ROOT))
 APP_ROOT = Path(os.environ.get("RTSEG_APP_ROOT", Path(__file__).resolve().parent))
+
+NV_REASON_REVISION = "386b93e034983f6c1fc841a43833a1b6a0cd9c13"
+
+
+def nv_reason_python():
+    override = os.environ.get("RTSEG_NV_REASON_CT_PYTHON")
+    if override: return Path(override)
+    candidates = [RUNTIME_ROOT / "envs/nv-reason-ct/bin/python",
+                  MODEL_ROOT / "runtime-envs/nv-reason-ct/bin/python"]
+    return next((p for p in candidates if p.is_file()), candidates[0])
+
+
+def report_acceptance_ready():
+    try:
+        marker = json.loads((MODEL_ROOT / "validation/nv_reason_ct_report.json").read_text())
+        return (marker.get("status") == "passed" and marker.get("revision") == NV_REASON_REVISION
+                and {"chest", "abdomen", "pelvis", "cbct"} <= set(marker.get("checks", []))
+                and marker.get("coverage_mode", "full") == os.environ.get("RTSEG_NV_REASON_CT_COVERAGE_MODE", "fast"))
+    except (OSError, ValueError, TypeError): return False
+
 
 COMMON = ["dicom_series_to_nifti.py", "convert_validate_rtstruct.py"]
 REQUIREMENTS = {
@@ -379,12 +401,25 @@ REQUIREMENTS["totalsegmentator2d_projection_ct"] = [
     "validation/totalsegmentator2d_projection_ct.json"]
 
 
-def audit() -> dict[str, dict]:
+REQUIREMENTS["nv_reason_ct_report"] = ["@run_nv_reason_ct.py", "@nv_reason_ct_report.py",
+    "@labels/nv-reason-ct-organs.json", "envs/nv-reason-ct/bin/python",
+    *[f"weights/nv-reason-ct/{NV_REASON_REVISION}/{name}" for name in (
+        "model.safetensors", "model.py", "processor.py", "config.json", "tokenizer.json",
+        "tokenizer_config.json", "processor_config.json", "preprocessor_config.json",
+        "video_preprocessor_config.json", "chat_template.jinja", "generation_config.json",
+        "image_processor_3d/preprocessor_config.json")],
+    "validation/nv_reason_ct_report.json"]
+
+
+def audit(tasks=None) -> dict[str, dict]:
     report = {}
     for task, requirements in REQUIREMENTS.items():
+        if tasks is not None and task not in tasks: continue
         missing = []
         for requirement in [*("@" + item for item in COMMON), *requirements]:
-            if requirement.startswith("@"):
+            if task == "nv_reason_ct_report" and requirement == "envs/nv-reason-ct/bin/python":
+                path = nv_reason_python()
+            elif requirement.startswith("@"):
                 path = APP_ROOT / requirement[1:]
             elif requirement.startswith("envs/"):
                 path = RUNTIME_ROOT / requirement
@@ -395,9 +430,26 @@ def audit() -> dict[str, dict]:
         orientation = MODEL_ROOT / "orientation-validation" / f"{task}.json"
         report[task] = {"ready": not missing, "missing": missing,
                         "orientation_ready": orientation.is_file()}
+        if task == "nv_reason_ct_report":
+            report[task]["acceptance_ready"] = report_acceptance_ready()
+    # Native tasks have the same installed-runtime contract as the production catalog.
+    for task in set(tasks or []) - REQUIREMENTS.keys():
+        missing = []
+        try:
+            from totalsegmentator.map_to_binary import class_map
+            if task not in class_map: missing.append("unknown TotalSegmentator task")
+        except ImportError:
+            missing.append("TotalSegmentator runtime")
+        if not (Path(sys.executable).parent / "TotalSegmentator").is_file() and not shutil.which("TotalSegmentator"):
+            missing.append("TotalSegmentator executable")
+        missing.extend(name for name in COMMON if not (APP_ROOT / name).is_file())
+        report[task] = {"ready": not missing, "missing": missing, "orientation_ready": True, "native": True}
     return report
 
 
 if __name__ == "__main__":
-    json.dump(audit(), sys.stdout, sort_keys=True)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--tasks", nargs="+", help="Audit only these external or native tasks")
+    args = parser.parse_args()
+    json.dump(audit(args.tasks), sys.stdout, sort_keys=True)
     print()

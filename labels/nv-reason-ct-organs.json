@@ -1,0 +1,323 @@
+{
+  "lungs": {
+    "headings": [
+      "Lungs and airways",
+      "Lungs",
+      "Airways",
+      "Lungs and pleura",
+      "Pleura"
+    ],
+    "classes": [
+      "lung_upper_lobe_left",
+      "lung_lower_lobe_left",
+      "lung_upper_lobe_right",
+      "lung_middle_lobe_right",
+      "lung_lower_lobe_right"
+    ],
+    "minimum_ml": 1000,
+    "terms": [
+      "lung",
+      "lungs",
+      "pulmonary",
+      "airway",
+      "airways",
+      "bronchial",
+      "bronchi",
+      "pneumothorax",
+      "pleural",
+      "pneumonia",
+      "emphysema"
+    ],
+    "require_all": true
+  },
+  "heart": {
+    "headings": [
+      "Heart and pericardium",
+      "Heart",
+      "Cardiovascular",
+      "Heart and great vessels"
+    ],
+    "classes": [
+      "heart"
+    ],
+    "minimum_ml": 100,
+    "terms": [
+      "heart",
+      "cardiac",
+      "pericardial",
+      "pericardium",
+      "cardiomegaly"
+    ],
+    "require_all": false
+  },
+  "liver": {
+    "headings": [
+      "Liver and biliary system",
+      "Liver",
+      "Liver and gallbladder"
+    ],
+    "classes": [
+      "liver"
+    ],
+    "minimum_ml": 500,
+    "terms": [
+      "liver",
+      "hepatic",
+      "biliary"
+    ],
+    "require_all": false
+  },
+  "gallbladder": {
+    "headings": [
+      "Gallbladder",
+      "Gallbladder and bile ducts"
+    ],
+    "classes": [
+      "gallbladder"
+    ],
+    "minimum_ml": 5,
+    "terms": [
+      "gallbladder",
+      "cholelithiasis"
+    ],
+    "require_all": false
+  },
+  "spleen": {
+    "headings": [
+      "Spleen"
+    ],
+    "classes": [
+      "spleen"
+    ],
+    "minimum_ml": 50,
+    "terms": [
+      "spleen",
+      "splenic",
+      "splenomegaly"
+    ],
+    "require_all": false
+  },
+  "pancreas": {
+    "headings": [
+      "Pancreas"
+    ],
+    "classes": [
+      "pancreas"
+    ],
+    "minimum_ml": 20,
+    "terms": [
+      "pancreas",
+      "pancreatic"
+    ],
+    "require_all": false
+  },
+  "kidneys": {
+    "headings": [
+      "Kidneys and urinary tract",
+      "Kidneys",
+      "Kidneys and ureters"
+    ],
+    "classes": [
+      "kidney_left",
+      "kidney_right"
+    ],
+    "minimum_ml": 100,
+    "terms": [
+      "kidney",
+      "kidneys",
+      "renal",
+      "hydronephrosis"
+    ],
+    "require_all": true
+  },
+  "adrenals": {
+    "headings": [
+      "Adrenal glands",
+      "Adrenals"
+    ],
+    "classes": [
+      "adrenal_gland_left",
+      "adrenal_gland_right"
+    ],
+    "minimum_ml": 2,
+    "terms": [
+      "adrenal",
+      "adrenals"
+    ],
+    "require_all": true
+  },
+  "bladder": {
+    "headings": [
+      "Urinary bladder",
+      "Bladder"
+    ],
+    "classes": [
+      "urinary_bladder"
+    ],
+    "minimum_ml": 20,
+    "terms": [
+      "bladder"
+    ],
+    "require_all": false
+  },
+  "bowel": {
+    "headings": [
+      "Bowel",
+      "Gastrointestinal tract",
+      "Stomach and bowel"
+    ],
+    "classes": [
+      "stomach",
+      "small_bowel",
+      "colon"
+    ],
+    "minimum_ml": 100,
+    "terms": [
+      "bowel",
+      "colon",
+      "colonic",
+      "stomach",
+      "gastric",
+      "intestinal"
+    ],
+    "require_all": true
+  },
+  "bones": {
+    "headings": [
+      "Bones",
+      "Bones and soft tissues",
+      "Osseous structures"
+    ],
+    "classes": [
+      "vertebrae_*",
+      "rib_*",
+      "hip_*",
+      "sacrum",
+      "sternum",
+      "costal_cartilages"
+    ],
+    "minimum_ml": 100,
+    "terms": [
+      "bone",
+      "bones",
+      "osseous",
+      "vertebral",
+      "spine",
+      "rib",
+      "ribs"
+    ],
+    "require_all": false,
+    "regional_presence": true,
+    "regional_classes": {
+      "chest": [
+        "vertebrae_T*",
+        "rib_*",
+        "sternum",
+        "costal_cartilages"
+      ],
+      "abdomen": [
+        "vertebrae_L*",
+        "vertebrae_T*",
+        "rib_*",
+        "hip_*",
+        "sacrum"
+      ]
+    }
+  },
+  "aorta": {
+    "headings": [
+      "Aorta",
+      "Vasculature",
+      "Vessels"
+    ],
+    "classes": [
+      "aorta"
+    ],
+    "minimum_ml": 10,
+    "terms": [
+      "aorta",
+      "aortic"
+    ],
+    "require_all": false
+  },
+  "esophagus": {
+    "headings": [
+      "Esophagus"
+    ],
+    "classes": [
+      "esophagus"
+    ],
+    "minimum_ml": 5,
+    "terms": [
+      "esophagus",
+      "esophageal"
+    ],
+    "require_all": false
+  },
+  "thyroid": {
+    "headings": [
+      "Thyroid",
+      "Thyroid gland"
+    ],
+    "classes": [
+      "thyroid_gland"
+    ],
+    "minimum_ml": 5,
+    "terms": [
+      "thyroid"
+    ],
+    "require_all": false
+  },
+  "mediastinum": {
+    "headings": [
+      "Mediastinum and hila"
+    ],
+    "classes": [
+      "heart",
+      "aorta",
+      "esophagus",
+      "trachea"
+    ],
+    "minimum_ml": 0,
+    "terms": [],
+    "require_all": false
+  },
+  "great_vessels": {
+    "headings": [
+      "Great vessels"
+    ],
+    "classes": [
+      "aorta",
+      "pulmonary_vein"
+    ],
+    "minimum_ml": 0,
+    "terms": [],
+    "require_all": false
+  },
+  "chest_wall": {
+    "headings": [
+      "Chest wall and breast"
+    ],
+    "classes": [
+      "rib_*",
+      "sternum",
+      "costal_cartilages"
+    ],
+    "minimum_ml": 0,
+    "terms": [],
+    "require_all": false
+  },
+  "bowel_appendix": {
+    "headings": [
+      "Bowel and appendix"
+    ],
+    "classes": [
+      "small_bowel",
+      "colon",
+      "duodenum"
+    ],
+    "minimum_ml": 0,
+    "terms": [],
+    "require_all": false
+  }
+}

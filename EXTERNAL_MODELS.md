@@ -1,6 +1,22 @@
 # External model integration ledger
 
-This ledger distinguishes automatic models from prompted tools and records whether a release can be reproduced. The records below describe historical integration runs. Current selection depends on runtime preflight, orientation evidence and the enabled-model policy. Research use only; execution and geometry results do not establish clinical accuracy.
+This ledger distinguishes automatic models from prompted tools and records whether a release can be reproduced. The records below describe historical integration runs. Current selection depends on runtime preflight, segmentation orientation evidence or separate report acceptance, and the enabled-model policy. Research use only; execution and geometry results do not establish clinical accuracy.
+
+
+## NVIDIA NV-Reason-CT draft reports (2026-10-15)
+
+Task `nv_reason_ct_report` produces JSON, Markdown and HTML for diagnostic chest/abdomen CT; it does not produce RTSTRUCTs. [Publisher and license](https://huggingface.co/nvidia/NV-Reason-CT): OpenMDW-1.1, revision `386b93e034983f6c1fc841a43833a1b6a0cd9c13`. The checkpoint SHA-256 is `655c15e59dfa1957f7d5f475b1702d689fb7107160f21256028391bb5f6e6ba5` (10,644,167,648 bytes).
+
+Manager-run technical acceptance of the earlier implementation on an H100 produced a chest report for public MSD lung CT with `total` segmentation and an abdomen report for public KiTS19 case 00000 with a report-only job. The chest used the publisher crop; the abdomen used a segmentation-guided crop after publisher fallback. Both crops contained 100% of the segmented regional organs. Full-resolution coverage took 275–313 s, model loading 21–25 s, and warm-cache generation 57–64 s for about 400 tokens. Peak model-process allocation was 11.2 GiB; plan for approximately 12 GiB model VRAM, with the worker requiring 14 GiB free before loading. The production-tree port and default fast coverage require new GPU checks; these historical results are not acceptance of this version.
+
+Known limitations:
+
+- Without anatomical gating, the model describes organs outside the field of view. It can generate confident findings from unreadable input. Coverage masks can also be wrong.
+- On public KiTS19 case 00000, it described a 7.8 mL (about 2.6 cm) renal tumour as a hypodensity “too small to characterize”. Segmentation checks do not validate diagnostic findings.
+- CBCT is refused. A negative CBCT header check does not establish diagnostic image quality.
+- Use an sm_80-class or newer CUDA GPU. A 24 GiB Pascal GPU could not run the model: bf16 SDPA exhausted memory, fp16 failed in cuDNN conv3d, and disabling cuDNN also exhausted memory. Per-task SSH routing supports a separate compatible worker.
+
+TotalSegmentator `total --fast` (3 mm) is the default coverage mode, without an ROI subset; `RTSEG_NV_REASON_CT_COVERAGE_MODE=full` restores full resolution. Fast/full region and group-status comparison is pending GPU execution. Report availability uses `validation/nv_reason_ct_report.json`, independently of segmentation orientation markers. Radiologist review is required; technical acceptance and local drafting do not establish clinical or manuscript readiness.
 
 ## Spinal Cord Toolbox 7.3 (2026-08-13)
 

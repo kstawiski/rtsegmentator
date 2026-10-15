@@ -17,6 +17,7 @@ import zipfile
 from pathlib import Path
 
 import pydicom
+from nv_reason_ct_report import TASK as REPORT_TASK, detect_cbct
 import numpy as np
 from PIL import Image
 import asyncio
@@ -33,12 +34,17 @@ WORKER = os.environ.get("SEGMENTATION_WORKER", "worker@rtsegmentator-worker")
 WORKER_MODE = os.environ.get("WORKER_MODE", "local").lower()
 if WORKER_MODE not in {"local", "ssh", "colab", "auto"}:
     raise RuntimeError("WORKER_MODE must be 'local', 'ssh', 'colab', or 'auto'")
+REMOTE_GPU_TASKS = {name.strip() for name in os.environ.get("REMOTE_GPU_TASKS", "").split(",") if name.strip()}
+REMOTE_NV_REASON_CT_COVERAGE_MODE = os.environ.get("RTSEG_NV_REASON_CT_COVERAGE_MODE", "fast")
 REMOTE_BASE = os.environ.get("REMOTE_JOB_ROOT", "/home/worker/jobs")
 REMOTE_PYTHON = os.environ.get("REMOTE_PYTHON", "/opt/rtsegmentator/venv/bin/python")
 REMOTE_RUNNER = os.environ.get("REMOTE_RUNNER", "/app/run_task.py")
 REMOTE_APP_ROOT = os.environ.get("REMOTE_APP_ROOT", str(Path(REMOTE_RUNNER).parent))
 REMOTE_MODEL_ROOT = os.environ.get("REMOTE_MODEL_ROOT", "/models")
 REMOTE_RUNTIME_ROOT = os.environ.get("REMOTE_RUNTIME_ROOT", REMOTE_MODEL_ROOT)
+REMOTE_SCRATCH_ROOT = os.environ.get("REMOTE_SCRATCH_ROOT", "")
+REMOTE_NV_REASON_CT_CACHE = os.environ.get("REMOTE_NV_REASON_CT_CACHE", "")
+REMOTE_TOTALSEG_WEIGHTS_PATH = os.environ.get("REMOTE_TOTALSEG_WEIGHTS_PATH", "")
 LOCAL_PYTHON = os.environ.get("LOCAL_PYTHON", sys.executable)
 LOCAL_RUNNER = os.environ.get("LOCAL_RUNNER", str(Path(__file__).parent / "run_task.py"))
 COLAB_CLI = os.environ.get("COLAB_CLI", "colab")
@@ -68,6 +74,15 @@ metadata_lock = threading.Lock()
 
 FALLBACK_TASKS = ["total", "total_mr", "total_v3", "body", "body_mr", "vertebrae_mr", "lung_vessels", "lung_vessels_LEGACY", "cerebral_bleed", "hip_implant", "coronary_arteries", "coronary_arteries_LEGACY", "pleural_pericard_effusion", "head_glands_cavities", "head_muscles", "headneck_bones_vessels", "headneck_muscles", "liver_vessels", "liver_segments", "liver_segments_mr", "liver_lesions", "liver_lesions_mr", "oculomotor_muscles", "lung_nodules", "kidney_cysts", "breasts", "ventricle_parts", "tissue_types", "tissue_types_mr", "tissue_4_types", "brain_structures", "vertebrae_body", "face", "thigh_shoulder_muscles", "thigh_shoulder_muscles_mr", "appendicular_bones", "appendicular_bones_mr", "aortic_sinuses", "heartchambers_highres", "trunk_cavities", "brain_aneurysm"]
 EXTERNAL_TASKS = {
+    "nv_reason_ct_report": {
+        "modality": "CT", "modalities": ["CT"], "output": "report",
+        "description": "NVIDIA NV-Reason-CT research-only AI draft report; requires review by a radiologist. "
+                       "Segmentation checks anatomical coverage and guides the crop.",
+        "structures": "Report (JSON, Markdown and HTML with crop thumbnails); no RTSTRUCT",
+        "reference": "https://huggingface.co/nvidia/NV-Reason-CT", "license": "OpenMDW-1.1",
+        "limitations": "Diagnostic chest/abdomen CT only; CBCT refused. May describe absent organs or invent "
+                       "findings on unreadable images. Segmentation checks do not establish diagnostic accuracy.",
+    },
     "dotatate_pet_lesions": {
         "modality": "PT",
         "description": "Publisher-supplied PET-only five-fold ONNX ensemble for somatostatin-receptor PET",
@@ -606,11 +621,11 @@ function loadPromptSlice(){let s=document.querySelector('[name=series_key]:check
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function refreshPrompt(){refreshPostprocess();let selected=[...document.querySelectorAll('[name=models]:checked')],prompted=selected.filter(x=>x.dataset.prompt),show=prompted.length>0;document.querySelector('#promptPanel').hidden=!show;if(show){let names=prompted.map(x=>x.value),notes=[];if(names.includes('pam_prompted'))notes.push('<b>PAM:</b> place one positive point inside the target, or draw a tight two-corner box. It propagates that seed through the 3D volume.');if(names.includes('sat3d_prompted'))notes.push('<b>SAT3D:</b> requires at least one positive point inside the tumour. Add negative points in nearby structures that must be excluded.');if(names.includes('sam_med2d_prompted'))notes.push('<b>SAM-Med2D:</b> use points or a box on every slice you want contoured; it does not propagate to unprompted slices.');if(names.includes('medsam_vit_b_box_2d'))notes.push('<b>MedSAM:</b> draw a tight box around the object on one slice. This original ViT-B release segments only that slice and does not propagate.');if(names.includes('medical_sam3_3d_prompted'))notes.push('<b>Medical-SAM3:</b> draw a tight box on one seed slice and set <code>text</code> to the medical concept (for example <code>spleen</code> or <code>lung lesions</code>). It predicts the publisher-defined eight-slice window.');if(names.includes('sam_med3d_turbo_prompted'))notes.push('<b>SAM-Med3D Turbo:</b> place a positive point well inside the desired 3-D object; optional negative points suppress adjacent anatomy. A box is interpreted as its 3-D centre point.');if(names.includes('medsam2_ct_lesion_prompted'))notes.push('<b>MedSAM2:</b> place positive/negative points or draw a tight 2-D box on one axial lesion slice. The CT-lesion checkpoint propagates that prompt in both slice directions.');if(names.includes('medical_sam2_prompted_ct'))notes.push('<b>Medical-SAM2:</b> place points or a tight 2-D box on one axial object slice. This distinct ImprintLab release propagates through the volume.');if(names.includes('nninteractive_v1_prompted'))notes.push('<b>nnInteractive:</b> place a positive point inside the desired 3-D object, optionally add exclusion points, or draw a tight 2-D box on one slice.');if(names.includes('vista3d_prompted_ct'))notes.push('<b>VISTA3D:</b> place at least one positive point inside the desired CT object; optional negative points suppress nearby anatomy.');if(names.includes('segvol_prompted_ct'))notes.push('<b>SegVol:</b> provide an anatomy/lesion text description, positive and optional negative points, or a 3-D box. Text and spatial prompts may be combined.');if(names.includes('voxtell_v1_1_text_prompted'))notes.push('<b>VoxTell:</b> edit the advanced prompt JSON and set <code>text</code> to one anatomical structure, tumour, lesion or clinical description. Points and boxes are ignored.');document.querySelector('#promptGuidance').innerHTML=notes.join('<br><br>')+'<br><br><small><b>Examples:</b> positive point <code>[256,240,84]</code>; box corners <code>[[210,190,84],[330,300,84]]</code>; text <code>"spleen"</code>.</small>';loadPromptSlice()}}
 function refreshPostprocess(){let selected=!!document.querySelector('[name=models][value="total"]:checked'),box=document.querySelector('#prostatePostprocess');document.querySelector('#postprocessPanel').hidden=!selected;box.disabled=!selected;if(!selected)box.checked=false}
-function isMrTask(n){return n.endsWith('_mr')||n.includes('_mr_')||n==='brain_aneurysm'} function applyModality(reset=true){let chosen=document.querySelector('[name=series_key]:checked');if(!chosen)return;let modality=chosen.dataset.modality;document.querySelectorAll('[name=models]').forEach(x=>{let compatible=x.dataset.modalities.split(',').includes(modality);x.disabled=!compatible||x.dataset.enabled!=='true';if(reset||x.disabled)x.checked=false});let d=document.querySelector(`[name=models][value="${modality==='MR'?'total_mr':modality==='CT'?'total':'__none__'}"]`);if(reset&&d&&!d.disabled)d.checked=true;document.querySelector('#submit').disabled=!document.querySelector('[name=models]:not(:disabled)');refreshPrompt()}
-function category(t){if(t.prompt)return 'Interactive prompted models';if(t.enabled===false)return 'Unavailable / pending models';if(t.name.startsWith('gouhfi_'))return 'GOUHFI — brain MRI';if(t.name.startsWith('sct_'))return 'Spinal Cord Toolbox';if(t.name.startsWith('cads_open_'))return 'CADS — open whole-body CT';if(t.name.startsWith('universal_model_'))return 'UniversalModel — organs and tumours';if(t.name.startsWith('multitalent_'))return 'MultiTalent — multi-dataset CT';if(t.name.startsWith('pycad_'))return 'PYCAD Model Zoo';if(t.name.startsWith('isrt_'))return 'Involved-site radiotherapy (CTV)';if(t.name.startsWith('moose_'))return 'MOOSE — clinical CT';if(t.name.startsWith('mrannotator_')||['mrsegmentator','mrsegmentator_body_comp','mrisegmentator','vibesegmentator'].includes(t.name))return 'Packaged broad MRI models';if(t.name==='totalspineseg')return 'Spine models';if(t.name.startsWith('lungmask_'))return 'Lung and thoracic models';if(t.name.startsWith('nnunetv1_'))return 'Legacy nnU-Net v1 model zoo';if(t.name.startsWith('bamf_')||t.name==='cervix_cbct')return 'Packaged nnU-Net v2 models';if(/ln|lymph|gtv|tumou?r|hnlnl|raidionics|pediatric/.test(t.name+' '+(t.description||'')))return 'Lymph nodes and tumours';return `TotalSegmentator — ${t.modality}`}
+function isMrTask(n){return n.endsWith('_mr')||n.includes('_mr_')||n==='brain_aneurysm'} function applyModality(reset=true){let chosen=document.querySelector('[name=series_key]:checked');if(!chosen)return;let modality=chosen.dataset.modality;document.querySelectorAll('[name=models]').forEach(x=>{let compatible=x.dataset.modalities.split(',').includes(modality);x.disabled=!compatible||x.dataset.enabled!=='true'||(x.value==='nv_reason_ct_report'&&chosen.dataset.cbct==='true');if(reset||x.disabled)x.checked=false});let d=document.querySelector(`[name=models][value="${modality==='MR'?'total_mr':modality==='CT'?'total':'__none__'}"]`);if(reset&&d&&!d.disabled)d.checked=true;document.querySelector('#submit').disabled=!document.querySelector('[name=models]:not(:disabled)');refreshPrompt()}
+function category(t){if(t.output==='report')return 'Research AI draft reports';if(t.prompt)return 'Interactive prompted models';if(t.enabled===false)return 'Unavailable / pending models';if(t.name.startsWith('gouhfi_'))return 'GOUHFI — brain MRI';if(t.name.startsWith('sct_'))return 'Spinal Cord Toolbox';if(t.name.startsWith('cads_open_'))return 'CADS — open whole-body CT';if(t.name.startsWith('universal_model_'))return 'UniversalModel — organs and tumours';if(t.name.startsWith('multitalent_'))return 'MultiTalent — multi-dataset CT';if(t.name.startsWith('pycad_'))return 'PYCAD Model Zoo';if(t.name.startsWith('isrt_'))return 'Involved-site radiotherapy (CTV)';if(t.name.startsWith('moose_'))return 'MOOSE — clinical CT';if(t.name.startsWith('mrannotator_')||['mrsegmentator','mrsegmentator_body_comp','mrisegmentator','vibesegmentator'].includes(t.name))return 'Packaged broad MRI models';if(t.name==='totalspineseg')return 'Spine models';if(t.name.startsWith('lungmask_'))return 'Lung and thoracic models';if(t.name.startsWith('nnunetv1_'))return 'Legacy nnU-Net v1 model zoo';if(t.name.startsWith('bamf_')||t.name==='cervix_cbct')return 'Packaged nnU-Net v2 models';if(/ln|lymph|gtv|tumou?r|hnlnl|raidionics|pediatric/.test(t.name+' '+(t.description||'')))return 'Lymph nodes and tumours';return `TotalSegmentator — ${t.modality}`}
 const baseCategory=category;category=t=>t.name.startsWith('fastsurfer')?'FastSurfer — brain MRI':baseCategory(t);
 let modelCatalog=[];
-function renderCatalog(){let selected=new Set([...document.querySelectorAll('[name=models]:checked')].map(x=>x.value)),site=document.querySelector('#clinicalFilter').value,q=document.querySelector('#modelSearch').value.trim().toLowerCase(),visible=modelCatalog.filter(t=>(!site||(t.clinical_tags||[]).some(x=>x.id===site))&&(!q||[t.name,t.description,t.structures,...(t.clinical_tags||[]).map(x=>x.label)].join(' ').toLowerCase().includes(q))),groups={};visible.forEach(t=>(groups[category(t)]??=[]).push(t));taskbox.innerHTML=visible.length?Object.entries(groups).map(([group,tasks])=>`<section class="task-group"><h3>${esc(group)} <small>(${tasks.length})</small></h3><table class="model-table"><thead><tr><th class="pick">Use</th><th class="name">Model</th><th class="output">Purpose / output</th><th class="status-col">Status</th></tr></thead><tbody>${tasks.map(t=>`<tr class="${t.enabled===false?'unavailable':''}"><td class="pick"><input aria-label="Select ${esc(t.name)}" type="checkbox" name="models" value="${esc(t.name)}" data-modality="${esc(t.modality)}" data-modalities="${esc((t.modalities||[t.modality]).join(','))}" data-enabled="${t.enabled!==false}" data-prompt="${esc(t.prompt||'')}" ${selected.has(t.name)?'checked':''}></td><td class="name"><b>${esc(t.name)}</b>${t.licensed?' 🔑':''}${t.reference?`<br><small><a href="${esc(t.reference)}" target="_blank" rel="noopener">Reference ↗</a></small>`:''}<br>${(t.clinical_tags||[]).map(x=>`<span class="site-tag">${esc(x.label)}</span>`).join('')}</td><td class="output"><small>${esc(t.description||'')}${t.structures?`<br><b>Output:</b> ${esc(t.structures)}`:''}</small></td><td><span class="badge ${t.enabled!==false?'ready':''}">${esc(t.enabled===false?(t.status||'unavailable'):(t.status||'available'))}</span></td></tr>`).join('')}</tbody></table></section>`).join(''):'<p style="padding:12px">No models match this tumor site and search.</p>';document.querySelectorAll('[name=models]').forEach(x=>x.onchange=refreshPrompt);applyModality(false)}
+function renderCatalog(){let selected=new Set([...document.querySelectorAll('[name=models]:checked')].map(x=>x.value)),site=document.querySelector('#clinicalFilter').value,q=document.querySelector('#modelSearch').value.trim().toLowerCase(),visible=modelCatalog.filter(t=>(!site||(t.clinical_tags||[]).some(x=>x.id===site))&&(!q||[t.name,t.description,t.structures,...(t.clinical_tags||[]).map(x=>x.label)].join(' ').toLowerCase().includes(q))),groups={};visible.forEach(t=>(groups[category(t)]??=[]).push(t));taskbox.innerHTML=visible.length?Object.entries(groups).map(([group,tasks])=>`<section class="task-group"><h3>${esc(group)} <small>(${tasks.length})</small></h3><table class="model-table"><thead><tr><th class="pick">Use</th><th class="name">Model</th><th class="output">Purpose / output</th><th class="status-col">Status</th></tr></thead><tbody>${tasks.map(t=>`<tr class="${t.enabled===false?'unavailable':''}"><td class="pick"><input aria-label="Select ${esc(t.name)}" type="checkbox" name="models" value="${esc(t.name)}" data-modality="${esc(t.modality)}" data-modalities="${esc((t.modalities||[t.modality]).join(','))}" data-enabled="${t.enabled!==false}" data-prompt="${esc(t.prompt||'')}" ${selected.has(t.name)?'checked':''}></td><td class="name"><b>${esc(t.name)}</b>${t.licensed?' 🔑':''}${t.reference?`<br><small><a href="${esc(t.reference)}" target="_blank" rel="noopener">Reference ↗</a></small>`:''}<br>${(t.clinical_tags||[]).map(x=>`<span class="site-tag">${esc(x.label)}</span>`).join('')}</td><td class="output"><small>${esc(t.description||'')}${t.structures?`<br><b>Output:</b> ${esc(t.structures)}`:''}${t.license?`<br><b>License:</b> ${esc(t.license)}`:''}${t.limitations?`<br><b>Limitations:</b> ${esc(t.limitations)}`:''}</small></td><td><span class="badge ${t.enabled!==false?'ready':''}">${esc(t.enabled===false?(t.status||'unavailable'):(t.status||'available'))}</span></td></tr>`).join('')}</tbody></table></section>`).join(''):'<p style="padding:12px">No models match this tumor site and search.</p>';document.querySelectorAll('[name=models]').forEach(x=>x.onchange=refreshPrompt);applyModality(false)}
 fetch('/api/tasks').then(r=>r.json()).then(x=>{modelCatalog=x.tasks;let f=document.querySelector('#clinicalFilter'),tools=document.querySelector('#clinicalTools');f.innerHTML='<option value="">All tumor sites</option>'+x.clinical_tags.map(t=>`<option value="${esc(t.id)}">${esc(t.label)}</option>`).join('');document.querySelector('#modelForm h2:nth-of-type(2)').after(tools);tools.hidden=false;f.onchange=renderCatalog;document.querySelector('#modelSearch').oninput=renderCatalog;renderCatalog()});
 document.querySelector('#all').onclick=()=>{document.querySelectorAll('[name=models]:not(:disabled)').forEach(x=>x.checked=true);refreshPrompt()}; document.querySelector('#none').onclick=()=>{document.querySelectorAll('[name=models]').forEach(x=>x.checked=false);refreshPrompt()};
 document.querySelector('#promptSlice').oninput=loadPromptSlice;document.querySelector('#clearPrompt').onclick=()=>{prompt={positive_points:[],negative_points:[],box:null,text:'lymph node'};boxCorner=null;writePrompt()};document.querySelector('#promptImage').onclick=e=>{let s=document.querySelector('[name=series_key]:checked'),r=e.target.getBoundingClientRect(),p=[Math.max(0,Math.min(+s.dataset.cols-1,Math.round((e.clientX-r.left)/r.width*+s.dataset.cols))),Math.max(0,Math.min(+s.dataset.rows-1,Math.round((e.clientY-r.top)/r.height*+s.dataset.rows))),+document.querySelector('#promptSlice').value],m=document.querySelector('#promptMode').value;if(m==='box'){if(!boxCorner)boxCorner=p;else{if(boxCorner[2]!==p[2]){alert('Both box corners must be on the same slice');return}prompt.box=[boxCorner,p];boxCorner=null}}else prompt[m+'_points'].push(p);writePrompt()};writePrompt();
@@ -651,11 +666,11 @@ async function uploadSession(key='seg'){
 }
 async function assessSession(){let base=await uploadSession();await uploadRequest(base+'/assess',{method:'POST'});for(;;){await uploadSleep(1000);let x=(await uploadRequest(base)).body;if(x.status==='ready')return x.result;if(x.status==='failed')throw Error(x.error||'Inspection failed')}}
 document.querySelector('#cropForm').onsubmit=async e=>{e.preventDefault();let b=document.querySelector('#cropSubmit');b.disabled=true;try{if(!uploadForms.crop.files.length)throw Error('Select CT + RTSTRUCT files, a folder or ZIP first.');let margin=Number(document.querySelector('#cropMargin').value);if(!Number.isFinite(margin)||margin<0)throw Error('Margin must be finite and non-negative.');let base=await uploadSession('crop'),fd=new FormData();fd.append('margin_mm',String(margin*10));fd.append('keep_uids',String(document.querySelector('#cropKeepUids').checked));let x=(await uploadRequest(base+'/prostate-sbrt-crop',{method:'POST',body:fd})).body;ids.unshift(x.id);localStorage.setItem('dicomJobs',JSON.stringify(ids.slice(0,30)));uploadStatus('CPU crop queued. Follow progress and download in Jobs below.',false,'crop');poll()}catch(x){uploadStatus(x.message,true,'crop')}finally{b.disabled=false}};
-document.querySelector('#uploadForm').onsubmit=async e=>{e.preventDefault();let b=document.querySelector('#inspect');b.disabled=true;b.textContent='Uploading…';try{if(!uploadForms.seg.files.length)throw Error('Select DICOM files, a DICOM folder or a ZIP archive first.');let x=await assessSession();uploadId=x.upload_id;uploadStatus('Upload and inspection complete.');document.querySelector('#assessment').innerHTML=`<b>${x.series.length} valid series detected.</b> ${x.ignored} invalid or non-image file(s) will be ignored.`;document.querySelector('#series').innerHTML=x.series.map((s,i)=>`<label class="task" style="display:block"><input type="radio" name="series_key" value="${s.key}" data-modality="${s.modality}" data-slices="${s.slices}" data-rows="${s.rows}" data-cols="${s.columns}" ${i===0?'checked':''}> <b>${s.modality}</b> · ${s.slices} slices · ${s.rows}×${s.columns} · ${s.description||'No series description'} <small>${s.series_uid}</small></label>`).join('');document.querySelectorAll('[name=series_key]').forEach(x=>x.onchange=()=>{applyModality();let s=document.querySelector('[name=series_key]:checked');document.querySelector('#promptSlice').max=+s.dataset.slices-1;document.querySelector('#promptSlice').value=Math.floor(+s.dataset.slices/2);loadPromptSlice()});document.querySelector('#modelForm').hidden=false;let s=document.querySelector('[name=series_key]:checked');document.querySelector('#promptSlice').max=+s.dataset.slices-1;document.querySelector('#promptSlice').value=Math.floor(+s.dataset.slices/2);applyModality()}catch(x){uploadStatus(x.message,true);alert(x.message)}finally{b.disabled=false;b.textContent='Inspect upload'}};
+document.querySelector('#uploadForm').onsubmit=async e=>{e.preventDefault();let b=document.querySelector('#inspect');b.disabled=true;b.textContent='Uploading…';try{if(!uploadForms.seg.files.length)throw Error('Select DICOM files, a DICOM folder or a ZIP archive first.');let x=await assessSession();uploadId=x.upload_id;uploadStatus('Upload and inspection complete.');document.querySelector('#assessment').innerHTML=`<b>${x.series.length} valid series detected.</b> ${x.ignored} invalid or non-image file(s) will be ignored.`;document.querySelector('#series').innerHTML=x.series.map((s,i)=>`<label class="task" style="display:block"><input type="radio" name="series_key" value="${s.key}" data-modality="${s.modality}" data-cbct="${!!s.cbct}" data-slices="${s.slices}" data-rows="${s.rows}" data-cols="${s.columns}" ${i===0?'checked':''}> <b>${s.modality}</b> · ${s.slices} slices · ${s.rows}×${s.columns} · ${esc(s.description||'No series description')} ${s.cbct?`<strong>AI report disabled: ${esc(s.cbct_reason)}</strong>`:''} <small>${s.series_uid}</small></label>`).join('');document.querySelectorAll('[name=series_key]').forEach(x=>x.onchange=()=>{applyModality();let s=document.querySelector('[name=series_key]:checked');document.querySelector('#promptSlice').max=+s.dataset.slices-1;document.querySelector('#promptSlice').value=Math.floor(+s.dataset.slices/2);loadPromptSlice()});document.querySelector('#modelForm').hidden=false;let s=document.querySelector('[name=series_key]:checked');document.querySelector('#promptSlice').max=+s.dataset.slices-1;document.querySelector('#promptSlice').value=Math.floor(+s.dataset.slices/2);applyModality()}catch(x){uploadStatus(x.message,true);alert(x.message)}finally{b.disabled=false;b.textContent='Inspect upload'}};
 document.querySelector('#modelForm').onsubmit=async e=>{e.preventDefault();let b=document.querySelector('#submit');b.disabled=true;b.textContent='Queueing…';try{let fd=new FormData(e.target);let r=await fetch(`/api/uploads/${uploadId}/start`,{method:'POST',body:fd}),x=await r.json();if(!r.ok)throw Error(x.detail||'Could not start job');ids.unshift(x.id);localStorage.setItem('dicomJobs',JSON.stringify(ids.slice(0,30)));document.querySelector('#modelForm').hidden=true;document.querySelector('#assessment').textContent='Selected series queued; unselected files were deleted.';poll()}catch(x){alert(x.message)}finally{b.disabled=false;b.textContent='Queue selected series'}};
 function formatBytes(n){if(!Number.isFinite(n))return '';let u=['B','KiB','MiB','GiB'],i=0;while(n>=1024&&i<u.length-1){n/=1024;i++}return `${n.toFixed(i?1:0)} ${u[i]}`}
 async function retryJob(id){let r=await fetch(`/api/jobs/${encodeURIComponent(id)}/retry`,{method:'POST'}),x=await r.json();if(!r.ok)alert(x.detail||'Retry failed');poll()}
-async function poll(){try{let r=await fetch('/api/jobs'),x=await r.json();ids=x.jobs.map(j=>j.id)}catch(e){}let rows=[];for(const id of ids){try{let r=await fetch('/api/jobs/'+id),j=await r.json(),busy=['queued','transferring','processing','retrieving'].includes(j.status),pct=Number.isFinite(j.progress)?j.progress:null,elapsed=busy?Math.max(0,Math.round((Date.now()/1000-(j.updated||j.created||Date.now()/1000)))):0,bar=busy||pct!==null?`<div class="progress-track"><div class="progress-bar ${pct===null?'active':''}" style="${pct!==null?`width:${pct}%`:''}"></div></div>`:'',transfer=j.status==='transferring'&&j.total_bytes?`<small>${formatBytes(j.transferred_bytes||0)} / ${formatBytes(j.total_bytes)} · ${pct||0}%</small>`:busy?`<small>Active · status updated ${elapsed}s ago</small>`:'';rows.push(`<div class="job"><span class="status">${esc(j.status)}</span> · ${esc(id)}<br><small>${j.models.map(esc).join(', ')}</small>${j.detail?`<div>${esc(j.detail)}</div>`:''}${bar}${transfer}${j.error?`<div class="error">${esc(j.error)}</div>`:''}${j.status==='failed'?`<p><button type="button" onclick="retryJob('${esc(id)}')">Retry using retained input</button></p>`:''}${j.status==='complete'?`<p><a href="/api/jobs/${encodeURIComponent(id)}/download"><button>${j.tool?'Download CT + RTSTRUCT ZIP':'Download RTSTRUCT ZIP'}</button></a></p>`:''}</div>`)}catch(e){}}jobsEl.innerHTML=rows.join('')||'No server jobs yet.'}poll();setInterval(poll,4000);
+async function poll(){try{let r=await fetch('/api/jobs'),x=await r.json();ids=x.jobs.map(j=>j.id)}catch(e){}let rows=[];for(const id of ids){try{let r=await fetch('/api/jobs/'+id),j=await r.json(),busy=['queued','transferring','processing','retrieving'].includes(j.status),pct=Number.isFinite(j.progress)?j.progress:null,elapsed=busy?Math.max(0,Math.round((Date.now()/1000-(j.updated||j.created||Date.now()/1000)))):0,bar=busy||pct!==null?`<div class="progress-track"><div class="progress-bar ${pct===null?'active':''}" style="${pct!==null?`width:${pct}%`:''}"></div></div>`:'',transfer=j.status==='transferring'&&j.total_bytes?`<small>${formatBytes(j.transferred_bytes||0)} / ${formatBytes(j.total_bytes)} · ${pct||0}%</small>`:busy?`<small>Active · status updated ${elapsed}s ago</small>`:'';rows.push(`<div class="job"><span class="status">${esc(j.status)}</span> · ${esc(id)}<br><small>${j.models.map(esc).join(', ')}</small>${j.detail?`<div>${esc(j.detail)}</div>`:''}${bar}${transfer}${j.report_status?`<div>AI report: ${esc(j.report_status)} ${esc(j.report_reason||'')}</div>`:''}${j.report_status&&j.status==='complete'?`<p><a href="/jobs/${encodeURIComponent(id)}/report" target="_blank" rel="noopener">Open AI draft report</a></p>`:''}${j.error?`<div class="error">${esc(j.error)}</div>`:''}${j.status==='failed'?`<p><button type="button" onclick="retryJob('${esc(id)}')">Retry using retained input</button></p>`:''}${j.status==='complete'?`<p><a href="/api/jobs/${encodeURIComponent(id)}/download"><button>${j.tool?'Download CT + RTSTRUCT ZIP':'Download results ZIP'}</button></a></p>`:''}</div>`)}catch(e){}}jobsEl.innerHTML=rows.join('')||'No server jobs yet.'}poll();setInterval(poll,4000);
 </script></body></html>'''
 
 def metadata(job: Path) -> dict:
@@ -763,17 +778,131 @@ def stop_remote_task(remote: str, task: str):
     except (OSError, subprocess.SubprocessError):
         pass
 
+def remote_command(*args):
+    """One shell-quoted command: OpenSSH joins command arguments before remote execution."""
+    return ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", WORKER, shlex.join(args)]
+
+
+def remote_environment():
+    optional = {"RTSEG_SCRATCH_ROOT": REMOTE_SCRATCH_ROOT, "RTSEG_NV_REASON_CT_CACHE": REMOTE_NV_REASON_CT_CACHE,
+                "TOTALSEG_WEIGHTS_PATH": REMOTE_TOTALSEG_WEIGHTS_PATH}
+    return ["env", *[f"{name}={value}" for name, value in optional.items() if value], f"RTSEG_APP_ROOT={REMOTE_APP_ROOT}", f"RTSEG_MODEL_ROOT={REMOTE_MODEL_ROOT}",
+            f"RTSEG_RUNTIME_ROOT={REMOTE_RUNTIME_ROOT}",
+            f"RTSEG_NV_REASON_CT_COVERAGE_MODE={REMOTE_NV_REASON_CT_COVERAGE_MODE}"]
+
+
+def task_uses_remote(task):
+    return WORKER_MODE in {"local", "auto"} and task in REMOTE_GPU_TASKS
+
+
+def ordered_tasks(models):
+    return sorted(dict.fromkeys(models), key=lambda name: name == REPORT_TASK)
+
+
+def reject_report_cbct(input_dir, models):
+    if REPORT_TASK in models and any(g["cbct"] for g in inspect_upload(input_dir)["series"]):
+        raise ValueError("CBCT is not supported for AI reports; diagnostic CT is required")
+
+
+def reset_job_output(job, data):
+    if REPORT_TASK in data.get("models", []):
+        shutil.rmtree(job / "output/report", ignore_errors=True)
+        save_metadata(job, report_status="pending", report_reason="")
+    else:
+        shutil.rmtree(job / "output", ignore_errors=True)
+    (job / "output").mkdir(exist_ok=True)
+
+
+def worker_archive_members(job, tasks):
+    members = ["input"]
+    if (job / "input_ct").is_dir(): members.append("input_ct")
+    if (job / "prompt.json").is_file(): members.append("prompt.json")
+    # The report needs finished contours, not bulky crop packages or previous drafts.
+    if REPORT_TASK in tasks:
+        members.extend(p.relative_to(job).as_posix() for p in sorted((job / "output").glob("*_RTSTRUCT.dcm")))
+    return members
+
+
+def prepare_worker_job(job, remote, tasks):
+    save_metadata(job, status="transferring", detail="Preparing selected DICOM series", progress=0)
+    subprocess.run(remote_command("mkdir", "-p", f"{remote}/input", f"{remote}/output"), check=True, timeout=30)
+    archive = job / "selected-series.tar"
+    try:
+        subprocess.run(["tar", "-C", str(job), "-cf", str(archive), *worker_archive_members(job, tasks)],
+                       check=True, timeout=600)
+        transfer_to_worker(job, archive, f"{remote}/selected-series.tar")
+        subprocess.run(remote_command("tar", "-C", remote, "-xf", f"{remote}/selected-series.tar"),
+                       check=True, timeout=600)
+        subprocess.run(remote_command("rm", "-f", f"{remote}/selected-series.tar"), check=True, timeout=30)
+    finally:
+        archive.unlink(missing_ok=True)
+
+
+def retrieve_worker_results(job, remote, task=None):
+    """Whole SSH jobs copy all output; routed tasks copy only the output they own."""
+    (job / "output").mkdir(exist_ok=True)
+    source = "output/." if task is None else ("output/report" if task == REPORT_TASK else f"output/{task}_RTSTRUCT.dcm")
+    subprocess.run(["scp", "-q", "-r", f"{WORKER}:{remote}/{source}", str(job / "output") + "/"],
+                   check=True, timeout=600)
+
+
+def remove_worker_job(job, remote):
+    subprocess.run(remote_command("rm", "-rf", "--", remote), check=True, timeout=30)
+    save_metadata(job, remote_task_active=None, remote_results_retained=False)
+
+
+def recover_remote_results(job, remote, task=None):
+    try:
+        retrieve_worker_results(job, remote, task)
+        remove_worker_job(job, remote)
+    except Exception:
+        save_metadata(job, remote_results_retained=True)
+        raise
+
+
+def run_remote_gpu_task(job, task, index, total):
+    remote = f"{REMOTE_BASE}/{job.name}"
+    prior = metadata(job)
+    if prior.get("remote_results_retained"):
+        recover_remote_results(job, remote, prior.get("remote_task_active"))
+    save_metadata(job, remote_task_active=task, execution_backend="ssh_task")
+    try:
+        prepare_worker_job(job, remote, [task])
+        run_worker_task(job, remote, task, index, total)
+        save_metadata(job, status="retrieving", detail=f"Retrieving {task} results", progress=None)
+        recover_remote_results(job, remote, task)
+    except Exception:
+        # Preserve local contours. If retrieval cannot finish, retain the remote copy for recovery.
+        try: recover_remote_results(job, remote, task)
+        except Exception: pass
+        raise
+
+
+def execute_job_task(job, task, index, total, remote=None):
+    data = metadata(job)
+    report_job = REPORT_TASK in data["models"]
+    if (report_job and task != REPORT_TASK and task in data.get("completed_models", [])
+            and (job / "output" / f"{task}_RTSTRUCT.dcm").is_file()):
+        return
+    if task == REPORT_TASK: save_metadata(job, report_status="running", report_reason="")
+    if remote is not None:
+        run_worker_task(job, remote, task, index, total)
+    elif task_uses_remote(task):
+        run_remote_gpu_task(job, task, index, total)
+    else:
+        run_local_task(job, task, index, total)
+    if report_job:
+        done = metadata(job).get("completed_models", [])
+        save_metadata(job, completed_models=list(dict.fromkeys([*done, task])))
+
+
 def run_worker_task(job: Path, remote: str, task: str, index: int, total: int):
     """Run inference while keeping the portal heartbeat visibly current."""
     detail = f"Running {task} ({index}/{total})"
     log = job / f"{task}.log"
     started = time.monotonic()
     with log.open("w") as output:
-        process = subprocess.Popen(["ssh", WORKER, "env",
-                                    f"RTSEG_APP_ROOT={REMOTE_APP_ROOT}",
-                                    f"RTSEG_MODEL_ROOT={REMOTE_MODEL_ROOT}",
-                                    f"RTSEG_RUNTIME_ROOT={REMOTE_RUNTIME_ROOT}",
-                                    REMOTE_PYTHON, REMOTE_RUNNER, remote, task],
+        process = subprocess.Popen(remote_command(*remote_environment(), REMOTE_PYTHON, REMOTE_RUNNER, remote, task),
                                    stdout=output, stderr=subprocess.STDOUT, text=True)
         while process.poll() is None:
             if time.monotonic() - started > TASK_TIME_LIMIT_SECONDS:
@@ -1008,6 +1137,7 @@ def run_colab_job_on_nfs_worker(job: Path, tasks: list[str] | None = None, final
 
 def colab_capable(task: str) -> bool:
     """Colab has the portable TotalSegmentator runtime, not the NFS model bundle."""
+    if task == REPORT_TASK: return False  # The portable Colab worker does not carry this runtime.
     return (task not in EXTERNAL_TASKS and task not in INFORMATIONAL_MODELS) or task in COLAB_EXTERNAL_TASKS
 
 EMPTY_PREDICTION_MARKERS = ("empty prediction: no RTSTRUCT created",
@@ -1021,7 +1151,9 @@ def is_empty_prediction(exc: Exception) -> bool:
 def finalize_results(job: Path, empty=()):
     results = sorted((job / "output").glob("*.dcm"))
     empty = list(empty)
-    if not results and not empty:
+    report_path = job / "output/report" / (REPORT_TASK + ".json")
+    report = json.loads(report_path.read_text()) if report_path.is_file() else None
+    if not results and not empty and report is None:
         raise RuntimeError("Worker completed without producing an RTSTRUCT file")
     with zipfile.ZipFile(job/"rtstruct-results.zip","w",zipfile.ZIP_DEFLATED) as z:
         nested = sorted(path for path in (job / "output").rglob("*")
@@ -1040,6 +1172,9 @@ def finalize_results(job: Path, empty=()):
         detail = f"RTSTRUCT files ready for download; no structures found by {', '.join(empty)}"
     else:
         detail = "RTSTRUCT files ready for download"
+    if report is not None:
+        detail = "Results ready; AI draft " + report["status"].replace("_", " ")
+        save_metadata(job, report_status=report["status"], report_reason=report.get("reason", ""))
     notes = metadata(job).get("postprocess_notes", [])
     if notes: detail += "; " + "; ".join(notes)
     save_metadata(job,status="complete",detail=detail,progress=100,no_structures_found=empty)
@@ -1048,7 +1183,8 @@ def validate_postprocess(value: str, models: list[str]) -> list[str]:
     if not value: return []
     if value != "prostate_sbrt_crop": raise HTTPException(400, "Unknown postprocess value")
     if "total" not in models: raise HTTPException(400, "prostate_sbrt_crop postprocessing requires the total model")
-    if WORKER_MODE != "local": raise HTTPException(400, "Prostate SBRT postprocessing is available only in local worker mode")
+    if WORKER_MODE != "local" or task_uses_remote("total"):
+        raise HTTPException(400, "Prostate SBRT postprocessing is available only with local total inference")
     return [value]
 
 def note_prostate_not_cropped(job: Path, reason: str):
@@ -1115,6 +1251,10 @@ def inspect_upload(input_dir: Path) -> dict:
                 "frame_uid": str(getattr(ds, "FrameOfReferenceUID", "")),
                 "description": str(getattr(ds, "SeriesDescription", "")), "study_date": str(getattr(ds, "StudyDate", "")),
                 "files": [], "rows": int(ds.Rows), "columns": int(ds.Columns)})
+            check = detect_cbct(ds)
+            g.setdefault("cbct", False)
+            g.setdefault("cbct_reason", check["reason"])
+            if check["is_cbct"]: g.update(cbct=True, cbct_reason=check["reason"])
             g["files"].append(f.name)
         except Exception: ignored += 1
     series=[]
@@ -1142,26 +1282,32 @@ def process(job: Path):
     with queue_lock:
         jid=job.name; remote=f"{REMOTE_BASE}/{jid}"
         try:
-            tasks_to_run = list(metadata(job)["models"])
+            tasks_to_run = ordered_tasks(metadata(job)["models"])
             if WORKER_MODE == "auto":
                 prior = metadata(job)
                 if prior.get("fallback_reason") == "gpu_oom":
-                    unsupported = [name for name in tasks_to_run if not colab_capable(name)]
+                    unsupported = [name for name in tasks_to_run if not task_uses_remote(name) and not colab_capable(name)]
                     if unsupported:
                         raise RuntimeError("Worker GPU previously ran out of memory, but these models are not "
                                            f"validated for Colab: {', '.join(unsupported)}")
                     save_metadata(job, status="transferring",
                                   detail="Resuming Colab fallback after previously confirmed worker GPU OOM",
                                   progress=0, execution_backend="colab")
-                    run_colab_job_on_nfs_worker(job, tasks=tasks_to_run, finalize=False)
+                    local_tasks = [name for name in tasks_to_run if not task_uses_remote(name)]
+                    if local_tasks: run_colab_job_on_nfs_worker(job, tasks=local_tasks, finalize=False)
+                    for index, task in enumerate(tasks_to_run, 1):
+                        if task_uses_remote(task): execute_job_task(job, task, index, len(tasks_to_run))
                     finalize_results(job)
                     return
                 save_metadata(job, status="processing", detail="Starting segmentation on worker GPU",
                               progress=None, execution_backend="local")
                 for index, task in enumerate(tasks_to_run, 1):
+                    if task_uses_remote(task):
+                        execute_job_task(job, task, index, len(tasks_to_run))
+                        continue
                     before = set((job / "output").iterdir())
                     try:
-                        run_local_task(job, task, index, len(tasks_to_run))
+                        execute_job_task(job, task, index, len(tasks_to_run))
                     except Exception as exc:
                         for path in set((job / "output").iterdir()) - before:
                             if path.is_file(): path.unlink(missing_ok=True)
@@ -1171,7 +1317,7 @@ def process(job: Path):
                         if GPU_RELEASE_COMMAND.strip():
                             release_worker_gpu(job, task)
                             try:
-                                run_local_task(job, task, index, len(tasks_to_run))
+                                execute_job_task(job, task, index, len(tasks_to_run))
                                 continue
                             except Exception as retry_exc:
                                 for path in set((job / "output").iterdir()) - before:
@@ -1180,7 +1326,7 @@ def process(job: Path):
                                 if not is_gpu_oom(retry_exc):
                                     raise
                                 exc = retry_exc
-                        remaining = tasks_to_run[index - 1:]
+                        remaining = [name for name in tasks_to_run[index - 1:] if not task_uses_remote(name)]
                         unsupported = [name for name in remaining if not colab_capable(name)]
                         if unsupported:
                             raise RuntimeError("Worker GPU ran out of memory, but these remaining models are not "
@@ -1189,6 +1335,9 @@ def process(job: Path):
                                       detail=f"Worker GPU out of memory during {task}; escalating remaining models to Colab",
                                       progress=0, execution_backend="colab", fallback_reason="gpu_oom")
                         run_colab_job_on_nfs_worker(job, tasks=remaining, finalize=False)
+                        for remote_index, remote_task in enumerate(tasks_to_run[index - 1:], index):
+                            if task_uses_remote(remote_task):
+                                execute_job_task(job, remote_task, remote_index, len(tasks_to_run))
                         break
                 finalize_results(job)
                 return
@@ -1196,9 +1345,9 @@ def process(job: Path):
                 data=metadata(job)
                 save_metadata(job,status="processing",detail="Starting local GPU segmentation",progress=None,postprocess_notes=[])
                 empty=[]
-                for i,task in enumerate(data["models"],1):
+                for i,task in enumerate(tasks_to_run,1):
                     try:
-                        run_local_task(job, task, i, len(data["models"]))
+                        execute_job_task(job, task, i, len(tasks_to_run))
                     except Exception as exc:
                         if not is_empty_prediction(exc):
                             raise
@@ -1221,28 +1370,24 @@ def process(job: Path):
                 else:
                     run_colab_job(job)
                 return
-            save_metadata(job,status="transferring",detail="Preparing selected DICOM series",progress=0)
-            subprocess.run(["ssh",WORKER,"mkdir","-p",f"{remote}/input",f"{remote}/output"],check=True,timeout=30)
-            archive=job/"selected-series.tar"
-            archive_members = ["input"]
-            if (job / "input_ct").is_dir(): archive_members.append("input_ct")
-            if (job / "prompt.json").is_file(): archive_members.append("prompt.json")
-            subprocess.run(["tar","-C",str(job),"-cf",str(archive),*archive_members],check=True,timeout=600)
-            transfer_to_worker(job, archive, f"{remote}/selected-series.tar")
-            archive.unlink(missing_ok=True)
-            subprocess.run(["ssh",WORKER,f"tar -C {remote} -xf {remote}/selected-series.tar && rm -f {remote}/selected-series.tar"],check=True,timeout=600)
+            prepare_worker_job(job, remote, tasks_to_run)
             save_metadata(job,status="processing",detail="GPU segmentation in progress",progress=None)
             for i,task in enumerate(tasks_to_run,1):
-                run_worker_task(job, remote, task, i, len(tasks_to_run))
+                execute_job_task(job, task, i, len(tasks_to_run), remote=remote)
             save_metadata(job,status="retrieving",detail="Retrieving RTSTRUCT results from GPU worker",progress=None)
-            subprocess.run(["scp","-q",f"{WORKER}:{remote}/output/*.dcm",str(job/"output")+"/"],check=True,timeout=600)
+            retrieve_worker_results(job, remote)
+            remove_worker_job(job, remote)
             finalize_results(job)
-            shutil.rmtree(job/"input",ignore_errors=True)
-            subprocess.run(["ssh",WORKER,"rm","-rf",remote],timeout=30)
         except Exception as exc:
-            if WORKER_MODE == "ssh" or (WORKER_MODE == "colab" and COLAB_ORCHESTRATOR == "worker"):
-                subprocess.run(["ssh",WORKER,"rm","-rf",remote],timeout=30)
-            save_metadata(job,status="failed",detail="Processing failed",error=str(exc))
+            report_job = REPORT_TASK in metadata(job).get("models", [])
+            if WORKER_MODE == "ssh" and report_job:
+                try: recover_remote_results(job, remote)
+                except Exception: pass
+            elif WORKER_MODE == "ssh" or (WORKER_MODE == "colab" and COLAB_ORCHESTRATOR == "worker"):
+                try: remove_worker_job(job, remote)
+                except Exception: save_metadata(job, remote_results_retained=True)
+            changes = {"report_status": "failed", "report_reason": "Task failed; see job error"} if report_job else {}
+            save_metadata(job,status="failed",detail="Processing failed",error=str(exc), **changes)
 
 @app.get("/",response_class=HTMLResponse)
 def home(): return HTML
@@ -1296,6 +1441,16 @@ def tasks():
         refresh_catalog_in_background()
     return catalog_state["value"]
 
+def remote_preflight():
+    selected = ["--tasks", *sorted(REMOTE_GPU_TASKS)] if WORKER_MODE in {"local", "auto"} and REMOTE_GPU_TASKS else []
+    cp = subprocess.run(remote_command(*remote_environment(), REMOTE_PYTHON,
+                        str(Path(REMOTE_APP_ROOT) / "model_preflight.py"), *selected),
+                        capture_output=True, text=True, timeout=PREFLIGHT_TIMEOUT_SECONDS, check=True)
+    result = json.loads(cp.stdout.strip().splitlines()[-1])
+    if not isinstance(result, dict): raise ValueError("Remote preflight did not return an object")
+    return result
+
+
 def build_catalog():
     # Catalog is sourced from the installed worker package when available.
     enabled = enabled_external_models()
@@ -1324,17 +1479,22 @@ def build_catalog():
             cp = subprocess.run([python, str(Path(app_root) / "model_preflight.py")],
                                 env=environment, capture_output=True, text=True, timeout=PREFLIGHT_TIMEOUT_SECONDS, check=True)
         elif WORKER_MODE in {"ssh", "colab"}:
-            command = ["ssh", WORKER, "env", f"RTSEG_APP_ROOT={REMOTE_APP_ROOT}",
-                       f"RTSEG_RUNTIME_ROOT={REMOTE_RUNTIME_ROOT}",
-                       f"RTSEG_MODEL_ROOT={REMOTE_MODEL_ROOT}",
-                       REMOTE_PYTHON,
-                       str(Path(REMOTE_APP_ROOT) / "model_preflight.py")]
-            cp = subprocess.run(command, capture_output=True, text=True, timeout=PREFLIGHT_TIMEOUT_SECONDS, check=True)
+            preflight = remote_preflight()
+            cp = None
         else:
             raise RuntimeError("No persistent Colab runtime for model preflight")
-        preflight = json.loads(cp.stdout.strip().splitlines()[-1])
+        if cp is not None: preflight = json.loads(cp.stdout.strip().splitlines()[-1])
     except Exception:
         pass
+    routed_preflight = {}
+    routed_error = None
+    if WORKER_MODE in {"local", "auto"} and REMOTE_GPU_TASKS:
+        try: routed_preflight = remote_preflight()
+        except Exception as exc: routed_error = type(exc).__name__
+        # A local marker must never stand in for evidence on the remote worker.
+        for name in REMOTE_GPU_TASKS:
+            preflight[name] = routed_preflight.get(name, {"ready": False, "missing": ["remote preflight result"],
+                                                         "orientation_ready": False, "acceptance_ready": False})
     structure_map = remote.get("structures",{}) if 'remote' in locals() else {}
     catalog=[{"name":n,"licensed":n in licensed,"modality":task_modality(n),
               "enabled":not (WORKER_MODE == "colab" and n in licensed),
@@ -1351,11 +1511,17 @@ def build_catalog():
             item.update(enabled=False,
                         status=item.get("blocked_status", "dependencies_missing"),
                         missing=check["missing"])
-        orientation_ready = (check.get("orientation_ready", False) if check is not None
-                             else (ORIENTATION_VALIDATION / f"{name}.json").is_file())
-        if not orientation_ready:
-            item.update(enabled=False,
-                        status=item.get("blocked_status", "orientation_revalidation_pending"))
+        if name == REPORT_TASK:
+            if WORKER_MODE == "colab":
+                item.update(enabled=False, status="report_requires_managed_gpu_worker")
+            elif not check or not check.get("acceptance_ready"):
+                item.update(enabled=False, status="report_acceptance_pending")
+        else:
+            orientation_ready = (check.get("orientation_ready", False) if check is not None
+                                 else (ORIENTATION_VALIDATION / f"{name}.json").is_file())
+            if not orientation_ready:
+                item.update(enabled=False,
+                            status=item.get("blocked_status", "orientation_revalidation_pending"))
         item.pop("blocked_status", None)
         if name.startswith("lnsegfm_"):
             item.update(structures="Visible/pathologic head-and-neck lymph-node candidate mask (not elective nodal levels)", reference="https://github.com/HiLab-git/LN-Seg-FM")
@@ -1381,6 +1547,16 @@ def build_catalog():
             item.update(enabled=False, status="orientation_revalidation_pending")
         catalog.append(item)
     for item in catalog:
+        if task_uses_remote(item["name"]):
+            item["execution_backend"] = "ssh"
+            check = routed_preflight.get(item["name"])
+            if routed_error:
+                item.update(enabled=False, status="remote_worker_unreachable_or_preflight_failed",
+                            remote_preflight_error=routed_error)
+            elif not check:
+                item.update(enabled=False, status="remote_preflight_missing")
+            elif not check.get("ready"):
+                item.update(enabled=False, status="dependencies_missing", missing=check.get("missing", []))
         item["clinical_tags"] = clinical_tags(item)
     return {"tasks":catalog, "clinical_tags":[{"id": key, "label": value["label"]}
                                                 for key, value in CLINICAL_TAGS.items()]}
@@ -1613,6 +1789,7 @@ def finish_session_job(session: Path, data: dict, job: Path, crop: bool):
         if crop: process_prostate_sbrt_crop(job)
         else:
             slices, modality = validate_series(job / "input")
+            reject_report_cbct(job / "input", metadata(job)["models"])
             wrong = [m for m in metadata(job)["models"] if task_modality(m) != modality]
             if wrong: raise ValueError(f"The uploaded series is {modality}, but incompatible tasks were selected: {', '.join(wrong)}")
             save_metadata(job, detail=f"{slices} {modality} DICOM slices received")
@@ -1661,7 +1838,7 @@ async def create_session_job(session_id: str, models: list[str]=Form(...), postp
         raise HTTPException(400, "Invalid model selection")
     if "total" in models and "total_mr" in models:
         raise HTTPException(400, "Select either total (CT) or total_mr (MR), not both")
-    return queue_session_job(session_id, {"models":models, "postprocess":postprocessing}, False)
+    return queue_session_job(session_id, {"models":ordered_tasks(models),"report_status":"pending" if REPORT_TASK in models else None, "postprocess":postprocessing}, False)
 
 
 @app.post("/api/uploads")
@@ -1739,6 +1916,8 @@ async def start_assessed(uid: str, series_key: str=Form(...), models: list[str]=
     except Exception: raise HTTPException(404,"Upload not found or expired")
     selected=next((g for g in data["series"] if g["key"]==series_key),None)
     if not selected: raise HTTPException(400,"Selected series was not found")
+    if REPORT_TASK in models and selected.get("cbct"):
+        raise HTTPException(400, "CBCT is not supported for AI reports: " + selected["cbct_reason"])
     available={x["name"] for x in tasks()["tasks"] if x.get("enabled",True)}
     if not models or any(m not in available for m in models): raise HTTPException(400,"Invalid model selection")
     modality=selected["modality"]
@@ -1816,7 +1995,7 @@ async def start_assessed(uid: str, series_key: str=Form(...), models: list[str]=
         for name in companion["files"]: shutil.move(stage/"input"/name, ct_dir/name)
         detail += f"; paired with {companion['slices']} co-referenced CT slices"
     if prompt_data: (job/"prompt.json").write_text(json.dumps(prompt_data,indent=2))
-    (job/"job.json").write_text(json.dumps({"id":jid,"status":"queued","detail":detail,"models":models,"created":time.time(),"error":None,"prompted":bool(prompt_data),"postprocess":postprocessing},indent=2))
+    (job/"job.json").write_text(json.dumps({"id":jid,"status":"queued","detail":detail,"models":ordered_tasks(models),"report_status":"pending" if REPORT_TASK in models else None,"created":time.time(),"error":None,"prompted":bool(prompt_data),"postprocess":postprocessing},indent=2))
     shutil.rmtree(stage,ignore_errors=True); threading.Thread(target=process,args=(job,),daemon=True).start(); return {"id":jid}
 
 @app.post("/api/jobs")
@@ -1840,9 +2019,10 @@ async def create_job(files: list[UploadFile]=File(...), models: list[str]=Form(.
             if zipfile.is_zipfile(target): safe_extract(target,inp); target.unlink()
             else: shutil.move(target,inp/(secrets.token_hex(4)+"_"+name))
         slices, modality=validate_series(inp)
+        reject_report_cbct(inp, models)
         wrong=[m for m in models if task_modality(m) != modality]
         if wrong: raise ValueError(f"The uploaded series is {modality}, but incompatible tasks were selected: {', '.join(wrong)}")
-        (job/"job.json").write_text(json.dumps({"id":jid,"status":"queued","detail":f"{slices} {modality} DICOM slices received","models":models,"created":time.time(),"error":None,"postprocess":postprocessing},indent=2))
+        (job/"job.json").write_text(json.dumps({"id":jid,"status":"queued","detail":f"{slices} {modality} DICOM slices received","models":ordered_tasks(models),"report_status":"pending" if REPORT_TASK in models else None,"created":time.time(),"error":None,"postprocess":postprocessing},indent=2))
     except Exception as exc:
         shutil.rmtree(job,ignore_errors=True); raise HTTPException(400,str(exc))
     threading.Thread(target=process,args=(job,),daemon=True).start(); return {"id":jid}
@@ -1861,7 +2041,8 @@ def list_jobs():
         if not path.is_dir() or path.name.startswith("upload-"): continue
         try:
             data=metadata(path)
-            found.append({"id":data["id"],"status":data["status"],"created":data.get("created",0)})
+            found.append({"id":data["id"],"status":data["status"],"created":data.get("created",0),
+                          "report_status":data.get("report_status"), "report_reason":data.get("report_reason", "")})
         except Exception: pass
     found.sort(key=lambda x:x["created"],reverse=True)
     return {"jobs":found[:100]}
@@ -1874,7 +2055,7 @@ def retry_job(jid: str):
     if data.get("status") != "failed": raise HTTPException(409,"Only failed jobs can be retried")
     if not (job/"input").is_dir() or not any((job/"input").iterdir()):
         raise HTTPException(409,"The retained input series is unavailable; upload it again")
-    shutil.rmtree(job/"output",ignore_errors=True); (job/"output").mkdir()
+    reset_job_output(job, data)
     save_metadata(job,status="queued",detail="Retry queued",error=None,progress=0,model_index=0,
                   recovery_count=int(data.get("recovery_count",0)), fallback_reason=None,
                   execution_backend=None, gpu_release_attempted=False, postprocess_notes=[])
@@ -1890,14 +2071,43 @@ def download(jid: str):
     filename = f"{jid}-prostate-SBRT-crop.zip" if data.get("tool") else f"{jid}-RTSTRUCT.zip"
     return FileResponse(result,filename=filename,media_type="application/zip")
 
+def report_file(jid, extension):
+    if not re.fullmatch(r"[A-Za-z0-9-]+", jid): raise HTTPException(404)
+    job = BASE / jid
+    data = metadata(job)
+    path = job / "output/report" / (REPORT_TASK + extension)
+    if data["status"] != "complete" or not path.is_file():
+        raise HTTPException(409, "Report is not ready")
+    return path
+
+
+@app.get("/api/v1/jobs/{jid}/report", tags=["automation"])
+def get_report(jid: str):
+    return FileResponse(report_file(jid, ".json"), media_type="application/json")
+
+
+@app.get("/api/v1/jobs/{jid}/report/html", response_class=HTMLResponse, tags=["automation"])
+@app.get("/jobs/{jid}/report", response_class=HTMLResponse)
+def view_report(jid: str):
+    return FileResponse(report_file(jid, ".html"), media_type="text/html",
+                        headers={"Content-Security-Policy": "default-src 'none'; img-src data:; style-src 'unsafe-inline'"})
+
+
+def remote_worker_reachable():
+    try:
+        check = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3",
+                                WORKER, "true"], capture_output=True, timeout=5)
+        return check.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 @app.get("/api/v1/health", tags=["automation"])
 def health():
     worker_ok = True
     detail = "local worker runtime"
     if WORKER_MODE == "ssh":
-        check = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3",
-                                WORKER, "true"], capture_output=True, timeout=5)
-        worker_ok = check.returncode == 0
+        worker_ok = remote_worker_reachable()
         detail = WORKER
     if WORKER_MODE == "colab":
         command = (["ssh", WORKER, str(Path.home() / ".local/bin/colab"), "--auth=oauth2", "sessions"]
@@ -1912,10 +2122,12 @@ def health():
         worker_ok = local.returncode == 0 and colab_check.returncode == 0
         detail = f"worker GPU first; Colab {COLAB_GPU} fallback on GPU OOM"
     free_mb, total_mb = gpu_memory_mb() if WORKER_MODE in {"local", "auto"} else (None, None)
-    return {"status":"ok" if worker_ok else "degraded", "worker_mode":WORKER_MODE,
+    remote_ok = remote_worker_reachable() if REMOTE_GPU_TASKS and WORKER_MODE != "ssh" else (worker_ok if WORKER_MODE == "ssh" else None)
+    return {"status":"ok" if worker_ok and remote_ok is not False else "degraded", "worker_mode":WORKER_MODE,
             "worker":detail, "worker_reachable":worker_ok, "gpu_free_mb":free_mb,
             "gpu_total_mb":total_mb, "gpu_release_command_configured":bool(GPU_RELEASE_COMMAND.strip()),
-            "version":app.version}
+            "remote_gpu_tasks":sorted(REMOTE_GPU_TASKS), "remote_worker_reachable":remote_ok,
+            "remote_worker":WORKER if REMOTE_GPU_TASKS else None, "version":app.version}
 
 def cleanup_once():
     cutoff=time.time()-RETENTION_HOURS*3600
@@ -1955,15 +2167,33 @@ def recover_interrupted_jobs():
             continue
     retry = []
     for job, previous_status in interrupted:
-        is_tool = bool(metadata(job).get("tool"))
+        data = metadata(job)
+        is_tool = bool(data.get("tool"))
+        active_remote = data.get("remote_task_active")
+        if not is_tool and active_remote:
+            remote = f"{REMOTE_BASE}/{job.name}"
+            stop_remote_task(remote, active_remote)
+            try: recover_remote_results(job, remote, active_remote)
+            except Exception:
+                save_metadata(job, status="failed", detail="Remote recovery needs inspection",
+                              error="Could not recover remote results; retained on worker")
+                continue
         if not is_tool and (WORKER_MODE == "ssh" or (WORKER_MODE == "colab" and COLAB_ORCHESTRATOR == "worker")):
             remote = f"{REMOTE_BASE}/{job.name}"
             if WORKER_MODE == "colab":
                 session = f"rtseg-{job.name[-12:]}"
                 subprocess.run(["ssh", WORKER, str(Path.home() / ".local/bin/colab"),
                                 "--auth=oauth2", "stop", "-s", session], timeout=60)
-            subprocess.run(["ssh", WORKER, "rm", "-rf", remote], timeout=30)
-        elif not is_tool and WORKER_MODE in {"auto", "colab"} and COLAB_ORCHESTRATOR == "nfs":
+            if WORKER_MODE == "ssh" and REPORT_TASK in data.get("models", []):
+                for task in data["models"]: stop_remote_task(remote, task)
+                try: recover_remote_results(job, remote)
+                except Exception:
+                    save_metadata(job, status="failed", detail="Remote recovery needs inspection",
+                                  error="Could not recover remote results; retained on worker")
+                    continue
+            else:
+                subprocess.run(["ssh", WORKER, "rm", "-rf", remote], timeout=30)
+        elif not active_remote and not is_tool and WORKER_MODE in {"auto", "colab"} and COLAB_ORCHESTRATOR == "nfs":
             session = f"rtseg-{job.name[-12:]}"
             subprocess.run(colab_command("stop", "-s", session), timeout=60,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -1971,7 +2201,7 @@ def recover_interrupted_jobs():
         data = metadata(job); recovery_count = int(data.get("recovery_count",0)) + 1
         has_input = (job/"input").is_dir() and any((job/"input").iterdir())
         if has_input and recovery_count <= 3:
-            shutil.rmtree(job/"output",ignore_errors=True); (job/"output").mkdir()
+            reset_job_output(job, data)
             save_metadata(job,status="queued",detail=f"Restarting after service interruption ({recovery_count}/3)",
                           error=None,progress=0,model_index=0,recovery_count=recovery_count,
                           interrupted_status=previous_status)

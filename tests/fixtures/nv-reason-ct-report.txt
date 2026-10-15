@@ -1,0 +1,18 @@
+<think>
+Synthetic format fixture. Assess only visible anatomy.
+</think>
+TECHNIQUE:
+CT examination.
+FINDINGS:
+Lungs and airways: Synthetic lung statement.
+Heart and pericardium: Synthetic heart statement.
+Liver and biliary system: Synthetic liver statement.
+Spleen: Synthetic spleen statement.
+Pancreas: Synthetic pancreas statement.
+Kidneys and urinary tract: Synthetic kidney statement
+continued on the next line.
+Bones: Synthetic bone statement.
+IMPRESSION:
+1. Synthetic pulmonary finding.
+2. Synthetic pancreatic finding.
+<answer>Pulmonary opacity; Pancreatic lesion</answer>

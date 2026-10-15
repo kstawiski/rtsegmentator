@@ -29,7 +29,13 @@ MEDICAL_OR_ARCHIVE = re.compile(r"\.(?:dcm|dicom|nii(?:\.gz)?|nrrd|mha|mhd|raw|n
 ANATOMIC_LABEL = '"structures": "C1–C7, T1–T12, L1–L5 and S' + '1 vertebrae",'
 
 
+# The published cuRAND package uses four version components, which resemble an IPv4 address.
+NV_CURAND_PIN = "nvidia-curand==" + ".".join(("10", "4", "0", "35"))
+
+
 def site_matches(name, line):
+    if name == "requirements-nv-reason-ct.txt" and line.strip() == NV_CURAND_PIN:
+        return []
     if name == "catalog/pycad-model-zoo.json" and line.lstrip("+- ").rstrip() == ANATOMIC_LABEL:
         return []
     return SITE.findall(line)
@@ -59,3 +65,9 @@ def test_public_files_contain_no_site_data_or_secrets():
                 if suffix not in WORKER_HOME_SUFFIXES.get(name, set()):
                     failures.append(f"unapproved worker home: {name}:{number}")
     assert not failures, "\n".join(failures)
+
+
+def test_cuda_version_exception_is_limited_to_one_requirement():
+    assert not site_matches("requirements-nv-reason-ct.txt", NV_CURAND_PIN)
+    assert site_matches("docs/DEPLOYMENT.md", NV_CURAND_PIN)
+    assert site_matches("requirements-nv-reason-ct.txt", "# host " + NV_CURAND_PIN.split("==")[1])

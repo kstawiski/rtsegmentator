@@ -50,3 +50,19 @@ For resumable upload, use `POST /api/v1/upload-sessions/{session_id}/prostate-sb
 Segmentation jobs can request `postprocess=prostate_sbrt_crop` only with local `total` inference. This retains the full RTSTRUCT and adds a crop package or an explicit no-selected-ROI note.
 
 `POST /api/v1/jobs/{id}/retry` retries a failed job using retained input. Retention and cleanup can remove those inputs. There is no public cancellation endpoint.
+
+## CT draft reports
+
+Select `nv_reason_ct_report` alone or with segmentation tasks. It runs last and produces a research AI draft requiring radiologist review. The catalog identifies `output: "report"`, license and limitations. Availability requires the report acceptance marker on the task's execution worker; segmentation orientation gates remain separate.
+
+- `GET /api/v1/jobs/{jid}/report` returns JSON.
+- `GET /api/v1/jobs/{jid}/report/html` and `GET /jobs/{jid}/report` return self-contained HTML.
+- The existing result route returns a ZIP with `report/nv_reason_ct_report.{json,md,html}` and any RTSTRUCTs. Report-only jobs have no RTSTRUCT.
+
+Job metadata includes `report_status` (`pending`, `running`, `generated`, `not_generated`, `failed`) and `report_reason`. Expected input/resource refusals produce a downloadable `not_generated` report. Worker crashes fail the job but retain completed contours for retry. Failed SSH retrieval retains the remote copy. Report routes return HTTP 409 until the job completes.
+
+Inspection adds `cbct` and `cbct_reason` to each series. MR, PET and detected CBCT submissions are rejected with HTTP 400 through direct/assessed routes. Resumable direct-job submissions are accepted asynchronously; incompatible inputs then fail during staging before inference. HU and coverage refusals are recorded in the report.
+
+JSON includes revision/hashes, package versions, geometry/HU checks, coverage mode and volumes, region decisions, raw output, filtered statements, unchecked headings, flags, crop QC/thumbnails, timings and peak model VRAM. DICOM demographic/identifier fields are excluded. ROI names and approximate contour volumes remain medical data.
+
+When remote tasks are configured, health adds `remote_gpu_tasks`, `remote_worker` and `remote_worker_reachable`; failed reachability makes overall health `degraded` without changing local worker reachability. Routed catalog entries expose `execution_backend: "ssh"`. Unreachable remote preflight disables those tasks with `remote_worker_unreachable_or_preflight_failed`; missing task results use `remote_preflight_missing`. Catalog caching and refresh rules remain the same.

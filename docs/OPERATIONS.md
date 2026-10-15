@@ -54,3 +54,21 @@ curl -fsS http://localhost:8080/api/v1/models
 ```
 
 See [EXTERNAL_MODELS.md](../EXTERNAL_MODELS.md) for the retained numerical results and model-specific restrictions.
+
+## NV-Reason-CT draft reports
+
+Use diagnostic CT only. Known CBCT device names, explicit CBCT/cone-beam text, and a Varian/Elekta acquisition with a Ram-Lak kernel plus either 100–150 kV or a 450–480 mm reconstruction diameter are refused. The HU rule requires the 0.1 percentile between −1100 and −900 HU and a maximum above 300 HU. These rules can refuse tightly cropped diagnostic images and do not establish image quality.
+
+Coverage uses `total --fast` (3 mm) by default, with no ROI subset. Set `RTSEG_NV_REASON_CT_COVERAGE_MODE=full` to use full resolution. Chest requires lung volume ≥1000 mL and heart ≥100 mL; abdomen requires liver ≥500 mL and at least one kidney ≥50 mL. If neither region qualifies, the report records `not_generated`. Compare fast and full decisions on the acceptance series before accepting the faster configuration.
+
+Mapped statements are withheld if the organ group is absent. Truncated masks, insufficient volumes or missing required components receive “[partly in the scanned volume]”. Regional bones are checked for presence, without a truncation warning at expected scan boundaries. Pleura maps to lungs; mediastinum/hila to heart, aorta, esophagus and trachea; great vessels to aorta and the total task's pulmonary-vein mask; chest wall/breast to ribs, sternum and costal cartilages; bowel/appendix to small bowel, colon and duodenum. These group checks do not directly segment every structure named in a heading. Medical devices, CHEST/ABDOMEN labels and other unmapped headings are listed once under “Not checked against the segmentation”. Peritoneum/omentum, lymph nodes and abdominal wall/soft tissues stay unmapped. Impression/label mentions of absent anatomy remain flagged, with raw output available in a collapsed appendix.
+
+The publisher crop is checked for fallback and ≥90% containment of regional organ masks. Failure triggers a mask-centred 384 mm cube, sampled on a 192³ LPS grid at 2 mm with air padding. Actual model tensors must match the expected normalized crop within absolute tolerance 1e-5. Larger anatomical extents can still exceed this crop and are flagged. Midplane thumbnails do not show the entire volume.
+
+Contour volumes are approximate polygon area × source slice spacing / 1000; holes and overlaps are not subtracted. Non-CLOSED_PLANAR contours are omitted. Slice ranges are zero based. These are not dosimetric measurements.
+
+Install the isolated runtime with `scripts/bootstrap-nv-reason-ct-runtime.sh /runtimes/envs/nv-reason-ct`. Runtime resolution checks `RTSEG_NV_REASON_CT_PYTHON`, then `RTSEG_RUNTIME_ROOT/envs/nv-reason-ct/bin/python`, then `RTSEG_MODEL_ROOT/runtime-envs/nv-reason-ct/bin/python`. Store the pinned snapshot under `RTSEG_MODEL_ROOT/weights/nv-reason-ct/<revision>/`. Set `TOTALSEG_WEIGHTS_PATH` to installed total weights: Dataset297 for fast coverage, Dataset291–295 for full. Missing coverage weights fail before a download attempt. Usage reporting is disabled in a job-local TotalSegmentator configuration. Model loading uses local files, offline Hub settings and pinned custom model code.
+
+Use sm_80-class or newer CUDA hardware. The worker waits up to 120 seconds for 14 GiB free before coverage/model loading and checks for 4 GiB free before generation. Resource refusal returns a reason. Model caches use `RTSEG_NV_REASON_CT_CACHE`, defaulting to `RTSEG_SCRATCH_ROOT/nv-reason-ct-cache`; use writable persistent storage for warm Triton/Inductor caches. This supports read-only model/runtime mounts. Set a short writable scratch path for nnU-Net multiprocessing sockets.
+
+Enable the task through `ENABLED_EXTERNAL_MODELS` or the enabled-model file in local mode. The marker at `validation/nv_reason_ct_report.json` requires `status: "passed"`, the pinned `revision`, checks `chest`, `abdomen`, `pelvis`, `cbct`, and `coverage_mode` matching the configured mode. Older markers without a mode attest only `full`. Remote tasks use the remote worker's marker. Reports and input share job retention; retained remote results after failed retrieval also need operator retention. See the [ledger](../EXTERNAL_MODELS.md) for observed diagnostic failures and historical GPU measurements.

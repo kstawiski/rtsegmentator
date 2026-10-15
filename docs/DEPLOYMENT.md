@@ -64,3 +64,24 @@ Check the actual catalog after deployment. A source manifest or historical valid
 ## Updates and rollback
 
 Keep the preceding image and configuration until the replacement passes import, health, upload and synthetic geometry checks. Wait for active jobs and uploads to finish before recreation. Retain model/runtime checksums separately. If startup or verification fails, restore the previous image/configuration and inspect retained job state. Do not overwrite the model bundle while a job is using it.
+
+## Selected tasks on a separate SSH GPU
+
+For a local portal whose GPU cannot run NV-Reason-CT, retain `WORKER_MODE=local` and set `REMOTE_GPU_TASKS=nv_reason_ct_report`. `auto` mode uses the same routing; local tasks retain their existing Colab fallback. Listed tasks always use SSH and do not enter local OOM fallback. Pure `ssh` mode still sends the whole job to its worker. The portable `colab` mode does not support this report task and keeps it disabled.
+
+Use the existing `SEGMENTATION_WORKER`, `REMOTE_JOB_ROOT`, `REMOTE_PYTHON`, `REMOTE_RUNNER`, `REMOTE_APP_ROOT`, `REMOTE_MODEL_ROOT` and `REMOTE_RUNTIME_ROOT` settings above. Install the same application version and the isolated report runtime on the worker. Configure writable scratch with `REMOTE_SCRATCH_ROOT=/scratch`, an optional persistent cache with `REMOTE_NV_REASON_CT_CACHE=/scratch/nv-reason-ct-cache`, and, if needed, `REMOTE_TOTALSEG_WEIGHTS_PATH` for the worker's existing coverage weights. `RTSEG_NV_REASON_CT_COVERAGE_MODE` is forwarded explicitly over SSH. Other worker runtime configuration belongs in the worker environment.
+
+The report transfer includes selected `input/`, paired `input_ct/` and `prompt.json` when present, plus finished RTSTRUCTs. Retrieval copies `output/report/` only for a routed report, then removes the remote job directory. Other routed tasks retrieve their named RTSTRUCT. Whole SSH jobs retrieve the complete output directory. The existing task time limit and remote runner stop apply; failed retrieval retains remote results for recovery. Local contour files survive report failure and retry.
+
+Remote preflight runs during catalog refresh and is cached with the catalog. Local markers cannot enable a remote task. A failed remote check disables only routed tasks. Health reports remote reachability separately. Install and verify the remote report acceptance marker for the selected coverage mode before enabling the task.
+
+The local container needs an SSH client, rsync, a private key and a verified known-hosts file. The Dockerfile supplies the clients. Keep credentials outside Git and mount the portal account's SSH directory read-only with an external Compose override:
+
+```yaml
+services:
+  rtsegmentator:
+    volumes:
+      - ${RTSEG_SSH_CONFIG_DIR}:/root/.ssh:ro
+```
+
+The directory must contain the private key (mode 0600), `known_hosts`, and an SSH `config` entry resolving the worker alias, port and identity. Populate host keys through your normal verification process; do not disable host-key checking. The application uses batch SSH and does not prompt for passwords. Restart the portal after changing route configuration. Enabling remote routing does not itself install assets or bypass acceptance.
