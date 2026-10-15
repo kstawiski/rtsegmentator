@@ -1092,9 +1092,13 @@ try:
             relative = Path("nnUNet") / configuration / "Task110_HNLNFixed_MirrorBest"
             writable_mirror(root / "weights/hnlnl/model" / relative, results / relative)
         env["RESULTS_FOLDER"] = str(results)
+        # Mirror test-time augmentation averages left/right-flipped predictions of
+        # side-specific levels and splits them across both sides (GPU audit
+        # 2026-10-15: 14/22 sided 2D components on the wrong side with mirroring,
+        # 1/17 without), so HNLNL always runs without it.
         common = ["-i", str(input_dir), "-t", "Task110_HNLNFixed_MirrorBest",
                   "-tr", "nnUNetTrainerV2", "-p", "nnUNetPlansv2.1",
-                  "-chk", "model_final_checkpoint", "-z"]
+                  "-chk", "model_final_checkpoint", "-z", "--disable_tta"]
         predict = str(RUNTIME_ROOT / "envs/nnunet-v1/bin/nnUNet_predict")
         run([predict, *common, "-o", str(output_2d), "-m", "2d"], env=env)
         run([predict, *common, "-o", str(output_3d), "-m", "3d_fullres"], env=env)

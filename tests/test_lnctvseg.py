@@ -401,3 +401,10 @@ def test_shipped_release_disables_mirror_tta_for_sided_groups():
     manifest = json.loads((Path(__file__).resolve().parents[1] / 'models/manifests/lnctvseg.json').read_text())
     assert manifest['nnunet']['tta'] is False
     assert 'left-right' in manifest['nnunet']['tta_note']
+
+
+def test_hnlnl_runs_without_mirror_tta():
+    # Mirroring mixes HNLNL's left/right levels; both 2D and 3D predictions share these arguments.
+    source = (Path(__file__).resolve().parents[1] / 'run_task.py').read_text()
+    block = source[source.index('elif task == "hnlnl_2d3d":'):source.index('elif task == "dbdmp_lnq":')]
+    assert '"--disable_tta"' in block and block.count('*common') == 2
