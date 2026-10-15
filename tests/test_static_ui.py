@@ -46,8 +46,8 @@ def test_home_and_static_assets_are_served_from_any_working_directory(tmp_path, 
         assert "Select all" not in page.text
         parser = PageParser()
         parser.feed(page.text)
-        assert set(parser.assets) == {"/static/app.js", "/static/app.css"}
-        for name, content_type in [("app.js", "javascript"), ("app.css", "text/css"),
+        assert set(parser.assets) == {"/static/app.js", "/static/viewer.js", "/static/app.css"}
+        for name, content_type in [("app.js", "javascript"), ("viewer.js", "javascript"), ("app.css", "text/css"),
                                    ("ui-catalog.json", "application/json")]:
             response = client.get("/static/" + name)
             assert response.status_code == 200
@@ -110,6 +110,9 @@ def test_javascript_contract_checks():
     node = shutil.which("node")
     if not node:
         pytest.skip("Node is unavailable")
+    for source in ("static/app.js", "static/viewer.js"):
+        check = subprocess.run([node, "--check", source], cwd=ROOT, capture_output=True, text=True)
+        assert check.returncode == 0, check.stdout + check.stderr
     result = subprocess.run([node, "--test", "tests/test_ui_logic.cjs"], cwd=ROOT,
                             capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -122,3 +125,23 @@ def test_presentation_metadata_has_no_execution_overrides():
         assert set(item) <= {"group", "title", "purpose", "count", "structures"}, name
         if "structures" in item:
             assert item["count"] == len(item["structures"]), name
+
+
+def test_primary_actions_viewers_results_and_secondary_tools_contract():
+    html = (STATIC / "index.html").read_text()
+    parser = PageParser()
+    parser.feed(html)
+    required = {"segmentAction", "reportAction", "catalogPicker", "chooseModels", "seriesViewer",
+                "jobDetailPage", "jobViewer", "reportPanel", "structuresPanel", "downloadsPanel",
+                "reportTab", "structuresTab", "downloadsTab", "deleteDialog", "confirmDelete", "moreTools"}
+    assert required <= set(parser.ids)
+    assert "What do you want?" in html
+    assert "Segment structures" in html and "NV-Reason-CT" in html
+    assert 'id="reportAction" aria-describedby="reportDescription reportReason"' in html
+    assert re.search(r'<details id="moreTools"[^>]*>.*?href="#tools"', html)
+    for name in ("report", "structures", "downloads"):
+        assert f'aria-controls="{name}Panel"' in html
+        assert f'aria-labelledby="{name}Tab"' in html
+    script = (STATIC / "viewer.js").read_text()
+    assert "ctx.fill('evenodd')" in script
+    assert 'role="img"' in script and 'aria-label="DICOM slice"' in script

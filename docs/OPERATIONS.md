@@ -2,7 +2,7 @@
 
 ## Upload and model selection
 
-Upload DICOM files, a folder, or ZIP archives. The portal groups images by Study, Series and modality. Select one assessed series and compatible models. The recommended starting models are `total` for CT and `total_mr` for MR. Select each model explicitly in the guided UI; recommendations are never selected or run automatically. PET1 ISRT tasks require CT in the same Study and Frame of Reference. Do not treat this check as image registration.
+Upload DICOM files, a folder, or ZIP archives. The portal groups images by Study, Series and modality. Select one assessed series and compatible models. The recommended starting models are `total` for CT and `total_mr` for MR. In “What do you want?”, select Segment structures, AI draft report (NV-Reason-CT), or both. The segmentation action adds the displayed default; “Choose other models…” opens the grouped catalog. No action is selected automatically. AI reports are restricted to diagnostic CT; MR, PET and detected CBCT remain disabled with reasons. PET1 ISRT tasks require CT in the same Study and Frame of Reference. Do not treat this check as image registration.
 
 The browser uses resumable sessions with requests up to 32 MiB. A resumed chunk must use the server's expected byte offset. The receiving request times out after 60 seconds without new data. Session assessment runs in the background. Restart recovery marks interrupted jobs and sessions for review or retry; retention cleanup removes expired data.
 
@@ -102,3 +102,11 @@ WORKER_MODE=local REMOTE_GPU_TASKS= "$RTSEG_WORKER_PYTHON" \
 This operator-only audit option runs fresh checks even if a marker already exists. It passes an explicit bootstrap argument to the local dispatcher; normal portal and SSH jobs do not pass it. Old markers for the audited task are removed before the run. New markers are written only after GPU inference, exact-grid uint16 output, RTSTRUCT conversion/round-trip validation and orientation auditing succeed. Failure returns a nonzero exit status and leaves that task unaccepted. `TASK_TIME_LIMIT_SECONDS` applies to each inference task; the default is 12 hours. Logs and retained predictions are under `RTSEG_ORIENTATION_RUN_ROOT`. The audit does not edit the enabled-models list.
 
 The four fixture assignments are in `catalog/orientation-audit-fixtures.json`. Brain uses the existing public OpenNeuro-derived T1 DICOM fixture; the publisher's NIfTI-only brain example cannot check DICOM contour orientation. No entries are needed in the prompt map for these automatic tasks. Model-agreement, laterality and GPU-compatibility results are recorded in `EXTERNAL_MODELS.md`.
+
+## Viewing job results in the portal
+
+Open a job from Jobs to follow its progress. A completed job shows the selected image series and RTSTRUCT overlays alongside Report, Structures and Downloads tabs. Scroll or use arrow keys on the focused image to change slices; drag or use Shift + arrow keys to pan, use +/− to zoom and 0 to reset. Keys 1–4 select soft tissue, lung, bone and brain windows when supplied by the API. Slice indices start at zero. The viewer preserves the stored pixel grid without an implicit flip or rotation.
+
+Overlay controls group ROIs by model. Search, show/hide all, opacity and outline/filled display affect the preview only. “Jump to” selects an acquired slice in the middle of that ROI's available slices. Structures shows approximate volumes only when the report supplies them. The report retains coverage, withheld/partial findings and flags; Open full report includes the original provenance and raw output. The Markdown download is generated from report JSON; the original Markdown is in the result ZIP.
+
+Delete job asks for confirmation and removes the job's images, results and logs. It is disabled while a job is active; it cannot cancel inference. Missing retained images or unsupported geometry can prevent viewing while downloads remain available. The standalone prostate SBRT crop is under More tools. Local UI checks and synthetic previews do not establish clinical readiness.

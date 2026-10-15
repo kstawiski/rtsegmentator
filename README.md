@@ -52,7 +52,7 @@ CPU tests use synthetic images. Inference needs the separate model/runtime bundl
 ## Source and documentation
 
 - `app.py`: API, static-page serving, upload sessions, cached catalog and job lifecycle.
-- `static/`: offline HTML/CSS/JavaScript UI with guided upload, series, models and review steps, plus Jobs and Tools.
+- `static/`: offline HTML/CSS/JavaScript UI with upload, interactive series preview, segmentation / AI report actions and review. Jobs opens images, contour overlays, reports and downloads; More tools contains the CPU crop tool.
 - `run_task.py`, `run_*.py`: dispatch and model-specific inference wrappers.
 - `convert_validate_rtstruct.py`, `convert_masks_validate_rtstruct.py`, `rtstruct_roundtrip.py`: direct conversion and geometry checks, including overlapping masks.
 - `crop_prostate_sbrt.py`: standalone CPU crop tool.
