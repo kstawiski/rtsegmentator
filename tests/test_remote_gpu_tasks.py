@@ -281,3 +281,22 @@ def test_cleanup_uses_the_longer_post_retrieval_timeout(portal, monkeypatch):
     portal.cleanup_worker_job(job, '/jobs/test')
     assert calls[0]['timeout'] == portal.REMOTE_CLEANUP_TIMEOUT_SECONDS >= 300
     assert portal.metadata(job)['remote_cleanup_pending'] is False
+
+
+def test_retention_removes_pending_worker_copies_and_requeues_failures(portal, monkeypatch):
+    job = job_at(portal, [TASK])
+    portal.save_metadata(job, created=0, remote_cleanup_pending=True)
+    attempts = []
+    def run(command, **kw):
+        attempts.append(command)
+        raise subprocess.TimeoutExpired('ssh', kw['timeout'])
+    monkeypatch.setattr(portal.subprocess, 'run', run)
+    portal.cleanup_once()
+    assert not job.exists()
+    remote = f"{portal.REMOTE_BASE}/{job.name}"
+    assert remote in attempts[0][-1] or remote in attempts[0]
+    queue = portal.BASE / portal.REMOTE_CLEANUP_QUEUE
+    assert json.loads(queue.read_text()) == [remote]
+    monkeypatch.setattr(portal.subprocess, 'run', lambda command, **kw: SimpleNamespace(returncode=0))
+    portal.cleanup_once()
+    assert not queue.exists()

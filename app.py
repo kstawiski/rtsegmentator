@@ -2150,8 +2150,28 @@ def health():
             "remote_gpu_tasks":sorted(REMOTE_GPU_TASKS), "remote_worker_reachable":remote_ok,
             "remote_worker":WORKER if REMOTE_GPU_TASKS else None, "version":app.version, **catalog_health}
 
+REMOTE_CLEANUP_QUEUE = ".remote-cleanup-pending.json"
+
+
+def retry_remote_cleanup(additions=()):
+    """Remove worker copies of expired jobs; keep failures queued for the next hourly pass."""
+    queue = BASE / REMOTE_CLEANUP_QUEUE
+    try: pending = json.loads(queue.read_text())
+    except (OSError, ValueError): pending = []
+    pending = list(dict.fromkeys([p for p in pending if isinstance(p, str)] + list(additions)))
+    remaining = []
+    for remote in pending:
+        try: subprocess.run(remote_command("rm", "-rf", "--", remote), check=True, timeout=REMOTE_CLEANUP_TIMEOUT_SECONDS)
+        except (subprocess.SubprocessError, OSError):
+            logger.warning("Worker copy %s of an expired job is still present; retrying next hour", remote)
+            remaining.append(remote)
+    if remaining: queue.write_text(json.dumps(remaining))
+    else: queue.unlink(missing_ok=True)
+
+
 def cleanup_once():
     cutoff=time.time()-RETENTION_HOURS*3600
+    expired_remote = []
     for job in BASE.iterdir():
         fd = None
         try:
@@ -2161,12 +2181,19 @@ def cleanup_once():
                 fd = os.open(job, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             meta=job/("session.json" if is_session else "upload.json" if job.name.startswith("upload-") else "job.json")
-            try: created = float(json.loads(meta.read_text())["created"])
+            try: data = json.loads(meta.read_text())
+            except Exception: data = {}
+            try: created = float(data["created"])
             except Exception: created = job.stat().st_mtime
-            if created < cutoff: shutil.rmtree(job)
+            if created < cutoff:
+                if data.get("remote_cleanup_pending") or data.get("remote_results_retained"):
+                    expired_remote.append(f"{REMOTE_BASE}/{job.name}")
+                shutil.rmtree(job)
         except Exception: pass
         finally:
             if fd is not None: os.close(fd)
+    if expired_remote or (BASE / REMOTE_CLEANUP_QUEUE).exists():
+        retry_remote_cleanup(expired_remote)
 
 
 def cleanup_loop():
