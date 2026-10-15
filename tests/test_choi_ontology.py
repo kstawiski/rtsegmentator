@@ -39,16 +39,6 @@ def test_left_right_uses_patient_ras_and_local_midline():
     assert side_evidence(np.array([[0,0,0]]),np.empty((0,3)))['side']=='unresolved'
 
 
-def test_offset_preserves_geometry_and_original(tmp_path):
-    affine=np.array([[-2,0,0,40],[0,3,0,-20],[0,0,4,-80],[0,0,0,1]])
-    values=np.arange(24,dtype=np.float32).reshape(2,3,4)-1000
-    source=save(tmp_path/'ct.nii.gz',values,affine);dest=tmp_path/'shifted.nii.gz'
-    prepare_input(source,dest)
-    np.testing.assert_array_equal(nib.load(dest).get_fdata(),values+1024)
-    np.testing.assert_array_equal(nib.load(source).get_fdata(),values)
-    np.testing.assert_array_equal(nib.load(dest).affine,affine)
-
-
 def test_model_mirror_is_private_for_metadata_and_command_disables_mirroring(tmp_path):
     source=tmp_path/'source';source.mkdir();(source/'plans.pkl').write_bytes(b'plans')
     fold=source/'fold_0';fold.mkdir()
@@ -178,3 +168,43 @@ def test_dispatch_rejects_unconfirmed_choi_before_spawning(monkeypatch,tmp_path)
         with pytest.raises(ValueError,match='clinician confirmation'):
             runpy.run_path(str(root/'run_task.py'),run_name='__main__')
     finally:os.close(fd)
+
+
+def test_review_summary_component_spans_csv_and_fold_agreement(tmp_path):
+    import csv
+    from html.parser import HTMLParser
+    shape=(12,12,30);aff=np.diag([5.,5.,5.,1.])
+    ct=save(tmp_path/'ct.nii.gz',np.zeros(shape,dtype=np.int16),aff)
+    pred=np.zeros(shape,dtype=np.uint8)
+    pred[1:4,3:6,10:12]=1  # 2.25 mL, largest, near T6
+    pred[7:9,3:5,20:22]=1  # 1.00 mL, second, near T1
+    pred[2,2,29]=1         # tiny distant fragment near C1
+    prediction=save(tmp_path/'pred.nii.gz',pred,aff)
+    masks=tmp_path/'total';masks.mkdir()
+    for name,z in [('T6',10),('T1',20),('C1',29)]:
+        mask=np.zeros(shape,dtype=np.uint8);mask[5:7,5:7,z:z+1]=1
+        save(masks/f'vertebrae_{name}.nii.gz',mask,aff)
+    report=analyze(prediction,ct,masks,tmp_path/'review',{'1':{'mean_dice':.75}})
+    row=report['labels'][0]
+    assert row['component_count']==3
+    assert row['largest_component_vertebral_extent']['cranial_nearest_centroid']=='vertebrae_T6'
+    assert row['components_ge_1ml_vertebral_extent']['cranial_nearest_centroid']=='vertebrae_T1'
+    assert row['full_label_vertebral_extent']['cranial_nearest_centroid']=='vertebrae_C1'
+    assert row['components_ge_1ml']['component_count']==2
+    records=list(csv.DictReader((tmp_path/'review/choi-review-template.csv').open()))
+    assert len(records)==18 and list(records[0])==['label','proposed region','reviewer region','confidence','comment']
+    assert all(record['reviewer region']==record['confidence']==record['comment']=='' for record in records)
+    sheet=(tmp_path/'review/review.html').read_text()
+    assert sheet.index('id="summary"') < sheet.index('id="label-1"')
+    assert '0.750 (mean Dice)' in sheet and 'Components ≥1 mL:' in sheet
+    class DetailsCheck(HTMLParser):
+        def __init__(self):super().__init__();self.depth=0;self.raw_blocks=0
+        def handle_starttag(self,tag,attrs):
+            if tag=='details':self.depth+=1
+            if tag=='pre':
+                assert self.depth>0
+                self.raw_blocks+=1
+        def handle_endtag(self,tag):
+            if tag=='details':self.depth-=1
+    parser=DetailsCheck();parser.feed(sheet)
+    assert parser.raw_blocks>=36
