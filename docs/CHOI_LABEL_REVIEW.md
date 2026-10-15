@@ -118,6 +118,12 @@ process-group GPU memory, per-label volumes/components/spans and all pairwise
 fold Dice are recorded. Exploratory coherence thresholds do not select a
 clinically validated orientation or establish label identity.
 
+Result of the first full screen (2026-10-15, one internal whole-body CT): no variant
+met the coherence screen. The best mean inter-fold Dice was 0.291 (variant 000) and
+0.250 (variant 110), and the five-fold ensemble also failed. Folds took 2.7–11 min
+with the corrected geometry. Until a variant is coherent, the numeric labels are
+not sent for clinical review and the task stays disabled.
+
 After manager geometry review, a clinician must resolve all 18 numeric labels
 and record review evidence. The HTML can export a complete, attributed mapping
 JSON; `labels/choi-tmli.json` accepts no partial or duplicate assignments.
