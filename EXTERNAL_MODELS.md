@@ -5,7 +5,7 @@ This ledger distinguishes automatic models from prompted tools and records wheth
 
 ## NVIDIA NV-Segment automatic tasks (2026-10-15)
 
-Four automatic tasks are integrated behind separate installation, acceptance and orientation gates. No acceptance marker is included in this change. The existing `vista3d_prompted_ct` source, runner and acceptance remain unchanged.
+Four automatic tasks are integrated behind separate installation, acceptance and orientation gates. Acceptance and orientation markers are kept in the model bundle, not in this repository. The existing `vista3d_prompted_ct` source, runner and acceptance remain unchanged.
 
 | Task | Input | Foreground labels | Scope |
 |---|---|---:|---|
@@ -28,14 +28,19 @@ SynthStrip 1.8 is extracted under `runtime-homes/nv-segment/synthstrip-1.8`; Doc
 
 **MRI sequence scope.** MRI_BODY selects the publisher's 50 TotalSegmentator-MRI classes. Sequence and field of view affect output; this integration establishes no sequence-specific performance. For brain, the [pinned model card](https://huggingface.co/nvidia/NV-Segment-CTMR/blob/4fb8b4a6b2532be9f1c449a3726fe5440ab4213a/README.md) specifies standard T1, while the [pinned source documentation](https://github.com/NVIDIA-Medtech/NV-Segment-CTMR/blob/cb921f5c58837c0f42a713855d68b32af88e1cdd/NV-Segment-CTMR/docs/README.md) also names T2 and FLAIR. The configured audit uses T1 only. Non-T1 brain acceptance remains unresolved.
 
-**Reported GPU observations.** The manager supplied these preliminary H100 measurements for `nv_segment_ct_auto`; this implementation worker did not repeat GPU inference.
+**GPU acceptance (2026-10-15).** All four tasks passed the orientation audit and acceptance on public fixtures on an NVIDIA H100 (sm_90), and the validation sweep on a Quadro P6000 (Pascal sm_61, 24 GiB). RTSTRUCT ROI sets were identical on the two GPUs. The existing point-prompted `vista3d_prompted_ct` also passed on the P6000 with a point placed on the spleen of the public MSD spleen fixture.
 
-| Public fixture | Runtime | Peak VRAM | RTSTRUCT ROIs |
-|---|---:|---:|---:|
-| KiTS19 case00000 | 60.7 s | 21.3 GiB | 68 |
-| MSD lung_053 | 28.7 s | 16.2 GiB | 100 |
+| Task | Public fixture | H100 inference | RTSTRUCT ROIs | P6000 job (upload to RTSTRUCT) |
+|---|---|---:|---:|---:|
+| `nv_segment_ct_auto` | MSD lung_053 | 10.6 s | 100 | 498 s |
+| `nv_segment_ct_auto` | KiTS19 case00000 | 16.4 s | 68 | — |
+| `nv_segment_ctmr_ct_body` | KiTS19 case00000 | 13.0 s | 69 | 661 s |
+| `nv_segment_ctmr_mri_body` | TotalSegmentator-MRI s0052 | 8.4 s | 21 | 81 s |
+| `nv_segment_ctmr_mri_brain` | OpenNeuro ds002168 T1 | 4.9 s | 132 regions | 229 s |
 
-The manager reported valid output grids and correct lung, kidney, spleen and liver sides. The chest CT also contained spurious left/right femur labels of 277/1,068 voxels and hip labels of 4/327 voxels. Small false labels are therefore an observed limitation; review every contour in its anatomical context. The manager's complete rerun and final evidence remain pending. Compatibility and memory use on Pascal sm_61 with 24 GiB are unknown. These measurements and technical markers do not establish clinical or manuscript readiness.
+Peak H100 memory reached 21.3 GiB (CT automatic, KiTS19). Agreement with TotalSegmentator `total` on the H100 (Dice; model agreement, not accuracy): NV-Segment-CT automatic gave liver 0.98, spleen 0.97, kidneys 0.95–0.96, aorta 0.93–0.94, pancreas 0.91–0.94 and whole lungs 0.91–0.98 on both CT fixtures. CTMR `CT_BODY` was similar except pancreas 0.35 on the chest CT, where the pancreas is only partly in the field of view. CTMR `MRI_BODY` against the TotalSegmentator-MRI s0052 reference labels gave liver 0.92, left/right lung 0.89/0.93 and spleen 0.77. Left/right placement of paired organs and of all brain hemisphere pairs was correct.
+
+Small spurious labels occur: on the chest CT, NV-Segment-CT drew left/right femur (277/1,068 voxels) and hip (4/327 voxels) labels, and `MRI_BODY` drew a 489-voxel brain label in a torso MRI. Review every contour in its anatomical context. These technical results do not establish clinical or manuscript readiness.
 
 **Orientation fixtures and acceptance.** The configured public DICOM fixtures are MSD lung for CT automatic, KiTS19 case00000 for CTMR CT body, TotalSegmentator-MRI s0052 for MRI body, and the existing `hippunfold-ds002168-T1w/dicom` fixture for brain. The latter contains 256 DICOM files and derives from the public [OpenNeuro ds002168 dataset](https://openneuro.org/datasets/ds002168); the publisher's separate brain NIfTI example is not used as a substitute for a DICOM round trip. The audit checks execution, source-grid conversion, physical contour round trips and model identity. It does not assess segmentation accuracy. See [operations](docs/OPERATIONS.md) for marker generation and local/remote activation.
 
@@ -43,7 +48,7 @@ The manager reported valid output grids and correct lung, kidney, spleen and liv
 
 Task `nv_reason_ct_report` produces JSON, Markdown and HTML for diagnostic chest/abdomen CT; it does not produce RTSTRUCTs. [Publisher and license](https://huggingface.co/nvidia/NV-Reason-CT): OpenMDW-1.1, revision `386b93e034983f6c1fc841a43833a1b6a0cd9c13`. The checkpoint SHA-256 is `655c15e59dfa1957f7d5f475b1702d689fb7107160f21256028391bb5f6e6ba5` (10,644,167,648 bytes).
 
-Manager-run technical acceptance of the earlier implementation on an H100 produced a chest report for public MSD lung CT with `total` segmentation and an abdomen report for public KiTS19 case 00000 with a report-only job. The chest used the publisher crop; the abdomen used a segmentation-guided crop after publisher fallback. Both crops contained 100% of the segmented regional organs. Full-resolution coverage took 275–313 s, model loading 21–25 s, and warm-cache generation 57–64 s for about 400 tokens. Peak model-process allocation was 11.2 GiB; plan for approximately 12 GiB model VRAM, with the worker requiring 14 GiB free before loading. The production-tree port and default fast coverage require new GPU checks; these historical results are not acceptance of this version.
+Technical acceptance of this version on an H100 (2026-10-15, fast coverage): a chest report for public MSD lung CT with `total` segmentation; an abdomen report for public KiTS19 case 00000 in a report-only job, using the segmentation-guided crop after the publisher's lung-based crop fell back; no AI text for a pelvic CT without a supported region; and HTTP 400 for a CT series tagged as CBCT. Both generated reports' crops contained 100% of the segmented regional organs. Fast coverage took 156–270 s, model loading 19–23 s and warm-cache generation 57–64 s for about 400 tokens; a chest job took about 7 minutes. Peak model-process allocation was 11.2 GiB; plan for about 12 GiB, and the worker requires 14 GiB free before loading. A mixed job (`total` on a local Pascal GPU, report routed over SSH to an H100 worker) also completed in a production-like deployment. Greedy decoding is deterministic within one process but not bit-identical across processes, so repeated runs can word a report differently.
 
 Known limitations:
 
@@ -52,7 +57,7 @@ Known limitations:
 - CBCT is refused. A negative CBCT header check does not establish diagnostic image quality.
 - Use an sm_80-class or newer CUDA GPU. A 24 GiB Pascal GPU could not run the model: bf16 SDPA exhausted memory, fp16 failed in cuDNN conv3d, and disabling cuDNN also exhausted memory. Per-task SSH routing supports a separate compatible worker.
 
-TotalSegmentator `total --fast` (3 mm) is the default coverage mode, without an ROI subset; `RTSEG_NV_REASON_CT_COVERAGE_MODE=full` restores full resolution. Fast/full region and group-status comparison is pending GPU execution. Report availability uses `validation/nv_reason_ct_report.json`, independently of segmentation orientation markers. Radiologist review is required; technical acceptance and local drafting do not establish clinical or manuscript readiness.
+TotalSegmentator `total --fast` (3 mm) is the default coverage mode, without an ROI subset; `RTSEG_NV_REASON_CT_COVERAGE_MODE=full` restores full resolution. On three test series (chest, abdomen, pelvis), fast and full coverage gave identical region decisions and per-organ statuses; fast took 140–270 s and full 223–378 s on the H100. Report availability uses `validation/nv_reason_ct_report.json`, independently of segmentation orientation markers. Radiologist review is required; technical acceptance and local drafting do not establish clinical or manuscript readiness.
 
 ## Spinal Cord Toolbox 7.3 (2026-08-13)
 
