@@ -394,3 +394,10 @@ def test_routed_task_retrieves_omission_notes_with_rtstruct(tmp_path, portal, mo
     assert calls == [['scp', '-q', '-r',
         f'{portal.WORKER}:/jobs/synthetic/output/{bundle.TASK}_RTSTRUCT.dcm*',
         f'{portal.WORKER}:/jobs/synthetic/output/{bundle.TASK}', str(job / 'output') + '/']]
+
+
+def test_shipped_release_disables_mirror_tta_for_sided_groups():
+    # Mirroring along left-right averages side-specific groups (GPU evidence in the manifest note).
+    manifest = json.loads((Path(__file__).resolve().parents[1] / 'models/manifests/lnctvseg.json').read_text())
+    assert manifest['nnunet']['tta'] is False
+    assert 'left-right' in manifest['nnunet']['tta_note']

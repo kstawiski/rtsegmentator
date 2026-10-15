@@ -84,7 +84,8 @@
       "min_size_per_class": null,
       "applied": "None; no postprocessing.json supplied"
     },
-    "tta": true,
+    "tta": false,
+    "tta_note": "Mirror test-time augmentation is disabled: it flips the neck left-right and averages side-specific groups, splitting each group across both sides. On the public example CT (full volume, H100, 2026-10-15) Dice for IDs 1-6 was 0.19/0.23/0.02/0.03/0/0 with mirroring and 0.86/0.86/0.86/0.90/0.88/0.89 without, and the laterality audit passed only without it.",
     "step_size": 0.5,
     "runtime": {
       "nnunet": "1.7.1",
