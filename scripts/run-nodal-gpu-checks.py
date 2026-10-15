@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -16,12 +17,26 @@ import time
 APP = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(APP))
 import lnctvseg_bundle
+from audit_lnctvseg_dice import compare
 
 spec = importlib.util.spec_from_file_location('orientation_audit', APP / 'scripts/run-orientation-audit.py')
 orientation_audit = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(orientation_audit)
-TASKS = (lnctvseg_bundle.TASK, 'hnlnl_2d3d')
+TASKS = (*lnctvseg_bundle.INTEGRATED_TASKS, 'hnlnl_2d3d')
 FIXTURE = 'lnctvseg-example-hn-ct/dicom'
+
+
+def fixture_dice(prediction, model, output):
+    reference = model / 'testdata/lnctvseg-example-hn-ct/reference-labels.nii.gz'
+    spec = json.loads((APP / 'models/manifests/lnctvseg-fixture.json').read_text())
+    with reference.open('rb') as stream:
+        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+    if digest != spec['reference_labels_sha256']:
+        raise ValueError('LNCTVSeg reference-label checksum mismatch')
+    result = compare(prediction, reference)
+    result['reference_sha256'] = digest
+    output.write_text(json.dumps(result, indent=2) + '\n')
+    return result
 
 
 def descendants(root):
@@ -110,16 +125,28 @@ def main(argv=None):
         job = args.run_root / task
         (job / 'output').mkdir(parents=True)
         (job / 'input').symlink_to(fixture.resolve(), target_is_directory=True)
+        is_lnctvseg = task in lnctvseg_bundle.INTEGRATED_TASKS
+        work = job / 'external' / task
+        prediction = work / ('prediction' if is_lnctvseg else 'ensemble') / 'case.nii.gz'
+        dice = None
         try:
-            if task == lnctvseg_bundle.TASK:
+            if is_lnctvseg:
                 lnctvseg_bundle.validate_assets(model)
             with (job / 'run.log').open('w') as log:
-                metrics = measured_run([python, str(APP / 'run_task.py'), str(job), task,
-                                        '--nodal-acceptance-audit'], env, log, job / 'performance.json',
-                                       int(os.environ.get('TASK_TIME_LIMIT_SECONDS', 12 * 3600)))
-                work = job / 'external' / task
-                prediction = work / ('prediction' if task == lnctvseg_bundle.TASK else 'ensemble') / 'case.nii.gz'
-                labels = APP / ('labels/lnctvseg.json' if task == lnctvseg_bundle.TASK else 'hnlnl-labels.json')
+                try:
+                    metrics = measured_run([python, str(APP / 'run_task.py'), str(job), task,
+                                            '--nodal-acceptance-audit'], env, log, job / 'performance.json',
+                                           int(os.environ.get('TASK_TIME_LIMIT_SECONDS', 12 * 3600)))
+                finally:
+                    # Keep overlap evidence even if the dispatcher refuses an
+                    # undocumented class before RTSTRUCT conversion.
+                    if is_lnctvseg and prediction.is_file():
+                        dice = fixture_dice(prediction, model, job / 'dice.json')
+                if is_lnctvseg:
+                    if dice is None:
+                        raise ValueError('LNCTVSeg prediction/Dice evidence is missing')
+                    lnctvseg_bundle.validate_label_contract()
+                labels = APP / ('labels/lnctvseg.json' if is_lnctvseg else 'hnlnl-labels.json')
                 # run_task already converts and independently checks the contour-to-mask round trip.
                 # These further checks use retained predictions and the produced RTSTRUCT.
                 orientation_audit.run_command([
@@ -136,16 +163,16 @@ def main(argv=None):
             if (laterality.get('result') != 'passed' or orientation.get('result') != 'passed'
                     or orientation.get('task') != task):
                 raise ValueError('Missing or inconsistent success evidence')
-            if task == lnctvseg_bundle.TASK and {row['label'] for row in laterality.get('components', [])} != set(range(1, 7)):
+            if is_lnctvseg and {row['label'] for row in laterality.get('components', [])} != set(range(1, 7)):
                 raise ValueError('The LNCTVSeg fixture must produce all six grouped labels at >=1 mL')
             accepted = {'task': task, 'result': 'passed', 'fixture': FIXTURE, 'laterality': 'passed',
                         'accepted_utc': datetime.now(timezone.utc).isoformat(), **metrics}
-            if task == lnctvseg_bundle.TASK:
+            if is_lnctvseg:
                 accepted.update(source_commit=lnctvseg_bundle.manifest()['source_commit'],
                                 manifest_sha256=lnctvseg_bundle.manifest_sha256())
                 lnctvseg_bundle.validate_acceptance(accepted)
             orientation.update(laterality='passed', fixture=FIXTURE)
-            if task == lnctvseg_bundle.TASK:
+            if is_lnctvseg:
                 orientation['manifest_sha256'] = lnctvseg_bundle.manifest_sha256()
             orientation_audit.write_json(acceptance, accepted)
             orientation_audit.write_json(marker, orientation)
@@ -157,6 +184,8 @@ def main(argv=None):
             failed = True
             if isinstance(exc, (KeyboardInterrupt, SystemExit)):
                 raise
+        if dice is not None:
+            row['dice'] = dice
         with (args.run_root / 'summary.jsonl').open('a') as output:
             output.write(json.dumps(row) + '\n')
         print(json.dumps(row), flush=True)

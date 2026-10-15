@@ -464,6 +464,10 @@ def audit(tasks=None) -> dict[str, dict]:
             if not LNCTVSEG_MANIFEST.get('nnunet'):
                 missing.append('LNCTVSeg pinned release plans and checkpoints')
             try:
+                lnctvseg_bundle.validate_label_contract()
+            except ValueError as exc:
+                missing.append(str(exc))
+            try:
                 lnctvseg_bundle.validate_acceptance(json.loads(
                     (MODEL_ROOT / 'validation' / f'{task}.json').read_text()))
                 acceptance_ready = True

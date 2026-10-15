@@ -1,6 +1,7 @@
 """LNCTVSeg catalog, pinned assets, preflight and CPU-only dispatcher fakes."""
 import json
 import os
+import pickle
 from pathlib import Path
 import runpy
 import signal
@@ -14,6 +15,15 @@ import pytest
 import lnctvseg_bundle as bundle
 
 ROOT = Path(__file__).parents[1]
+
+
+@pytest.fixture
+def verified_contract(monkeypatch):
+    """Exercise future accepted execution without asserting this release is accepted."""
+    spec = bundle.manifest()
+    spec['label_contract']['status'] = 'verified'
+    spec['nnunet']['output_label_ids'] = list(range(7))
+    monkeypatch.setattr(bundle, 'manifest', lambda: spec)
 
 
 def accepted():
@@ -43,7 +53,7 @@ def test_public_fixture_assignments():
     assert bundle.TASK in json.loads((ROOT / 'catalog/orientation-audit-tasks.json').read_text())
 
 
-def test_preflight_checks_each_release_file_and_marker(tmp_path, monkeypatch):
+def test_preflight_checks_each_release_file_and_marker(tmp_path, monkeypatch, verified_contract):
     import model_preflight as module
     model, runtime = tmp_path / 'model', tmp_path / 'runtime'
     monkeypatch.setattr(module, 'MODEL_ROOT', model)
@@ -118,7 +128,7 @@ def dispatch(tmp_path, monkeypatch, synthetic_ct, audit=False, marker=True, moda
     return job, calls
 
 
-def test_dispatch_reuses_v1_runtime_and_converter(tmp_path, monkeypatch, synthetic_ct):
+def test_dispatch_reuses_v1_runtime_and_converter(tmp_path, monkeypatch, synthetic_ct, verified_contract):
     job, calls = dispatch(tmp_path, monkeypatch, synthetic_ct)
     assert [Path(command[1]).name for command, _ in calls] == [
         'dicom_series_to_nifti.py', 'run_lnctvseg.py', 'convert_validate_rtstruct.py']
@@ -128,7 +138,7 @@ def test_dispatch_reuses_v1_runtime_and_converter(tmp_path, monkeypatch, synthet
     assert pydicom.dcmread(job / 'output' / f'{bundle.TASK}_RTSTRUCT.dcm').StructureSetName == f'RTSEG: {bundle.TASK}'
 
 
-def test_audit_bootstrap_retains_predictions(tmp_path, monkeypatch, synthetic_ct):
+def test_audit_bootstrap_retains_predictions(tmp_path, monkeypatch, synthetic_ct, verified_contract):
     job, calls = dispatch(tmp_path, monkeypatch, synthetic_ct, audit=True, marker=False)
     assert len(calls) == 3 and (job / 'external' / bundle.TASK).is_dir()
 
@@ -138,30 +148,42 @@ def test_dispatch_refuses_missing_acceptance(tmp_path, monkeypatch, synthetic_ct
         dispatch(tmp_path, monkeypatch, synthetic_ct, marker=False)
 
 
-def test_dispatch_refuses_mri(tmp_path, monkeypatch, synthetic_ct):
+def test_dispatch_refuses_mri(tmp_path, monkeypatch, synthetic_ct, verified_contract):
     with pytest.raises(ValueError, match='requires one CT'):
         dispatch(tmp_path, monkeypatch, synthetic_ct, modality='MR')
 
 
 def test_v1_runner_uses_release_settings_and_writable_model_directories(tmp_path, monkeypatch):
     import run_lnctvseg
-    from types import ModuleType
+    from types import ModuleType, SimpleNamespace
     model = tmp_path / 'bundle'; source = model / 'weights/lnctvseg/release'
-    (source / 'fold_0').mkdir(parents=True)
+    source.mkdir(parents=True)
     (source / 'plans.pkl').write_bytes(b'plans')
-    (source / 'fold_0/model_final_checkpoint.model').write_bytes(b'checkpoint')
-    release = {'model_directory': 'weights/lnctvseg/release', 'folds': [0],
-               'checkpoint': 'model_final_checkpoint', 'tta': True}
+    (source / 'model_final_checkpoint.model').write_bytes(b'checkpoint')
+    metadata = {'init': ('/training/plans.pkl', 'all', '/training/output', '/training/data',
+                         True, 1, True, False, True), 'plans': {'stage': 1}}
+    original = pickle.dumps(metadata)
+    (source / 'model_final_checkpoint.model.pkl').write_bytes(original)
+    release = {'model_directory': 'weights/lnctvseg/release', 'folds': ['all'],
+               'checkpoint': 'model_final_checkpoint', 'tta': True, 'output_label_ids': list(range(8))}
     monkeypatch.setattr(run_lnctvseg, 'validate_assets', lambda root: {
-        'source_commit': 'pinned', 'nnunet': release})
+        'source_commit': 'pinned', 'nnunet': release, 'label_contract': {'status': 'unresolved'}})
+    monkeypatch.setitem(sys.modules, 'torch', SimpleNamespace(set_num_threads=lambda n: None,
+                        cuda=SimpleNamespace(is_available=lambda: False)))
     predict = ModuleType('nnunet.inference.predict'); calls = []
     def inference(*args, **kwargs):
         calls.append((args, kwargs))
         staged = Path(args[0])
-        assert not staged.is_symlink() and not (staged / 'fold_0').is_symlink()
+        assert not staged.is_symlink() and not (staged / 'all').is_symlink()
         assert not (staged / 'plans.pkl').is_symlink()
-        assert (staged / 'fold_0/model_final_checkpoint.model').is_symlink()
-        (staged / 'fold_0/runtime-output.json').write_text('{}')
+        assert (staged / 'all/model_final_checkpoint.model').is_symlink()
+        local = pickle.loads((staged / 'all/model_final_checkpoint.model.pkl').read_bytes())
+        assert local['plans'] == metadata['plans']
+        assert local['init'][0] == str(staged / 'plans.pkl')
+        assert local['init'][2] == str(staged)
+        assert local['init'][3] == str(tmp_path / 'work/preprocessed')
+        assert local['init'][4:] == metadata['init'][4:]
+        (staged / 'all/runtime-output.json').write_text('{}')
     predict.predict_from_folder = inference
     for name in ('nnunet', 'nnunet.inference'):
         monkeypatch.setitem(sys.modules, name, ModuleType(name))
@@ -171,13 +193,17 @@ def test_v1_runner_uses_release_settings_and_writable_model_directories(tmp_path
     monkeypatch.setattr(sys, 'argv', ['run_lnctvseg.py', '--input', str(tmp_path / 'input'),
         '--output', str(tmp_path / 'output'), '--work', str(tmp_path / 'work'), '--model-root', str(model)])
     run_lnctvseg.main()
-    assert calls[0][0][3] == [0]
+    assert calls[0][0][3] == ['all']
     assert calls[0][1]['checkpoint_name'] == 'model_final_checkpoint'
     assert calls[0][1]['tta'] and calls[0][1]['num_threads_preprocessing'] == 1
-    assert not (source / 'fold_0/runtime-output.json').exists()
+    assert calls[0][1]['mixed_precision'] is False
+    assert not (source / 'all').exists()
+    assert (source / 'model_final_checkpoint.model.pkl').read_bytes() == original
+    with pytest.raises(FileExistsError):
+        run_lnctvseg.main()
 
 
-def test_orientation_marker_is_bound_to_task_laterality_and_manifest(tmp_path):
+def test_orientation_marker_is_bound_to_task_laterality_and_manifest(tmp_path, verified_contract):
     marker = tmp_path / 'orientation.json'
     assert not bundle.orientation_ready(marker)
     good = {'task': bundle.TASK, 'result': 'passed', 'laterality': 'passed',
@@ -187,3 +213,36 @@ def test_orientation_marker_is_bound_to_task_laterality_and_manifest(tmp_path):
         assert not bundle.orientation_ready(marker)
     marker.write_text(json.dumps(good))
     assert bundle.orientation_ready(marker)
+
+
+def test_real_release_cannot_accept_a_forged_six_label_marker(tmp_path):
+    spec = bundle.manifest()
+    assert spec['nnunet']['normalization']['scheme'] == 'nonCT'
+    assert spec['nnunet']['normalization']['intensityproperties'] is None
+    assert spec['nnunet']['output_label_ids'] == list(range(8))
+    assert spec['label_contract']['unmapped_checkpoint_ids'] == [7]
+    with pytest.raises(ValueError, match='label contract unresolved'):
+        bundle.validate_acceptance(accepted())
+    marker = tmp_path / 'orientation.json'
+    marker.write_text(json.dumps(accepted()))
+    assert not bundle.orientation_ready(marker)
+
+
+def test_output_directories_cannot_resolve_inside_bundle(tmp_path):
+    from run_lnctvseg import job_output, stage_model
+    root = tmp_path / 'bundle'
+    root.mkdir()
+    alias = tmp_path / 'alias'
+    alias.symlink_to(root, target_is_directory=True)
+    with pytest.raises(ValueError, match='read-only model bundle'):
+        job_output(alias / 'prediction', root)
+    with pytest.raises(ValueError, match='read-only model bundle'):
+        stage_model(root, root / 'work', {})
+    assert list(root.iterdir()) == []
+
+
+def test_dispatch_blocks_undocumented_label_before_export(tmp_path, monkeypatch, synthetic_ct):
+    with pytest.raises(ValueError, match='label contract unresolved'):
+        dispatch(tmp_path, monkeypatch, synthetic_ct, audit=True, marker=False)
+    assert (tmp_path / 'job/external' / bundle.TASK).is_dir()
+    assert not list((tmp_path / 'job/output').glob('*.dcm'))
