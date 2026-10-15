@@ -2,7 +2,7 @@
 
 ## Upload and model selection
 
-Upload DICOM files, a folder, or ZIP archives. The portal groups images by Study, Series and modality. Select one assessed series and compatible models. CT defaults to `total`; MR defaults to `total_mr`. PET1 ISRT tasks require CT in the same Study and Frame of Reference. Do not treat this check as image registration.
+Upload DICOM files, a folder, or ZIP archives. The portal groups images by Study, Series and modality. Select one assessed series and compatible models. The recommended starting models are `total` for CT and `total_mr` for MR. Select each model explicitly in the guided UI; recommendations are never selected or run automatically. PET1 ISRT tasks require CT in the same Study and Frame of Reference. Do not treat this check as image registration.
 
 The browser uses resumable sessions with requests up to 32 MiB. A resumed chunk must use the server's expected byte offset. The receiving request times out after 60 seconds without new data. Session assessment runs in the background. Restart recovery marks interrupted jobs and sessions for review or retry; retention cleanup removes expired data.
 
