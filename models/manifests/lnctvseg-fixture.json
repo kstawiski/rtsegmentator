@@ -1,0 +1,27 @@
+{
+  "name": "lnctvseg-example-hn-ct",
+  "source": "https://github.com/Luoxd1996/LNCTVSeg/tree/1aa9284327eb663407baec16491c9b161fccdf28/eni_examples",
+  "source_commit": "1aa9284327eb663407baec16491c9b161fccdf28",
+  "dataset_doi": "10.6084/m9.figshare.26793622.v3",
+  "citation_doi": "10.1038/s41597-024-03890-0",
+  "license": "CC-BY-4.0",
+  "retrieved_utc": "2026-10-15",
+  "original_ct": "lnctvseg0001_0001.nii.gz",
+  "ct_sha256": "a6965888fbfca303f96157d2c6252c9c6820dd100e01d69638f94c109137bcf5",
+  "ct_bytes": 13045030,
+  "reference_labels_sha256": "236be3d9b717a725c3cf62a551279cab20c8806ac502fc7aca5b40beed1bd317",
+  "shape": [
+    512,
+    512,
+    200
+  ],
+  "spacing_mm": [
+    1.337890625,
+    1.337890625,
+    3.0
+  ],
+  "dicom_instances": 200,
+  "contrast": "contrast-enhanced, documented in the author example readme",
+  "conversion": "nifti_to_reference_dicom.py; derived headers and new UIDs, exact HU and affine round trip",
+  "limitation": "Development-cohort example: technical geometry fixture, not independent accuracy evidence."
+}

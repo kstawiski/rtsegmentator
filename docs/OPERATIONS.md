@@ -96,3 +96,19 @@ WORKER_MODE=local REMOTE_GPU_TASKS= "$RTSEG_WORKER_PYTHON" \
 This operator-only audit option runs fresh checks even if a marker already exists. It passes an explicit bootstrap argument to the local dispatcher; normal portal and SSH jobs do not pass it. Old markers for the audited task are removed before the run. New markers are written only after GPU inference, exact-grid uint16 output, RTSTRUCT conversion/round-trip validation and orientation auditing succeed. Failure returns a nonzero exit status and leaves that task unaccepted. `TASK_TIME_LIMIT_SECONDS` applies to each inference task; the default is 12 hours. Logs and retained predictions are under `RTSEG_ORIENTATION_RUN_ROOT`. The audit does not edit the enabled-models list.
 
 The four fixture assignments are in `catalog/orientation-audit-fixtures.json`. Brain uses the existing public OpenNeuro-derived T1 DICOM fixture; the publisher's NIfTI-only brain example cannot check DICOM contour orientation. No entries are needed in the prompt map for these automatic tasks. Model-agreement, laterality and GPU-compatibility results are recorded in `EXTERNAL_MODELS.md`.
+
+## NPC nodal CTV technical audit
+
+`lnctvseg_nnunet_v1` uses the six grouped nodal CTV labels from the LNCTVSeg release. Its catalog entry remains blocked while checkpoint retrieval, preprocessing inspection and weight licensing are unresolved. The three other published architectures are informational entries. See the [model ledger](../EXTERNAL_MODELS.md).
+
+The public `lnctvseg-example-hn-ct/dicom` fixture covers the head and neck. It is assigned to LNCTVSeg, HNLNL, LN-Seg-FM and compatible H&N OAR tasks in `catalog/orientation-audit-fixtures.json`. A fixture assignment is not a successful inference result. The case belongs to the authors' development cohort.
+
+For the manager's GPU audit, set `RTSEG_MODEL_ROOT`, `RTSEG_RUNTIME_ROOT` and `RTSEG_WORKER_PYTHON`. The worker interpreter needs pydicom, nibabel, SimpleITK, SciPy, OpenCV and rt-utils. Use a fresh run directory on project storage, `WORKER_MODE=local`, an empty `REMOTE_GPU_TASKS`, and a short task-owned `TMPDIR` such as `mktemp -d /tmp/lnctv.XXXXXX`. Keep `RTSEG_SCRATCH_ROOT` and caches on project storage; remove the short temporary directory after execution.
+
+```bash
+"$RTSEG_WORKER_PYTHON" scripts/run-nodal-gpu-checks.py --run-root "$RTSEG_NODAL_RUN_ROOT"
+```
+
+This operator-only script runs LNCTVSeg and HNLNL sequentially through `run_task.py --nodal-acceptance-audit`. It retains their predictions, requires the converter's contour-to-mask round trip, checks each labelled component ≥1 mL against the slice-wise CT body midline in patient LPS coordinates, and checks RTSTRUCT identity and references. Left has positive LPS X. Missing bilateral evidence fails the check; LNCTVSeg must also produce all six grouped labels at ≥1 mL on this fixture. Components below 1 mL are counted but excluded from the laterality decision. This centroid check detects gross side reversal; it does not measure contour accuracy.
+
+The audit records elapsed time and peak task-process GPU allocation sampled every 0.5 seconds. It excludes unrelated processes, but transient peaks between samples may be missed. A failed run removes that task's acceptance and orientation markers. Successful LNCTVSeg markers are bound to the pinned manifest and include laterality evidence. The script does not change the enabled-model list or resolve a weight licence. GPU checks have not been executed by the implementation worker.

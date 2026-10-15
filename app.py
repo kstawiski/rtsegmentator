@@ -205,6 +205,8 @@ for _name, _structures in MOOSE_TASKS.items():
 
 NV_SEGMENT_TASKS = json.loads((Path(__file__).parent / "catalog/nv-segment.json").read_text())
 EXTERNAL_TASKS.update(NV_SEGMENT_TASKS)
+LNCTVSEG_TASKS = json.loads((Path(__file__).parent / "catalog/lnctvseg.json").read_text())
+EXTERNAL_TASKS.update(LNCTVSEG_TASKS)
 
 NNUNET_V2_TASKS = json.loads((Path(__file__).parent / "catalog/nnunet-v2.json").read_text())
 for _name, _details in NNUNET_V2_TASKS.items():

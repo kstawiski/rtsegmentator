@@ -1,0 +1,54 @@
+{
+  "lnctvseg_nnunet_v1": {
+    "modality": "CT",
+    "clinical_tag_ids": [
+      "head_neck_cancer"
+    ],
+    "structures": "Six NPC nodal CTVs: bilateral II+III+Va, IV+Vb and Ib",
+    "reference": "https://doi.org/10.1038/s41597-024-03890-0",
+    "license": "Code: GPL-3.0; dataset: CC BY 4.0; weights: licence not verified",
+    "limitations": "NPC-specific institutional contouring conventions. Training data include contrast-enhanced and non-contrast CT. Grouped labels cannot be split into individual nodal levels. The paper also calls the lower-neck group IV+Vb+Vc; ROI names follow the release table. Development-cohort fixture checks do not establish independent accuracy.",
+    "description": "LNCTVSeg nnU-Net v1: NPC-specific grouped elective nodal CTVs, not individual levels or visible-node masks.",
+    "requires_preflight": true,
+    "blocked_status": "weights_retrieval_and_license_pending"
+  },
+  "lnctvseg_swinunetr": {
+    "modality": "CT",
+    "clinical_tag_ids": [
+      "head_neck_cancer"
+    ],
+    "structures": "Six NPC nodal CTVs: bilateral II+III+Va, IV+Vb and Ib",
+    "reference": "https://doi.org/10.1038/s41597-024-03890-0",
+    "license": "Code: GPL-3.0; dataset: CC BY 4.0; weights: licence not verified",
+    "limitations": "NPC-specific institutional contouring conventions. Training data include contrast-enhanced and non-contrast CT. Grouped labels cannot be split into individual nodal levels. The paper also calls the lower-neck group IV+Vb+Vc; ROI names follow the release table. Development-cohort fixture checks do not establish independent accuracy. The author links a shared weights archive, but its SwinUNETR checkpoint, inference configuration and weight licence have not been inspected. The pinned LNCTVSeg repository supplies no architecture or preprocessing implementation; no compatible installed inference contract has been established.",
+    "description": "LNCTVSeg SwinUNETR: NPC-specific grouped elective nodal CTVs, not individual levels.",
+    "enabled": false,
+    "status": "release_contract_unverified"
+  },
+  "lnctvseg_3duxnet": {
+    "modality": "CT",
+    "clinical_tag_ids": [
+      "head_neck_cancer"
+    ],
+    "structures": "Six NPC nodal CTVs: bilateral II+III+Va, IV+Vb and Ib",
+    "reference": "https://doi.org/10.1038/s41597-024-03890-0",
+    "license": "Code: GPL-3.0; dataset: CC BY 4.0; weights: licence not verified",
+    "limitations": "NPC-specific institutional contouring conventions. Training data include contrast-enhanced and non-contrast CT. Grouped labels cannot be split into individual nodal levels. The paper also calls the lower-neck group IV+Vb+Vc; ROI names follow the release table. Development-cohort fixture checks do not establish independent accuracy. The author links a shared weights archive, but its 3D UXNet checkpoint, inference configuration and weight licence have not been inspected. The pinned LNCTVSeg repository supplies no architecture or preprocessing implementation; no compatible installed inference contract has been established.",
+    "description": "LNCTVSeg 3D UXNet: NPC-specific grouped elective nodal CTVs, not individual levels.",
+    "enabled": false,
+    "status": "release_contract_unverified"
+  },
+  "lnctvseg_repuxnet": {
+    "modality": "CT",
+    "clinical_tag_ids": [
+      "head_neck_cancer"
+    ],
+    "structures": "Six NPC nodal CTVs: bilateral II+III+Va, IV+Vb and Ib",
+    "reference": "https://doi.org/10.1038/s41597-024-03890-0",
+    "license": "Code: GPL-3.0; dataset: CC BY 4.0; weights: licence not verified",
+    "limitations": "NPC-specific institutional contouring conventions. Training data include contrast-enhanced and non-contrast CT. Grouped labels cannot be split into individual nodal levels. The paper also calls the lower-neck group IV+Vb+Vc; ROI names follow the release table. Development-cohort fixture checks do not establish independent accuracy. The author links a shared weights archive, but its RepUXNet checkpoint, inference configuration and weight licence have not been inspected. The pinned LNCTVSeg repository supplies no architecture or preprocessing implementation; no compatible installed inference contract has been established.",
+    "description": "LNCTVSeg RepUXNet: NPC-specific grouped elective nodal CTVs, not individual levels.",
+    "enabled": false,
+    "status": "release_contract_unverified"
+  }
+}

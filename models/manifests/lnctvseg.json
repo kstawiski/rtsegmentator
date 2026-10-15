@@ -1,0 +1,22 @@
+{
+  "source_url": "https://github.com/Luoxd1996/LNCTVSeg",
+  "source_commit": "1aa9284327eb663407baec16491c9b161fccdf28",
+  "retrieved_utc": "2026-10-15",
+  "code_license": "GPL-3.0",
+  "weights_url": "https://drive.google.com/file/d/1Xcayh7jRnYngMu9MUMglYCmcHbHXsKqJ/view",
+  "weights_license": "Not stated in the repository or linked Drive listing; archive inspection pending",
+  "dataset_license": "CC-BY-4.0",
+  "files": {
+    "sources/LNCTVSeg/README.md": {
+      "bytes": 2364,
+      "sha256": "7eb130599789d647d3df0d5dad97ba5fe20e569c4461ae17b6b35dcc5f2529cd"
+    },
+    "sources/LNCTVSeg/LICENSE": {
+      "bytes": 35150,
+      "sha256": "fce02ebb691c768cde194afbe91b8025fd7b1f49031f33996deb246a5926f0e2"
+    }
+  },
+  "nnunet": null,
+  "status": "weights_retrieval_pending",
+  "label_map_sha256": "24b1d553565747a848b0563782f46f9436a3e2d48fd4dd518d683477fbd8c97f"
+}

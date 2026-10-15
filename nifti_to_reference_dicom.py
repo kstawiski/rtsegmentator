@@ -13,6 +13,8 @@ p.add_argument("input")
 p.add_argument("output_dir")
 p.add_argument("--modality", default="MR", choices=["MR", "CT", "PT"])
 p.add_argument("--description", default="Synthetic geometry reference; research validation only")
+p.add_argument("--patient-id", default="PUBLIC-RESEARCH")
+p.add_argument("--study-id", default="PUBLIC-RESEARCH")
 a = p.parse_args()
 
 # Normalize storage axes to RAS before treating axis 2 as the DICOM slice
@@ -65,10 +67,10 @@ for k in range(values.shape[2]):
     ds.FrameOfReferenceUID = frame_uid
     ds.Modality = a.modality
     ds.PatientName = "RESEARCH^SYNTHETIC"
-    ds.PatientID = "HNTSMRG24-101-SYNTHETIC"
+    ds.PatientID = a.patient_id
     ds.PatientBirthDate = ""
     ds.PatientSex = ""
-    ds.StudyID = "SYNTH-HNTS-101"
+    ds.StudyID = a.study_id
     ds.StudyDate = "20240801"
     ds.SeriesDate = "20240801"
     ds.StudyTime = "120000"

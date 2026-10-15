@@ -611,3 +611,26 @@ The source now includes cached catalogs, resumable uploads, per-task process-tre
 The captured deployment returned 253 tasks, 182 enabled. These counts describe that installation; fresh installations must pass their own preflight and orientation gates. All model-specific warnings and numerical results above are retained. Private fixture/job identifiers and private artifact hashes are withheld without relabeling the associated measurements as public-fixture validation. Public fixture maps and external private override configuration are documented in [operations](docs/OPERATIONS.md).
 
 The dated SCT statements above describe successive historical states. Current task definitions are in `catalog/sct.json`, with additional recorded validation in `models/validation/`. Neither a copied marker nor this source synchronization establishes clinical or manuscript readiness.
+
+## LNCTVSeg NPC grouped nodal CTVs (2026-10-15)
+
+`lnctvseg_nnunet_v1` is registered behind separate installation, acceptance and orientation gates. Its checkpoint retrieval and release-plan inspection are pending; it is not an executable accepted model yet. The integration targets the existing `envs/nnunet-v1` runtime and the native v1 `predict_from_folder` interface. It does not infer preprocessing settings from a model name. Inference remains blocked until the release directory, folds, checkpoint names and actual file hashes are recorded in `models/manifests/lnctvseg.json`.
+
+The [pinned author repository](https://github.com/Luoxd1996/LNCTVSeg/tree/1aa9284327eb663407baec16491c9b161fccdf28) is GPL-3.0. The [author-linked weights](https://drive.google.com/drive/folders/13JsdK2WUdYROpmN2Z2UurdsfZkiXVxzU) have no separately verified licence at this stage. The [dataset, version 3](https://doi.org/10.6084/m9.figshare.26793622.v3), is CC BY 4.0. These licences are distinct from the article licence. Citation: [Luo et al., Scientific Data 11, 1085 (2024)](https://doi.org/10.1038/s41597-024-03890-0).
+
+| Released ID | RTSTRUCT ROI |
+|---|---|
+| 1 | LN CTV R II-III-Va |
+| 2 | LN CTV L II-III-Va |
+| 3 | LN CTV R IV-Vb |
+| 4 | LN CTV L IV-Vb |
+| 5 | LN CTV R Ib |
+| 6 | LN CTV L Ib |
+
+These are NPC-specific grouped elective nodal CTVs, not individual levels or visible-node masks. The numeric map comes from the pinned README and agrees with patient-space laterality of its example reference masks. The paper calls the lower-neck group IV+Vb+Vc in parts of the text; export names retain the repository's IV+Vb labels. Contouring follows the participating institutions' NPC conventions, including modified boundaries. Training data include contrast-enhanced and non-contrast CT. Grouped masks cannot recover their constituent levels.
+
+SwinUNETR, 3D UXNet and RepUXNet are informational catalog entries. Their checkpoint configurations, preprocessing contracts and weight licence have not been inspected. The pinned LNCTVSeg repository supplies no architecture implementation; compatibility with an installed runtime has not been established. No new heavy environment was created.
+
+The public `lnctvseg-example-hn-ct/dicom` fixture contains 200 derived DICOM slices from the author-provided contrast-enhanced example, with full neck coverage. NIfTI→DICOM→NIfTI preserved every HU value and the affine exactly. The six reference components passed the body-midline laterality check; their volumes were 92.9898, 96.0721, 49.4617, 56.9312, 8.3018 and 7.3030 mL in label order. This development-cohort example supports technical geometry checks, not independent accuracy estimates. Its source hashes and licence are recorded in `models/manifests/lnctvseg-fixture.json` and the installed fixture's `SOURCE.md`.
+
+No GPU inference or acceptance marker was produced during implementation. The operator audit retains predictions, converts them with the standard RTSTRUCT converter, checks patient-space laterality for components ≥1 mL, records elapsed time and sampled process VRAM, and publishes markers only after all checks pass. These checks do not establish clinical or manuscript readiness.
