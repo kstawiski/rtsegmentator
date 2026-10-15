@@ -12,10 +12,14 @@ from pathlib import Path
 
 import pydicom
 from nv_segment_logic import MODES as NV_SEGMENT_MODES
+import lnctvseg_bundle
 
 job=Path(sys.argv[1]); task=sys.argv[2]
 if not re.fullmatch(r"[A-Za-z0-9_]+",task): raise SystemExit("Invalid task")
 output=job/"output"/f"{task}_RTSTRUCT.dcm"
+NODAL_AUDIT = '--nodal-acceptance-audit' in sys.argv[3:]
+if NODAL_AUDIT and task not in {lnctvseg_bundle.TASK, 'hnlnl_2d3d'}:
+    raise SystemExit('Nodal acceptance audit accepts only LNCTVSeg and HNLNL')
 child = None
 APP_ROOT = Path(os.environ.get("RTSEG_APP_ROOT", Path(__file__).resolve().parent))
 MODEL_ROOT = Path(os.environ.get("RTSEG_MODEL_ROOT", "/models"))
@@ -578,6 +582,34 @@ try:
              "--dicom", str(job / "input"), "--output", str(output),
              "--labels", str(APP_ROOT / labels)])
         shutil.rmtree(work, ignore_errors=True)
+    elif task == lnctvseg_bundle.TASK:
+        if not NODAL_AUDIT:
+            lnctvseg_bundle.validate_acceptance(json.loads(
+                (MODEL_ROOT / 'validation' / f'{task}.json').read_text()))
+        modalities = {str(pydicom.dcmread(path, stop_before_pixels=True).Modality)
+                      for path in (job / 'input').iterdir() if path.is_file()}
+        if modalities != {'CT'}:
+            raise ValueError('LNCTVSeg requires one CT series')
+        work = job / 'external' / task
+        input_dir, prediction_dir = work / 'input', work / 'prediction'
+        input_dir.mkdir(parents=True, exist_ok=True)
+        prediction_dir.mkdir(parents=True, exist_ok=True)
+        nifti = input_dir / 'case_0000.nii.gz'
+        run([sys.executable, str(APP_ROOT / 'dicom_series_to_nifti.py'),
+             str(job / 'input'), str(nifti)])
+        run([str(RUNTIME_ROOT / 'envs/nnunet-v1/bin/python'), str(APP_ROOT / 'run_lnctvseg.py'),
+             '--input', str(input_dir), '--output', str(prediction_dir),
+             '--work', str(work / 'inference'), '--model-root', str(MODEL_ROOT)])
+        # Preserve every raw checkpoint class for Dice; export only documented IDs.
+        exported = work / 'export' / 'case.nii.gz'
+        lnctvseg_bundle.prepare_export(prediction_dir / 'case.nii.gz', exported,
+                                      job / 'output' / task)
+        run([sys.executable, str(APP_ROOT / 'convert_validate_rtstruct.py'),
+             '--prediction', str(exported), '--model-input', str(nifti),
+             '--dicom', str(job / 'input'), '--output', str(output),
+             '--labels', str(APP_ROOT / 'labels/lnctvseg.json')])
+        if not NODAL_AUDIT:
+            shutil.rmtree(work, ignore_errors=True)
     elif task in NNUNET_V1_TASKS:
         spec = NNUNET_V1_TASKS[task]
         work = job / "external" / task
@@ -1059,7 +1091,8 @@ try:
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),
              "--labels", str(APP_ROOT / "hnlnl-labels.json")])
-        shutil.rmtree(work, ignore_errors=True)
+        if not NODAL_AUDIT:
+            shutil.rmtree(work, ignore_errors=True)
     elif task == "dbdmp_lnq":
         root = MODEL_ROOT
         work = job / "external" / task

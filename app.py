@@ -212,6 +212,8 @@ for _name, _structures in MOOSE_TASKS.items():
 
 NV_SEGMENT_TASKS = json.loads((Path(__file__).parent / "catalog/nv-segment.json").read_text())
 EXTERNAL_TASKS.update(NV_SEGMENT_TASKS)
+LNCTVSEG_TASKS = json.loads((Path(__file__).parent / "catalog/lnctvseg.json").read_text())
+EXTERNAL_TASKS.update(LNCTVSEG_TASKS)
 
 NNUNET_V2_TASKS = json.loads((Path(__file__).parent / "catalog/nnunet-v2.json").read_text())
 for _name, _details in NNUNET_V2_TASKS.items():
@@ -792,7 +794,10 @@ def retrieve_worker_results(job, remote, task=None):
     """Whole SSH jobs copy all output; routed tasks copy only the output they own."""
     (job / "output").mkdir(exist_ok=True)
     source = "output/." if task is None else ("output/report" if task == REPORT_TASK else f"output/{task}_RTSTRUCT.dcm")
-    subprocess.run(["scp", "-q", "-r", f"{WORKER}:{remote}/{source}", str(job / "output") + "/"],
+    sources = [f"{WORKER}:{remote}/{source}"]
+    if task == "lnctvseg_nnunet_v1":
+        sources.append(f"{WORKER}:{remote}/output/{task}")
+    subprocess.run(["scp", "-q", "-r", *sources, str(job / "output") + "/"],
                    check=True, timeout=600)
 
 
@@ -1149,6 +1154,9 @@ def finalize_results(job: Path, empty=()):
     if report is not None:
         detail = "Results ready; AI draft " + report["status"].replace("_", " ")
         save_metadata(job, report_status=report["status"], report_reason=report.get("reason", ""))
+    conversion_note = job / "output/lnctvseg_nnunet_v1/OMITTED_LABELS.txt"
+    if conversion_note.is_file():
+        omissions = omissions + [conversion_note.read_text().strip()]
     notes = metadata(job).get("postprocess_notes", []) + omissions
     if notes: detail += "; " + "; ".join(notes)
     save_metadata(job,status="complete",detail=detail,progress=100,no_structures_found=empty,

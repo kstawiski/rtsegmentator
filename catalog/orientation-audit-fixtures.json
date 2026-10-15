@@ -42,5 +42,17 @@
   "nv_segment_ct_auto": "msd-lung/dicom",
   "nv_segment_ctmr_ct_body": "kits19-case00000/dicom",
   "nv_segment_ctmr_mri_body": "totalsegmentator-mri/s0052/dicom",
-  "nv_segment_ctmr_mri_brain": "hippunfold-ds002168-T1w/dicom"
+  "nv_segment_ctmr_mri_brain": "hippunfold-ds002168-T1w/dicom",
+  "lnctvseg_nnunet_v1": "lnctvseg-example-hn-ct/dicom",
+  "hnlnl_2d3d": "lnctvseg-example-hn-ct/dicom",
+  "lnsegfm_nnunet": "lnctvseg-example-hn-ct/dicom",
+  "lnsegfm_resenc_m": "lnctvseg-example-hn-ct/dicom",
+  "lnsegfm_resenc_l": "lnctvseg-example-hn-ct/dicom",
+  "lnsegfm_swinunetr": "lnctvseg-example-hn-ct/dicom",
+  "cads_open_558_headneck_oars": "lnctvseg-example-hn-ct/dicom",
+  "medlsam_structseg_han_oars": "lnctvseg-example-hn-ct/dicom",
+  "cerr_ct_hn_smit": "lnctvseg-example-hn-ct/dicom",
+  "head_glands_cavities": "lnctvseg-example-hn-ct/dicom",
+  "headneck_bones_vessels": "lnctvseg-example-hn-ct/dicom",
+  "headneck_muscles": "lnctvseg-example-hn-ct/dicom"
 }

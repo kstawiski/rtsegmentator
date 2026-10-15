@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from nv_segment_logic import MODES as NV_SEGMENT_MODES, validate_acceptance
+import lnctvseg_bundle
 
 MODEL_ROOT = Path(os.environ.get("RTSEG_MODEL_ROOT", "/models"))
 RUNTIME_ROOT = Path(os.environ.get("RTSEG_RUNTIME_ROOT", MODEL_ROOT))
@@ -435,6 +436,14 @@ for _task, _spec in NV_SEGMENT_MODES.items():
         ]
 
 
+LNCTVSEG_MANIFEST = lnctvseg_bundle.manifest()
+REQUIREMENTS[lnctvseg_bundle.TASK] = [
+    "@run_lnctvseg.py", "@lnctvseg_bundle.py", "@models/manifests/lnctvseg.json",
+    "@labels/lnctvseg.json", "envs/nnunet-v1/bin/python",
+    *LNCTVSEG_MANIFEST['files'], f"validation/{lnctvseg_bundle.TASK}.json",
+]
+
+
 def audit(tasks=None) -> dict[str, dict]:
     report = {}
     for task, requirements in REQUIREMENTS.items():
@@ -452,6 +461,20 @@ def audit(tasks=None) -> dict[str, dict]:
             if not path.exists():
                 missing.append(requirement.lstrip("@"))
         acceptance_ready = False
+        if task == lnctvseg_bundle.TASK:
+            if not LNCTVSEG_MANIFEST.get('nnunet'):
+                missing.append('LNCTVSeg pinned release plans and checkpoints')
+            try:
+                lnctvseg_bundle.validate_label_contract()
+            except ValueError as exc:
+                missing.append(str(exc))
+            try:
+                lnctvseg_bundle.validate_acceptance(json.loads(
+                    (MODEL_ROOT / 'validation' / f'{task}.json').read_text()))
+                acceptance_ready = True
+            except (OSError, ValueError, TypeError):
+                if f'validation/{task}.json' not in missing:
+                    missing.append(f'validation/{task}.json (inconsistent acceptance contents)')
         if task in NV_SEGMENT_MODES:
             marker = MODEL_ROOT / "validation" / f"{task}.json"
             try:
@@ -463,9 +486,11 @@ def audit(tasks=None) -> dict[str, dict]:
         orientation = MODEL_ROOT / "orientation-validation" / f"{task}.json"
         report[task] = {"ready": not missing, "missing": missing,
                         "orientation_ready": orientation.is_file()}
+        if task == lnctvseg_bundle.TASK:
+            report[task]['orientation_ready'] = lnctvseg_bundle.orientation_ready(orientation)
         if task == "nv_reason_ct_report":
             report[task]["acceptance_ready"] = report_acceptance_ready()
-        elif task in NV_SEGMENT_MODES:
+        elif task in NV_SEGMENT_MODES or task == lnctvseg_bundle.TASK:
             report[task]["acceptance_ready"] = acceptance_ready
     # Native tasks have the same installed-runtime contract as the production catalog.
     for task in set(tasks or []) - REQUIREMENTS.keys():
