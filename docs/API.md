@@ -27,6 +27,70 @@ Other routes:
 - `GET /api/v1/models` — model catalog, modalities, outputs, availability, and curated `clinical_tags` for tumor-site discovery. Tags mean a model may be useful in that planning workflow; they do not imply tumor-segmentation capability or a clinical indication.
 - `GET /api/v1/jobs` — recent jobs.
 
+## Viewer
+
+The viewer reads the selected series on the portal host in every worker mode. It does not run a model.
+
+| Route | Result |
+| --- | --- |
+| `GET /api/v1/jobs/{jid}/viewer` | Series geometry, window presets, all output RTSTRUCT ROI lists, and report availability. |
+| `GET /api/v1/jobs/{jid}/viewer/slices/{index}.png` | An 8-bit grayscale PNG in the stored DICOM pixel grid. |
+| `GET /api/v1/jobs/{jid}/viewer/contours/{index}` | ROI paths in that PNG's pixel coordinates. |
+| `GET /api/v1/uploads/{uid}/series/{series_key}/viewer` | The same metadata envelope, with empty `structure_sets` and `report: false`. |
+| `GET /api/v1/uploads/{uid}/series/{series_key}/viewer/slices/{index}.png` | An image from an assessed upload, before job submission. |
+| `DELETE /api/v1/jobs/{jid}` | Deletes a terminal job, its images, output and logs; returns `{"id":"JOB_ID","deleted":true}`. |
+
+Use the exact `series_key` returned by upload assessment (`SeriesInstanceUID|Modality`) and URL-encode it as one path segment. Upload viewing expires when the selected files move into a job or upload retention expires. Job IDs accept only letters, digits and hyphens; upload/session IDs cannot be used as job IDs. Identifiers are not filesystem paths or authorization credentials.
+
+Example job metadata (illustrative values):
+
+```json
+{
+  "series": {
+    "modality": "CT", "rows": 512, "columns": 512, "slices": 96,
+    "pixel_spacing": [0.8, 0.8], "slice_spacing": 2.0, "orientation": "axial",
+    "window_presets": [
+      {"id": "soft-tissue", "label": "Soft tissue", "center": 40, "width": 400},
+      {"id": "lung", "label": "Lung", "center": -600, "width": 1500},
+      {"id": "bone", "label": "Bone", "center": 400, "width": 1800},
+      {"id": "brain", "label": "Brain", "center": 40, "width": 80}
+    ],
+    "default_window": "soft-tissue"
+  },
+  "structure_sets": [{
+    "model": "total", "label": "Structures",
+    "rois": [{"key": "a2b3c4d5e6f78901:1", "number": 1, "name": "Example ROI",
+              "color": "#112233", "slices": [10, 11, 12]}]
+  }],
+  "report": false
+}
+```
+
+`pixel_spacing` is `[row, column]` in mm. `slice_spacing` is the median distance between acquired planes (the spacing/thickness tag for a single image); it does not imply a regular stack. Missing slices are not inserted or interpolated. `orientation` is `axial`, `coronal` or `sagittal` when the normal is within 1 degree of that patient axis, otherwise `oblique`. This label does not change image rotation or laterality. Render the PNG without an implicit radiological flip, rotation, transpose or physical-aspect correction; apply any display transform equally to image and paths.
+
+All image routes accept either `?window=lung` (or another returned preset ID), or `?center=40&width=400`. Omission selects `default_window`. A valid first DICOM window takes precedence and appears as `dicom`. CT without that window defaults to soft tissue. MR/PT without a DICOM window use `auto`, computed once from the middle slice's 1st and 99th intensity percentiles. The selected window is applied after rescale slope/intercept, using DICOM LINEAR windowing; MONOCHROME1 is inverted. Width must be finite and at least 1; center must be finite. Do not combine a preset with numeric window parameters. PNG headers include `X-Slice-Index`, `X-Slice-Count`, `X-Columns` and `X-Rows`. Viewer JSON and images use `Cache-Control: no-store`.
+
+Example contour response:
+
+```json
+{"index":10,"rois":[{"key":"a2b3c4d5e6f78901:1","paths":[[[27.0,3.0],[30.0,3.0],[30.0,15.0],[40.0,15.0],[40.0,18.0],[27.0,18.0]]]}]}
+```
+
+Coordinates are floats: `x = column`, `y = row`; `(0,0)` is the centre of the top-left stored pixel. Indices are zero based. Each path is a closed polygon; close its last point to its first when drawing. Use an even-odd fill rule for multiple paths belonging to one ROI, including `CLOSEDPLANAR_XOR`. `key` identifies output-relative RTSTRUCT path plus ROI number, so repeated numbers/names from different models remain distinct. `model` is the filename stem with `_RTSTRUCT` removed; `label` is `StructureSetLabel` or that model name. Colours use `ROIDisplayColor`, with a fixed palette when absent or invalid. RTSTRUCT discovery includes nested DICOM output files. ROIs with no matching source planes have `slices: []`; they are not overlaid on a different series. Unsupported non-closed contours return 422. Report-only and empty-prediction jobs have no structure sets. `report` means the completed job's JSON report is available through the existing report routes, including a report that records `not_generated`; it does not assert a successful diagnostic report.
+
+Geometry and prompt contract:
+
+- Sort slices by `dot(IPP, cross(IOP[0:3], IOP[3:6]))`, increasing along the slice normal. Do not sort by raw patient z, filename or `InstanceNumber`.
+- Match a contour's `ContourImageSequence` SOP Instance UID first. A foreign UID never falls back to distance. Without image references, select the nearest acquired plane within half the smallest acquired spacing (capped by `SpacingBetweenSlices`, if present). Equidistant planes are ambiguous and omitted. This prevents a large gap from widening the matching tolerance. Conflicting references, off-plane referenced contours and nonplanar contours return 422.
+- For patient point `P`, slice origin `IPP`, first IOP triplet `C`, second IOP triplet `R`, and DICOM spacing `[dr, dc]`, compute `x = dot(P - IPP, C) / dc` and `y = dot(P - IPP, R) / dr`. Each slice supplies its own origin. A different Frame of Reference is not treated as registration.
+- The existing `/api/uploads/{uid}/preview?series_key=...&index=...` now shares this order and rendering. It retains its index-clamping behaviour and dimension headers. Its former raw-z ordering and per-image percentile window fallback have changed. New image routes reject out-of-range indices. Existing prompted runners receive `[column,row,slice]` on the selected series through `dicom_series_to_nifti.py` (GDCM/SimpleITK) and preserve those array indices. Prompts saved against the old preview can refer to a different slice in flipped/non-axial series; recreate those prompts. An irregular stack retains acquired slice indices, although NIfTI conversion represents its slice spacing with an average.
+
+Missing, expired or already deleted data return 404, including completed jobs from before input retention was introduced. Unsupported/malformed geometry, multiframe images, colour images, decoding failures and invalid windows return 422. Compressed transfer syntaxes require an appropriate installed pydicom decoder. The selected series must have consistent dimensions, in-plane spacing, orientation and Frame of Reference, with distinct slice planes and SOP Instance UIDs. No resampling is performed. The separate prostate crop tool still has its own output package and input cleanup; it does not retain a selected viewer series.
+
+Deletion returns 409 for queued, transferring, processing, retrieving or unknown/nonterminal states. SSH jobs, routed SSH tasks and worker-orchestrated Colab jobs use the existing remote cleanup helper before local removal. Remote failure returns 502 and keeps local data for a deletion retry. Delete and retry requests share a process-local lock; this does not add distributed job coordination. Retention still uses the existing cleanup schedule. Deletion cannot cancel a running job.
+
+Series headers and mapped overlays use bounded in-process caches. File paths, modification times, sizes and inode changes invalidate cached entries; RTSTRUCT parsing is reused across metadata and contour requests. PNG requests decode one slice. Cache eviction, deletion and application restart can require rebuilding an index.
+
 HTTP `202` means accepted. HTTP `409` from the result endpoint means the job is not complete. Validation failures use `400`/`422`.
 
 ## Security

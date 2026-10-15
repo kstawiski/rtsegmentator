@@ -30,6 +30,7 @@ from starlette.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 
 from crop_prostate_sbrt import NoSelectedROIError, crop_ct_rtstruct, discover_dicom
+from viewer import ViewerService
 
 BASE = Path(os.environ.get("PORTAL_DATA", Path(__file__).parent / "data"))
 WORKER = os.environ.get("SEGMENTATION_WORKER", "worker@rtsegmentator-worker")
@@ -77,6 +78,8 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 queue_lock = threading.Lock()
 metadata_lock = threading.Lock()
 logger = logging.getLogger(__name__)
+viewer = ViewerService(globals())
+app.include_router(viewer.router)
 
 FALLBACK_TASKS = ["total", "total_mr", "total_v3", "body", "body_mr", "vertebrae_mr", "lung_vessels", "lung_vessels_LEGACY", "cerebral_bleed", "hip_implant", "coronary_arteries", "coronary_arteries_LEGACY", "pleural_pericard_effusion", "head_glands_cavities", "head_muscles", "headneck_bones_vessels", "headneck_muscles", "liver_vessels", "liver_segments", "liver_segments_mr", "liver_lesions", "liver_lesions_mr", "oculomotor_muscles", "lung_nodules", "kidney_cysts", "breasts", "ventricle_parts", "tissue_types", "tissue_types_mr", "tissue_4_types", "brain_structures", "vertebrae_body", "face", "thigh_shoulder_muscles", "thigh_shoulder_muscles_mr", "appendicular_bones", "appendicular_bones_mr", "aortic_sinuses", "heartchambers_highres", "trunk_cavities", "brain_aneurysm"]
 EXTERNAL_TASKS = {
@@ -1108,7 +1111,7 @@ def finalize_results(job: Path, empty=()):
             z.writestr("NO_STRUCTURES_FOUND.txt",
                        "These models ran to completion but found no structures in the selected series, "
                        "so no RTSTRUCT was created for them:\n" + "".join(f"- {name}\n" for name in empty))
-    shutil.rmtree(job/"input",ignore_errors=True)
+    # Retain the selected input for the viewer until job retention or explicit deletion.
     shutil.rmtree(job/"input_ct",ignore_errors=True)
     if not results:
         detail = f"No structures found by {', '.join(empty)}; no RTSTRUCT was created"
@@ -1828,47 +1831,8 @@ async def assess_upload(files: list[UploadFile]=File(...)):
 
 @app.get("/api/uploads/{uid}/preview")
 def preview_slice(uid: str, series_key: str, index: int = 0):
-    """Render one locally staged DICOM slice for interactive prompt placement."""
-    if not re.fullmatch(r"upload-[A-Za-z0-9-]+", uid): raise HTTPException(404)
-    stage = BASE / uid
-    try: data = json.loads((stage / "upload.json").read_text())
-    except Exception: raise HTTPException(404, "Upload not found or expired")
-    selected = next((g for g in data["series"] if g["key"] == series_key), None)
-    if not selected: raise HTTPException(404, "Series not found")
-    ordered = []
-    for name in selected["files"]:
-        path = stage / "input" / name
-        try:
-            ds = pydicom.dcmread(path, stop_before_pixels=True)
-            position = tuple(float(v) for v in getattr(ds, "ImagePositionPatient", []))
-            order = (position[-1] if position else float(getattr(ds, "InstanceNumber", 0)),
-                     float(getattr(ds, "InstanceNumber", 0)), name)
-            ordered.append((order, path))
-        except Exception: pass
-    ordered.sort(key=lambda item: item[0])
-    if not ordered: raise HTTPException(422, "Series has no renderable slices")
-    index = max(0, min(index, len(ordered)-1))
-    ds = pydicom.dcmread(ordered[index][1])
-    try: pixels = ds.pixel_array.astype(np.float32)
-    except Exception as exc: raise HTTPException(422, f"DICOM pixel decoding failed: {exc}")
-    pixels = pixels * float(getattr(ds,"RescaleSlope",1)) + float(getattr(ds,"RescaleIntercept",0))
-    def scalar(value):
-        try: return float(value[0])
-        except Exception: return float(value)
-    try:
-        center, width = scalar(ds.WindowCenter), max(1.0, scalar(ds.WindowWidth))
-        low, high = center-width/2, center+width/2
-    except Exception:
-        finite = pixels[np.isfinite(pixels)]
-        low, high = np.percentile(finite, [1,99]) if finite.size else (0,1)
-        if high <= low: high = low+1
-    rendered = np.clip((pixels-low)/(high-low)*255,0,255).astype(np.uint8)
-    if str(getattr(ds,"PhotometricInterpretation","")) == "MONOCHROME1": rendered = 255-rendered
-    image = Image.fromarray(rendered)
-    payload = io.BytesIO(); image.save(payload, format="PNG")
-    return Response(payload.getvalue(), media_type="image/png", headers={
-        "X-Slice-Index":str(index), "X-Slice-Count":str(len(ordered)),
-        "X-Columns":str(int(ds.Columns)), "X-Rows":str(int(ds.Rows))})
+    """Use the same normal-based order and pixel grid as the viewer and prompt runners."""
+    return viewer.preview(uid, series_key, index)
 
 def model_details(name: str) -> dict:
     return EXTERNAL_TASKS.get(name) or INFORMATIONAL_MODELS.get(name, {})
@@ -2051,6 +2015,7 @@ def list_jobs():
 
 @app.post("/api/jobs/{jid}/retry", status_code=202)
 @app.post("/api/v1/jobs/{jid}/retry", status_code=202, tags=["automation"])
+@viewer.serialize_job_mutation
 def retry_job(jid: str):
     if not re.fullmatch(r"[A-Za-z0-9-]+", jid): raise HTTPException(404)
     job=BASE/jid; data=metadata(job)
