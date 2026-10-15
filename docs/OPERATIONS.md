@@ -8,7 +8,7 @@ The browser uses resumable sessions with requests up to 32 MiB. A resumed chunk 
 
 ## Prompts
 
-Prompt coordinates are `[column, row, slice]` on the selected series. Keep prompt data with its source series. The catalog describes the required prompt type and supported modality for each model.
+Prompt coordinates are `[column, row, slice]` on the selected series, sorted along the DICOM slice normal. The upload preview and viewer share this order and the stored pixel grid. Recreate prompts saved with the older raw-z preview for flipped or non-axial series. Keep prompt data with its source series. The catalog describes the required prompt type and supported modality for each model.
 
 - PAM propagates a positive point or axial box through a volume.
 - SAT3D needs a positive 3D point and supports negative points within its prompt-centred ROI.
@@ -23,6 +23,8 @@ The assessed-upload endpoint accepts `prompt_json`. Do not use the direct multip
 The converter checks prediction shape and affine against the model input, requires an explicit name for every nonzero label, maps column/row/slice arrays directly to RTSTRUCT row/column/slice masks, and checks DICOM SOP class and source image references. It compares physical LPS bounds and independently rasterizes contours onto the NIfTI grid. The physical round-trip minimum Dice is 0.95. Bounding-box tolerance is the larger of 2.1 mm and 2.1 times the largest voxel spacing. Overlapping-mask conversion preserves separate ROIs.
 
 External model availability also requires orientation acceptance markers. These technical checks detect conversion errors; they do not measure segmentation accuracy in a new patient. Empty candidate predictions may complete with a no-candidates note; contours are not fabricated.
+
+The viewer's synthetic tests found an existing `rt-utils==1.2.7` writer limitation: it pairs unequal row/column spacings incorrectly and assumes uniform slice spacing. The unchanged production converter rejected the tested unequal-spacing masks at its physical geometry gate. Viewer tests use the production converter for supported fixtures and independently specified patient-space contours in an rt-utils RTSTRUCT container for unequal-spacing and gapped fixtures. Passing those viewer tests does not validate the writer for these inputs.
 
 ## Prostate SBRT crop
 
@@ -47,6 +49,10 @@ Historical acceptance metadata retains measured counts and model limitations. Pr
 ## Privacy and checks
 
 Restrict the portal to authenticated users over TLS. Job IDs are not credentials. Do not commit uploads, patient prompts, model weights, license files or logs. Retention defaults to 24 hours; set `RETENTION_HOURS` and review storage permissions and backup policies.
+
+Completed segmentation and draft-report jobs retain the selected input images on the portal host in `job/input` for research viewing until retention expiry or `DELETE /api/v1/jobs/{jid}`. Retention is measured from job creation; the existing hourly cleanup removes the whole job. Viewer access returns 404 after expiry even before cleanup runs. Plan storage for these retained images as well as outputs. Companion CT input and remote worker copies keep their existing cleanup behaviour. Older completed jobs whose inputs were deleted cannot be viewed without a new upload. The separate prostate crop tool retains its existing output package and input cleanup.
+
+Deletion is available for terminal jobs and removes local images, contours, reports and logs. Queued or running jobs return 409. SSH cleanup must succeed before local deletion; a 502 response means the local job remains for a retry. Contours are displayed on acquired slice planes without interpolation or image registration. These synthetic geometry checks and local API changes do not establish clinical or manuscript readiness.
 
 ```bash
 curl -fsS http://localhost:8080/api/v1/health
