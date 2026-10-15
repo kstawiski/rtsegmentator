@@ -793,7 +793,9 @@ def prepare_worker_job(job, remote, tasks):
 def retrieve_worker_results(job, remote, task=None):
     """Whole SSH jobs copy all output; routed tasks copy only the output they own."""
     (job / "output").mkdir(exist_ok=True)
-    source = "output/." if task is None else ("output/report" if task == REPORT_TASK else f"output/{task}_RTSTRUCT.dcm")
+    source = "output/." if task is None else ("output/report" if task == REPORT_TASK else f"output/{task}_RTSTRUCT.dcm*")
+    # The task-owned prefix includes the orientation record and also supports
+    # recovery from older workers that emitted only the DICOM file.
     sources = [f"{WORKER}:{remote}/{source}"]
     if task == "lnctvseg_nnunet_v1":
         sources.append(f"{WORKER}:{remote}/output/{task}")
@@ -999,7 +1001,7 @@ def run_colab_job(job: Path, tasks: list[str] | None = None, finalize: bool = Tr
                        check=True, timeout=3600)
         with zipfile.ZipFile(result_archive) as archive:
             for info in archive.infolist():
-                if info.is_dir() or Path(info.filename).name != info.filename or not info.filename.endswith(".dcm"):
+                if info.is_dir() or Path(info.filename).name != info.filename or not info.filename.endswith((".dcm", ".dcm.orientation.json")):
                     raise RuntimeError("Colab returned an unsafe or unexpected result archive")
             archive.extractall(job / "output")
         if finalize:
@@ -1047,7 +1049,7 @@ def run_colab_job_via_worker(job: Path, tasks: list[str] | None = None, finalize
         if process.returncode:
             raise RuntimeError(log.read_text(errors="replace")[-12000:] or
                                f"Remote Colab orchestrator exited with status {process.returncode}")
-        subprocess.run(["scp", "-q", f"{WORKER}:{remote}/output/*.dcm", str(job / "output") + "/"],
+        subprocess.run(["scp", "-q", f"{WORKER}:{remote}/output/*.dcm*", str(job / "output") + "/"],
                        check=True, timeout=3600)
         if finalize: finalize_results(job)
     finally:
@@ -1135,7 +1137,8 @@ def finalize_results(job: Path, empty=()):
     with zipfile.ZipFile(job/"rtstruct-results.zip","w",zipfile.ZIP_DEFLATED) as z:
         nested = sorted(path for path in (job / "output").rglob("*")
                         if path.is_file() and path.parent != job / "output")
-        for result in results + nested:
+        orientation_records = sorted((job / "output").glob("*.dcm.orientation.json"))
+        for result in results + orientation_records + nested:
             z.write(result, result.relative_to(job / "output").as_posix())
         if empty:
             z.writestr("NO_STRUCTURES_FOUND.txt",

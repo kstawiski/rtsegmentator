@@ -966,13 +966,17 @@ try:
         nifti = work / "input.nii.gz"
         prediction = work / "prediction.nii.gz"
         run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"), str(job / "input"), str(nifti)])
+        model_prompt = work / "prompt.json"
+        run([sys.executable, str(APP_ROOT / "orientation_contract.py"),
+             "--prompt", str(job / "prompt.json"), "--model-input", str(nifti),
+             "--output", str(model_prompt)])
         if task == "medical_sam3_3d_prompted":
             env = os.environ.copy()
             env["PYTORCH_CUDA_ALLOC_CONF"] = ""
             run([str(RUNTIME_ROOT / "envs/segmentation-modern/bin/python"),
                  str(APP_ROOT / "run_medical_sam3.py"),
                  "--input", str(nifti), "--output", str(prediction),
-                 "--prompt", str(job / "prompt.json"),
+                 "--prompt", str(model_prompt),
                  "--source", str(MODEL_ROOT / "sources/Medical-SAM3"),
                  "--checkpoint", str(MODEL_ROOT / "weights/medical-sam3/checkpoint_3D.pt"),
                  "--site-packages", str(MODEL_ROOT / "runtime-homes/medical-sam3-site")], env=env)
@@ -980,14 +984,14 @@ try:
             run([str(RUNTIME_ROOT / "envs/pam/bin/python"),
                  str(APP_ROOT / "run_medsam.py"),
                  "--input", str(nifti), "--output", str(prediction),
-                 "--prompt", str(job / "prompt.json"),
+                 "--prompt", str(model_prompt),
                  "--source", str(MODEL_ROOT / "sources/MedSAM"),
                  "--checkpoint", str(MODEL_ROOT / "weights/medlsam/medsam_vit_b.pth")])
         elif task == "sam_med3d_turbo_prompted":
             run([str(RUNTIME_ROOT / "envs/pam/bin/python"),
                  str(APP_ROOT / "run_sam_med3d.py"),
                  "--input", str(nifti), "--output", str(prediction),
-                 "--prompt", str(job / "prompt.json"),
+                 "--prompt", str(model_prompt),
                  "--source", str(MODEL_ROOT / "sources/SAM-Med3D"),
                  "--checkpoint", str(MODEL_ROOT / "weights/sam-med3d/sam_med3d_turbo.pth")])
         elif task in {"medsam2_ct_lesion_prompted", "medical_sam2_prompted_ct"}:
@@ -996,7 +1000,7 @@ try:
                  str(APP_ROOT / "run_medsam2.py"),
                  "--implementation", "imprintlab" if imprint else "wanglab",
                  "--input", str(nifti), "--output", str(prediction),
-                 "--prompt", str(job / "prompt.json"),
+                 "--prompt", str(model_prompt),
                  "--source", str(MODEL_ROOT / ("sources/Medical-SAM2" if imprint else "sources/MedSAM2")),
                  "--checkpoint", str(MODEL_ROOT / ("weights/medical-sam2/MedSAM2_pretrain.pth" if imprint else "weights/medsam2/medsam2_FLARE25_RECIST_baseline.pt")),
                  "--site-packages", str(MODEL_ROOT / "runtime-homes/medsam2-site")])
@@ -1004,7 +1008,7 @@ try:
             run([str(RUNTIME_ROOT / "envs/lnq/bin/python"),
                  str(APP_ROOT / "run_segvol.py"),
                  "--input", str(nifti), "--output", str(prediction),
-                 "--prompt", str(job / "prompt.json"),
+                 "--prompt", str(model_prompt),
                  "--model-dir", str(MODEL_ROOT / "weights/segvol"),
                  "--monai-site", str(MODEL_ROOT / "runtime-homes/segvol-site"),
                  "--transformers-site", str(MODEL_ROOT / "runtime-homes/voxtell-env/lib/python3.11/site-packages")])
@@ -1012,7 +1016,7 @@ try:
             run([str(RUNTIME_ROOT / "envs/segmentation-modern/bin/python"),
                  str(APP_ROOT / "run_voxtell.py"),
                  "--input", str(nifti), "--output", str(prediction),
-                 "--prompt", str(job / "prompt.json"),
+                 "--prompt", str(model_prompt),
                  "--model-dir", str(MODEL_ROOT / "weights/voxtell/voxtell_v1.1"),
                  "--embeddings", str(MODEL_ROOT / "weights/voxtell/embeddings/voxtell_v1.1/text_embeddings.npz"),
                  "--text-model", str(MODEL_ROOT / "weights/voxtell/qwen3-embedding-4b"),
@@ -1022,7 +1026,7 @@ try:
         elif task == "vista3d_prompted_ct":
             run([str(RUNTIME_ROOT / "envs/lnq/bin/python"), str(APP_ROOT / "run_vista3d.py"),
                  "--input", str(nifti), "--output", str(prediction),
-                 "--prompt", str(job / "prompt.json"),
+                 "--prompt", str(model_prompt),
                  "--source", str(MODEL_ROOT / "sources/NV-Segment-CTMR/NV-Segment-CT"),
                  "--checkpoint", str(MODEL_ROOT / "weights/vista3d/NV-Segment-CT/model.pt"),
                  "--runtime-python", str(RUNTIME_ROOT / "envs/lnq/bin/python"),
@@ -1031,27 +1035,27 @@ try:
             run([str(RUNTIME_ROOT / "envs/segmentation-modern/bin/python"),
                  str(APP_ROOT / "run_nninteractive.py"),
                  "--input", str(nifti), "--output", str(prediction),
-                 "--prompt", str(job / "prompt.json"),
+                 "--prompt", str(model_prompt),
                  "--model-dir", str(MODEL_ROOT / "weights/nninteractive/nnInteractive_v1.0"),
                  "--source", str(MODEL_ROOT / "sources/nnInteractive"),
                  "--site-packages", str(MODEL_ROOT / "runtime-homes/nninteractive-site")])
         elif task == "pam_prompted":
-            modality = json.loads((job / "prompt.json").read_text()).get("modality")
+            modality = json.loads(model_prompt.read_text()).get("modality")
             if modality not in {"CT", "MR", "PT"}:
                 # Read modality from the selected DICOM rather than trusting browser input.
                 import pydicom
                 modality = str(pydicom.dcmread(next((job / "input").iterdir()), stop_before_pixels=True).Modality)
             run([str(RUNTIME_ROOT / "envs/pam/bin/python"), str(APP_ROOT / "run_pam.py"),
                  "--input", str(nifti), "--output", str(prediction),
-                 "--prompt", str(job / "prompt.json"), "--modality", modality])
+                 "--prompt", str(model_prompt), "--modality", modality])
         elif task == "sam_med2d_prompted":
             run([str(RUNTIME_ROOT / "envs/pam/bin/python"), str(APP_ROOT / "run_sam_med2d.py"),
                  "--input", str(nifti), "--output", str(prediction),
-                 "--prompt", str(job / "prompt.json")])
+                 "--prompt", str(model_prompt)])
         else:
             run([str(RUNTIME_ROOT / "envs/pam/bin/python"), str(APP_ROOT / "run_sat3d.py"),
                  "--input", str(nifti), "--output", str(prediction),
-                 "--prompt", str(job / "prompt.json")])
+                 "--prompt", str(model_prompt)])
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),

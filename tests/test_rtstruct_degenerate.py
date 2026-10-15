@@ -8,7 +8,8 @@ import numpy as np
 import pydicom
 import pytest
 
-from rtstruct_geometry import add_roi, create_rtstruct
+from rtstruct_geometry import add_roi, create_rtstruct, dicom_grid
+from orientation_contract import restore_image
 from rtstruct_roundtrip import validate_roi_roundtrip
 from test_rtstruct_geometry import assert_viewer_exact, convert, inputs
 from test_viewer import GEOMETRIES, make_mask, make_series
@@ -73,6 +74,8 @@ def test_degenerate_pieces_do_not_bypass_gate(synthetic_ct, tmp_path, piece, sou
         mask[[0, 1, 2], [0, 1, 0], 0] = True
     _, prediction, _ = inputs(source, tmp_path, mask)
     image = nib.load(prediction)
+    shape, affine, _ = dicom_grid(source, image)
+    image, _ = restore_image(image, shape, affine)
     rt = create_rtstruct(source, image)
     assert add_roi(rt, mask, piece, [1, 2, 3])
     roi = copy.deepcopy(rt.ds.ROIContourSequence[0])

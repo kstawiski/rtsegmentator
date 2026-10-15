@@ -41,7 +41,7 @@ def report_acceptance_ready():
 
 CHOI_MODEL = "weights/tmlI-choi/results/nnUNet/3d_fullres/Task001_LN/nnUNetTrainerV2_noMirroring__nnUNetPlansv2.1"
 
-COMMON = ["dicom_series_to_nifti.py", "dicom_series.py", "convert_validate_rtstruct.py",
+COMMON = ["dicom_series_to_nifti.py", "dicom_series.py", "orientation_contract.py", "convert_validate_rtstruct.py",
           "rtstruct_geometry.py", "rtstruct_roundtrip.py"]
 LNQ_WEIGHTS = "weights/lnq-atlas-20261015/weights"
 REQUIREMENTS = {

@@ -15,13 +15,18 @@ p.add_argument("--modality", default="MR", choices=["MR", "CT", "PT"])
 p.add_argument("--description", default="Synthetic geometry reference; research validation only")
 p.add_argument("--patient-id", default="PUBLIC-RESEARCH")
 p.add_argument("--study-id", default="PUBLIC-RESEARCH")
+p.add_argument("--preserve-storage", action="store_true",
+               help="Retain NIfTI storage for synthetic orientation fixtures; no canonicalisation")
+p.add_argument("--patient-position", choices=["HFS", "HFP", "FFS", "FFP"])
 a = p.parse_args()
 
 # Normalize storage axes to RAS before treating axis 2 as the DICOM slice
 # direction. Some public challenge files (notably KiTS19) store arrays as
 # (slice, row, column); their affine still describes the correct anatomy, so
 # indexing the raw third axis would create the wrong number of DICOM slices.
-img = nib.as_closest_canonical(nib.load(a.input))
+img = nib.load(a.input)
+if not a.preserve_storage:
+    img = nib.as_closest_canonical(img)
 values = np.asarray(img.dataobj, dtype=np.float32)
 if values.ndim != 3:
     raise SystemExit(f"Expected 3-D NIfTI, got {values.shape}")
@@ -70,6 +75,8 @@ for k in range(values.shape[2]):
     ds.PatientID = a.patient_id
     ds.PatientBirthDate = ""
     ds.PatientSex = ""
+    if a.patient_position:
+        ds.PatientPosition = a.patient_position
     ds.StudyID = a.study_id
     ds.StudyDate = "20240801"
     ds.SeriesDate = "20240801"

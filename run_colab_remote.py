@@ -242,7 +242,7 @@ try:
         raise RuntimeError("Colab worker reported completion without a results archive")
     with zipfile.ZipFile(results_file) as archive:
         for info in archive.infolist():
-            if info.is_dir() or Path(info.filename).name != info.filename or not info.filename.endswith(".dcm"):
+            if info.is_dir() or Path(info.filename).name != info.filename or not info.filename.endswith((".dcm", ".dcm.orientation.json")):
                 raise RuntimeError("Unsafe Colab result archive")
         archive.extractall(a.job / "output")
 finally:

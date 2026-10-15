@@ -3,6 +3,14 @@
 This ledger distinguishes automatic models from prompted tools and records whether a release can be reproduced. The records below describe historical integration runs. Current selection depends on runtime preflight, segmentation orientation evidence or separate report acceptance, and the enabled-model policy. Research use only; execution and geometry results do not establish clinical accuracy.
 
 
+## Input-storage correction (2026-10-15)
+
+Stored DICOM orientation previously reached array-based models unchanged. On the public LNCTVSeg development fixture, the portal supplied R,A,S while the authors' example uses L,P,S. The manager's GPU run gave Dice **0.187551, 0.228038, 0.017221, 0.029241, 0, 0** for published labels 1–6 (mean **0.077009**), compared with the earlier reported **0.87–0.90** smoke results on the authors' NIfTI. The HNLNL run also placed sided components across the body midline, including `Level_Ib_L` on the right. These findings identify an input-storage defect; geometric export validation did not establish that the model saw its expected anatomy. Fixture provenance remains the [authors' example at the pinned source revision](https://github.com/Luoxd1996/LNCTVSeg/tree/1aa9284327eb663407baec16491c9b161fccdf28/eni_examples); this development-cohort case cannot establish independent accuracy.
+
+A shared lossless input contract now supplies standard HFS storage for the acquisition plane: axial LPS, coronal LIP, sagittal PIR. Oblique images follow the closest-axis rule without resampling. Standard HFS arrays, affines and NIfTI files are left untouched. Both RTSTRUCT writers invert the storage transform against the original DICOM grid; prompt coordinates follow the image transform. Existing physical round-trip thresholds remain unchanged. There is no separate LNCTVSeg or HNLNL orientation shim. MRAnnotator's documented LAS input and LNQ's physical atlas requirements remain in place.
+
+Exposure includes nnU-Net v1/v2 and other stored-array runners, their crop/fusion pipelines and prompted tools. Tasks with internal canonicalisation or registration retain that processing. The [operations inventory](docs/OPERATIONS.md#shared-input-orientation) describes all route families, inactive entries and the manager GPU matrix. Earlier outputs from non-HFS storage produced by exposed tasks should be regenerated. No acceptance marker or enabled-model setting was changed by this implementation; GPU variant checks remain unexecuted by the CPU worker. Software geometry evidence and local drafting do not establish clinical or manuscript readiness.
+
 ## NVIDIA NV-Segment automatic tasks (2026-10-15)
 
 Four automatic tasks are integrated behind separate installation, acceptance and orientation gates. Acceptance and orientation markers are kept in the model bundle, not in this repository. The existing `vista3d_prompted_ct` source, runner and acceptance remain unchanged.

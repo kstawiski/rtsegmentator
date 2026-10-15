@@ -5,7 +5,8 @@ import nibabel as nib
 import numpy as np
 import pydicom
 from pydicom.uid import RTStructureSetStorage
-from rtstruct_geometry import add_roi, create_rtstruct, mask_bounds, report_omissions
+from rtstruct_geometry import add_roi, create_rtstruct, mask_bounds, report_omissions, dicom_grid
+from orientation_contract import exact_orientation, restore_image, write_export_record
 from rtstruct_roundtrip import validate_roi_roundtrip
 
 
@@ -18,15 +19,17 @@ def main():
     p=argparse.ArgumentParser(); p.add_argument("--prediction",required=True); p.add_argument("--model-input",required=True)
     p.add_argument("--dicom",required=True); p.add_argument("--output",required=True); p.add_argument("--labels",required=True)
     a=p.parse_args(); pred=nib.load(a.prediction); inp=nib.load(a.model_input)
-    if pred.shape != inp.shape: raise SystemExit(f"shape mismatch: prediction {pred.shape}, input {inp.shape}")
-    if not np.allclose(pred.affine,inp.affine,atol=1e-3): raise SystemExit("prediction affine does not match model input")
+    exact_orientation(pred.shape, pred.affine, inp.shape, inp.affine)
+    shape, affine, _ = dicom_grid(a.dicom, inp)
+    inp, _ = restore_image(inp, shape, affine)
+    pred, inverse = restore_image(pred, shape, affine)
     data=np.rint(np.asanyarray(pred.dataobj)).astype(np.int16)
     raw=json.loads(Path(a.labels).read_text())
     labels={int(k):str(v) for k,v in raw.items() if int(k)>0}; present=set(np.unique(data))-set([0])
     unknown=present-set(labels)
     if unknown: raise SystemExit(f"unmapped prediction labels: {sorted(unknown)}")
     if not present: raise SystemExit("empty prediction: no RTSTRUCT created")
-    # Preserve [DICOM column, DICOM row, acquired slice] array indices. The
+    # Restore [DICOM column, DICOM row, acquired slice] array indices. The
     # shared writer transposes each plane for OpenCV without reversing rows.
     rtstruct = create_rtstruct(a.dicom, inp)
     expected_bounds = {}
@@ -82,6 +85,7 @@ def main():
                                                   source_slices=rtstruct.series_data)
         except ValueError as exc:
             raise SystemExit(f"RTSTRUCT physical round-trip mismatch for {name}: {exc}") from exc
+    write_export_record(a.output, a.model_input, inverse)
     print(json.dumps({"valid":True,"rois":len(rois),"contour_sets":len(contours),
         "referenced_images":len(refs),"geometry_bbox_max_delta_mm":round(max_delta,4),
         "geometry_tolerance_mm":round(tolerance,4),"physical_roundtrip":roundtrip,

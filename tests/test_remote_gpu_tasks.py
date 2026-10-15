@@ -75,7 +75,7 @@ def test_transfer_and_task_scoped_retrieval_cleanup(portal, monkeypatch):
     assert not portal.metadata(job)['remote_results_retained']
     calls.clear()
     portal.retrieve_worker_results(job, '/jobs/test', 'body')
-    assert calls[0][-2].endswith('/output/body_RTSTRUCT.dcm')
+    assert calls[0][-2].endswith('/output/body_RTSTRUCT.dcm*')
 
 
 def test_failed_retrieval_retains_remote_directory(portal, monkeypatch):

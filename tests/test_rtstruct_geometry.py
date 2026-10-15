@@ -12,7 +12,8 @@ import pytest
 from rt_utils import RTStructBuilder
 
 from crop_prostate_sbrt import crop_ct_rtstruct
-from rtstruct_geometry import add_roi, create_rtstruct
+from rtstruct_geometry import add_roi, create_rtstruct, dicom_grid
+from orientation_contract import restore_image
 from rtstruct_roundtrip import validate_roi_roundtrip
 from test_viewer import GEOMETRIES, make_mask, make_series, rasterize
 import viewer
@@ -28,7 +29,12 @@ def inputs(source, root, mask=None):
     image = nib.load(image_path)
     mask = make_mask().transpose(1, 0, 2) if mask is None else mask
     prediction = root / "prediction.nii.gz"
-    nib.save(nib.Nifti1Image(mask.astype(np.uint8), image.affine), prediction)
+    # Existing tests specify masks on acquired DICOM pixels. Feed the same
+    # physical mask in the new model storage, retaining source-mask assertions.
+    _, source_affine, _ = dicom_grid(source, image)
+    model_mask, _ = restore_image(nib.Nifti1Image(mask.astype(np.uint8), source_affine),
+                                  image.shape, image.affine)
+    nib.save(model_mask, prediction)
     return image_path, prediction, mask
 
 

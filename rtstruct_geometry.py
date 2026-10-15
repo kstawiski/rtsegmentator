@@ -35,13 +35,12 @@ def slice_geometry(ds):
     return origin, column * spacing[1], row * spacing[0]
 
 
-def create_rtstruct(source, model_input):
+def dicom_grid(source, reference):
+    """Return the original GDCM grid and acquired planes without reading pixels."""
     files = ordered_dicom_files(source)
     slices = [pydicom.dcmread(path, stop_before_pixels=True) for path in files]
     first = slices[0]
     shape = (int(first.Columns), int(first.Rows), len(slices))
-    if model_input.shape != shape:
-        raise ValueError(f"model input shape {model_input.shape} does not match DICOM {shape}")
     uids = [str(ds.SOPInstanceUID) for ds in slices]
     if len(set(uids)) != len(uids):
         raise ValueError("Duplicate source SOP Instance UIDs")
@@ -53,10 +52,10 @@ def create_rtstruct(source, model_input):
             raise ValueError("Inconsistent or multi-frame DICOM source images")
         slice_geometry(ds)
 
-    # Check that the model array is still the GDCM source grid. GDCM stores
+    # Reconstruct the original GDCM source grid. GDCM stores
     # irregular acquired planes at successive array indices, with the mean
     # endpoint distance in the NIfTI affine. That affine must not position RT
-    # contours, but this check still rejects shifted/reflected model grids.
+    # contours. Only an exact permutation/flip may restore a prediction here.
     origin, column, row = slice_geometry(first)
     normal = np.cross(column, row)
     normal /= np.linalg.norm(normal)
@@ -69,11 +68,21 @@ def create_rtstruct(source, model_input):
         affine[:3, 2] = normal * step
     else:
         # For a single plane only its in-plane grid and origin are determined.
-        affine[:3, 2] = model_input.affine[:3, 2] * [-1, -1, 1]
+        axes = np.asarray(reference.affine[:3, :3]) * np.array([-1, -1, 1])[:, None]
+        axis = int(np.argmax(np.abs(normal @ axes) / np.linalg.norm(axes, axis=0)))
+        affine[:3, 2] = normal * np.linalg.norm(axes[:, axis])
     affine[:2] *= -1  # LPS -> RAS
+    return shape, affine, slices
+
+
+def create_rtstruct(source, model_input):
+    shape, affine, slices = dicom_grid(source, model_input)
+    if model_input.shape != shape:
+        raise ValueError(f"model input shape {model_input.shape} does not match DICOM {shape}")
     if not np.allclose(model_input.affine, affine, atol=1e-3, rtol=0):
         raise ValueError("model input affine does not match the DICOM/GDCM source grid")
 
+    uids = [str(ds.SOPInstanceUID) for ds in slices]
     rt = RTStructBuilder.create_new(dicom_series_path=str(source))
     if {str(ds.SOPInstanceUID) for ds in rt.series_data} != set(uids):
         raise ValueError("rt-utils did not load every DICOM source image")

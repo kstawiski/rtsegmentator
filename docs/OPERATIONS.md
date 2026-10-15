@@ -6,6 +6,45 @@ Upload DICOM files, a folder, or ZIP archives. The portal groups images by Study
 
 The browser uses resumable sessions with requests up to 32 MiB. A resumed chunk must use the server's expected byte offset. The receiving request times out after 60 seconds without new data. Session assessment runs in the background. Restart recovery marks interrupted jobs and sessions for review or retry; retention cleanup removes expired data.
 
+## Shared input orientation
+
+Previously, DICOM-to-NIfTI conversion preserved stored pixel order. An array-based model could therefore see a left/right or anterior/posterior reversal on prone or feet-first storage, even when its prediction had a valid affine and its RTSTRUCT passed the geometry gate. The public head-and-neck fixture exposed this in LNCTVSeg and the production-enabled HNLNL task. Regenerate earlier outputs from non-HFS storage for exposed array-based tasks; a valid RTSTRUCT geometry check alone cannot exclude a model-side laterality error.
+
+`orientation_contract.py` now applies one lossless contract at `dicom_series_to_nifti.py`. Standard HFS storage is axial **L,P,S**, coronal **L,I,P**, and sagittal **P,I,R** (NIfTI axcodes). These directions are checked against SimpleITK reading synthetic DICOM with the usual IOPs. The acquisition plane is the closest anatomical axis assigned to the source slice axis by nibabel's polar orientation decomposition. Its deterministic axis-order tie break applies at equal obliquity. Oblique direction cosines remain unchanged; there is no interpolation or deobliquing. PatientPosition text does not select the transform: the affine derived from IOP/IPP does. An already standard HFS file is not rewritten, preserving its array, affine and compressed NIfTI bytes.
+
+Each input has a `.orientation.json` sidecar containing the original and model grids, axis transform and both index mappings. Both RTSTRUCT converters restore each prediction to acquired DICOM indices before constructing contours. A shifted, cropped, scaled or sheared grid is refused; a runner that crops or resamples must first restore its output to the complete input grid. The affine tolerance remains 0.001 mm with zero relative tolerance. Contour round-trip Dice ≥0.95, plane tolerance 0.05 voxel, SOP-reference checks and physical bounding-box checks are unchanged. Export sidecars retain the transform after inference scratch is removed and are included in SSH/Colab retrieval and result ZIPs.
+
+Viewer points and box corners are transformed into model indices in a task-local prompt copy. The viewer continues to display original DICOM pixels and patient-space contours. The DICOM crop tool retains original pixels and contour coordinates. PET SUV conversion preserves the normalized affine; PET/CT fusion still registers PET onto the CT reference and exports against that CT series. These consumers do not need a second orientation operation.
+
+The source catalogue contains 254 names, including 41 informational or blocked entries. The following is the route inventory in brief; the implementation report contains one row per task. “Changes” refers to portal storage on nonstandard input. It does not imply that an upstream canonical model tensor changes.
+
+| Task family | Input and downstream handling | Contract effect |
+|---|---|---|
+| TotalSegmentator (41 fallback names; runtime may advertise more) | Portal NIfTI, then TotalSegmentator canonicalisation and inverse | Portal storage changes; canonical tensor convention retained |
+| nnU-Net v1/v2, LNCTVSeg, HNLNL, LN-Seg-FM, Choi, PyCAD, MultiTalent | Portal NIfTI; stored-array inference; MultiTalent exports overlapping masks | Shared contract replaces the proposed LNCTVSeg/HNLNL special cases |
+| CADS, MOOSE/Dental, MRI/VIBE/MRSegmentator, lungmask, LungTumorMask, MedLSAM, Raidionics, UWLAIR, LNQ/CompAI/DBDMP, ISRT | Portal NIfTI; model-specific crops/preprocessing retained | Portal storage changes; treat unverified internal orientation as exposed |
+| DOTATATE, LION and ISRT PET/CT | Portal PET NIfTI; existing intensity conversion and physical registration retained | PET and CT normalize independently; exact inverse uses the export reference |
+| MONAI bundles, UniversalModel, CERR SMIT/legacy, NV-Segment | Portal NIfTI; bundle-specific transforms, including internal orientation where supplied | Portal storage changes; upstream transforms retained, not assumed identical across bundles |
+| ANTsPyNet, HippUnfold, SynthSeg, FastSurfer, GOUHFI, SCT, SIAM, brain-extraction tools, TotalSpineSeg | Portal NIfTI; physical-space, conforming or model-specific pipelines | Portal storage changes; existing model preprocessing and restoration retained |
+| MRAnnotator (4 tasks) | Portal NIfTI followed by release-required LAS (`models/manifests/mrannotator.json`) | LAS convention retained |
+| LNQ atlas | Portal NIfTI followed by LPS and physical atlas registration | LPS requirement and oblique refusal retained |
+| Prompted tools (12 tasks) | Portal NIfTI plus mapped viewer points/box; SAM-Med3D keeps its internal canonicalisation | Image and prompts change together |
+| NV-Reason-CT report | Portal NIfTI, TotalSegmentator coverage and checked MONAI `Orientationd` processor | Portal storage changes; report pipeline remains separately gated |
+| Informational/blocked entries (41) | No accepted inference route, including the other three LNCTVSeg architectures | Unchanged; no new availability or acceptance |
+
+No active catalogue model bypasses the portal NIfTI boundary to read DICOM pixels itself. DICOM reads in report validation inspect metadata; viewer, staging and crop tools consume DICOM for their existing functions. Upstream runtime source and installed bundle configurations were outside this worker's authorized inputs, so their internal preprocessing is not newly verified by this inventory. Existing release requirements are retained.
+
+The manager can run the public storage-variant check with:
+
+```sh
+"$RTSEG_WORKER_PYTHON" "$RTSEG_APP_ROOT/scripts/run-orientation-contract-gpu.py" \
+  --run-root "$RTSEG_ORIENTATION_RUN_ROOT"
+```
+
+Set `RTSEG_MODEL_ROOT` and `RTSEG_RUNTIME_ROOT` to the existing installation and use a fresh run directory on project storage outside the model bundle. The script creates a short `/tmp` directory for sockets, keeps images and inference outputs under the run directory, and closes its temporary directory on exit. It verifies identical CT voxels after HFS/HFP/FFS/FFP re-export, then runs HNLNL, LNCTVSeg and CADS head-and-neck OARs on the public head-and-neck fixture, and lungmask LTRC lobes on MSD lung. Each assigned task runs on all four variants and the original series. It reports per-label physical Dice from independently rasterized RTSTRUCTs, laterality, LNCTVSeg raw-label Dice against the author reference, and wall time. `--prepare-only` builds and checks fixtures without inference. Empty labels are reported explicitly, not counted as perfect Dice. The script does not publish or remove acceptance markers.
+
+The synthetic checks verify software geometry. GPU inference on these variants remains a manager check; neither these tests nor local drafting establish clinical or manuscript readiness.
+
 ## Prompts
 
 Prompt coordinates are `[column, row, slice]` on the selected series, sorted along the DICOM slice normal. The upload preview and viewer share this order and the stored pixel grid. Recreate prompts saved with the older raw-z preview for flipped or non-axial series. Keep prompt data with its source series. The catalog describes the required prompt type and supported modality for each model.
@@ -20,7 +59,7 @@ The assessed-upload endpoint accepts `prompt_json` and validates the required pr
 
 ## RTSTRUCT geometry gate
 
-The converters check prediction shape and affine against the model input and the DICOM source grid, require an explicit name for every nonzero label, and check DICOM SOP class and source image references. Both writers use the same SimpleITK/GDCM file order as `dicom_series_to_nifti.py`. Each polygon uses its own slice's position, orientation and pixel spacing: DICOM row spacing applies to rows and column spacing to columns. Each contour references that slice's SOP Instance UID. Overlapping-mask conversion preserves separate ROIs.
+The converters require the prediction, model input and DICOM source grid to differ only by a full-grid axis permutation or flip, require an explicit name for every nonzero label, and check DICOM SOP class and source image references. Both writers use the same SimpleITK/GDCM file order as `dicom_series_to_nifti.py`. Each polygon uses its own slice's position, orientation and pixel spacing: DICOM row spacing applies to rows and column spacing to columns. Each contour references that slice's SOP Instance UID. Overlapping-mask conversion preserves separate ROIs.
 
 Validation compares physical LPS bounds and independently rasterizes contours on the referenced acquired planes. A NIfTI affine cannot represent irregular slice spacing, so it is checked for source-grid correspondence but does not position contours. The thresholds are unchanged: minimum Dice 0.95, plane error at most 0.05 voxel, and bounding-box tolerance equal to the larger of 2.1 mm and 2.1 times the largest voxel spacing. Large gaps do not enlarge the plane tolerance.
 

@@ -392,5 +392,5 @@ def test_routed_task_retrieves_omission_notes_with_rtstruct(tmp_path, portal, mo
     monkeypatch.setattr(portal.subprocess, 'run', lambda command, **kwargs: calls.append(command))
     portal.retrieve_worker_results(job, '/jobs/synthetic', task=bundle.TASK)
     assert calls == [['scp', '-q', '-r',
-        f'{portal.WORKER}:/jobs/synthetic/output/{bundle.TASK}_RTSTRUCT.dcm',
+        f'{portal.WORKER}:/jobs/synthetic/output/{bundle.TASK}_RTSTRUCT.dcm*',
         f'{portal.WORKER}:/jobs/synthetic/output/{bundle.TASK}', str(job / 'output') + '/']]

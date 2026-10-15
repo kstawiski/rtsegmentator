@@ -23,6 +23,8 @@ import pytest
 from rt_utils import RTStructBuilder
 
 import viewer
+from rtstruct_geometry import dicom_grid
+from orientation_contract import restore_image
 
 
 GEOMETRIES = [
@@ -155,7 +157,11 @@ def test_orientation_exact_mask_pixels(portal, synthetic_ct, tmp_path, iop, spac
     assert reader.returncode == 0, reader.stdout + reader.stderr
     input_image = nib.load(model_input)
     prediction = tmp_path / "prediction.nii.gz"
-    nib.save(nib.Nifti1Image(mask.transpose(1, 0, 2).astype(np.uint8), input_image.affine), prediction)
+    _, source_affine, _ = dicom_grid(source, input_image)
+    model_mask, _ = restore_image(
+        nib.Nifti1Image(mask.transpose(1, 0, 2).astype(np.uint8), source_affine),
+        input_image.shape, input_image.affine)
+    nib.save(model_mask, prediction)
     labels = tmp_path / "labels.json"
     labels.write_text('{"1": "Asymmetric L"}')
     converted = subprocess.run([sys.executable, str(Path(__file__).parents[1] / "convert_validate_rtstruct.py"),
@@ -205,7 +211,10 @@ def test_prompt_nifti_order(portal, synthetic_ct, tmp_path, iop, spacing, revers
     converted = subprocess.run([sys.executable, str(Path(__file__).parents[1] / "dicom_series_to_nifti.py"),
                                 str(source), str(nifti)], capture_output=True, text=True)
     assert converted.returncode == 0, converted.stdout + converted.stderr
-    data = nib.load(nifti).get_fdata()
+    image = nib.load(nifti)
+    shape, affine, _ = dicom_grid(source, image)
+    restored, _ = restore_image(image, shape, affine)
+    data = restored.get_fdata()
     _, series = portal.viewer.series(source)
     for k, item in enumerate(series.slices):
         assert np.array_equal(data[:, :, k].T, pydicom.dcmread(item.path).pixel_array)

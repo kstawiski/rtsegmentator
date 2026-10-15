@@ -9,7 +9,8 @@ import nibabel as nib
 import numpy as np
 import pydicom
 from pydicom.uid import RTStructureSetStorage
-from rtstruct_geometry import add_roi, create_rtstruct, mask_bounds, report_omissions
+from rtstruct_geometry import add_roi, create_rtstruct, mask_bounds, report_omissions, dicom_grid
+from orientation_contract import exact_orientation, restore_image, write_export_record
 from rtstruct_roundtrip import validate_roi_roundtrip
 
 
@@ -34,16 +35,18 @@ def main() -> None:
     if not isinstance(mappings, dict) or not mappings:
         raise SystemExit("masks JSON must be a non-empty ROI-name to path object")
 
-    rtstruct = create_rtstruct(args.dicom, model_input)
+    shape, affine, _ = dicom_grid(args.dicom, model_input)
+    source_input, inverse = restore_image(model_input, shape, affine)
+    inverse["masks"] = {}
+    rtstruct = create_rtstruct(args.dicom, source_input)
     expected_bounds: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     expected_masks: dict[str, tuple[nib.Nifti1Image, np.ndarray]] = {}
     omitted = []
     for name, filename in mappings.items():
         mask_image = nib.load(filename)
-        if mask_image.shape != model_input.shape:
-            raise SystemExit(f"shape mismatch for {name}: {mask_image.shape} != {model_input.shape}")
-        if not np.allclose(mask_image.affine, model_input.affine, atol=1e-3):
-            raise SystemExit(f"affine mismatch for {name}")
+        exact_orientation(mask_image.shape, mask_image.affine, model_input.shape, model_input.affine)
+        mask_image, mask_inverse = restore_image(mask_image, shape, affine)
+        inverse["masks"][str(name)] = mask_inverse
         mask = np.asanyarray(mask_image.dataobj) > args.threshold
         if not np.any(mask):
             continue
@@ -106,6 +109,7 @@ def main() -> None:
         image, mask = expected_masks[name]
         roundtrip[name] = validate_roi_roundtrip(roi, image, mask, source_slices=rtstruct.series_data)
 
+    write_export_record(args.output, args.model_input, inverse)
     print(json.dumps({"valid": True, "rois": len(rois),
                       "referenced_images": len(refs),
                       "geometry_bbox_max_delta_mm": round(max_delta, 4),

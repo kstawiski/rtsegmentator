@@ -82,6 +82,9 @@ try:
     with zipfile.ZipFile("/content/rtseg-results.zip", "w", zipfile.ZIP_DEFLATED) as archive:
         for result in results:
             archive.write(result, result.name)
+            orientation = Path(str(result) + ".orientation.json")
+            if orientation.is_file():
+                archive.write(orientation, orientation.name)
     status_path.write_text(json.dumps({"status": "complete", "results": [p.name for p in results]}))
 except Exception:
     error = traceback.format_exc()
