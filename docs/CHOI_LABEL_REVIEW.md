@@ -1,82 +1,130 @@
-# Choi TMLI label review
+# Choi TMLI geometry and label review
 
-The public Choi release does not document the numeric order of its 18 regions.
-The task stays disabled. Anatomical proposals do not establish clinical or
-manuscript readiness.
+The task stays disabled. The axis variant and numeric mapping of the 18 regions
+remain unconfirmed. CPU geometry tests and local review sheets do not establish
+clinical or manuscript readiness.
 
-## Generate evidence
+## Voxel-space geometry finding
 
-Use the original CT in HU, a numeric Choi prediction, and separate binary
-TotalSegmentator `total` masks of that same CT. A Python environment with
-`nibabel`, `numpy`, `scipy` and `Pillow` is required.
+[Choi et al. (2024)](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0299448)
+report non-contrast CT, mean pixel size 1.113 × 1.113 mm, and 5 mm slices.
+The [released model metadata](https://zenodo.org/records/7839889) record training
+sizes of 219–275 × 512 × 512 in array z/y/x order, 1 × 1 × 1 mm spacing for all
+20 cases, and `transpose_forward=[0,1,2]`. The full-resolution stage uses 1 mm.
+These observations support dummy-spacing, voxel-space training. They do not
+identify the authors' storage-axis directions. The mean pixel size also does
+not establish each training case's exact physical spacing.
+
+The previous runner supplied real CT spacing. nnU-Net therefore resampled a
+1.5 mm slice stack to 1 mm: a 735-slice scan became about 1102 slices, compared
+with about 221 slices at the paper's 5 mm scale. This is approximately a
+fivefold cranio-caudal scale mismatch and a 1.113-fold in-plane scale mismatch.
+The mismatch is verified; whether it explains the incoherent predictions
+requires the manager's variant and fold comparisons.
+
+## Input and inverse geometry contract
+
+`run_choi_tmli.py` accepts a 3D CT in HU with explicit millimetre units.
+It uses all eight voxel-face corners to cover the physical field of view,
+including feet-first, prone and oblique acquisitions:
+
+1. Resample HU linearly at 1.113 × 1.113 × 5 mm in physical LPS axes. Outside HU
+   is −1024. Centre each target grid on the physical bounding box. Each in-plane
+   dimension is at least 512; pad smaller fields and enlarge a dimension when
+   its field exceeds 512 × 1.113 = 569.856 mm. Preserve spacing and never crop.
+   The slice count is the ceiling of physical superior–inferior coverage / 5,
+   allowing 0.0001 voxel tolerance for NIfTI float32 header rounding.
+2. Specify three flip bits using `--axis-variant` or `CHOI_AXIS_VARIANT`.
+   The bits refer to storage x/y/z relative to identity LPS directions, as read
+   by SimpleITK from an HFS DICOM stack. `000` means L/P/S positive directions;
+   `100` reverses x, `010` reverses y, `001` reverses z. All eight combinations
+   are available. These are physical directions, independent of input storage.
+3. Add 1024 once after HU resampling. Write the same array with 1 mm spacing,
+   zero origin and identity **LPS** direction. Its NIfTI **RAS** affine is
+   `diag(-1,-1,1,1)`. nnU-Net's SimpleITK reader thus sees the training header;
+   it may crop background but performs no spacing change at full resolution.
+4. Restore the prediction's true target geometry from `geometry.json`, then
+   resample integer labels with nearest neighbour onto the original input grid.
+   Export the source shape, affine and millimetre units for converter checks.
+
+The default is `unconfirmed`; inference fails before creating a workspace unless
+an explicit variant is supplied. The following selects an evaluation variant,
+not a confirmed default:
+
+```sh
+python run_choi_tmli.py --input case.nii.gz --model RELEASE_TRAINER_FOLDER \
+  --work NEW_PRIVATE_WORK_DIRECTORY --output choi.nii.gz \
+  --axis-variant 000 --folds 0
+```
+
+Do not supply an already shifted CT. Omitting `--folds` uses all five folds.
+The normal nnU-Net v1 predictor averages fold probabilities before argmax;
+restored discrete label maps are never averaged. Test-time mirroring is disabled.
+Checkpoints are read through links; mutable metadata and outputs use the work
+directory. No confirmed default is selected by the evaluation script.
+
+## Generate anatomical evidence
+
+Use the original CT in HU, the restored numeric prediction, and separate binary
+TotalSegmentator `total` masks on the same CT grid. Dependencies are `nibabel`,
+`numpy`, `scipy` and `Pillow`.
 
 ```sh
 python scripts/map-choi-labels.py --ct case.nii.gz \
   --prediction choi.nii.gz --total total_masks --output review
 ```
 
-`review/anatomy.json` records all 18 labels, including absent ones: volume in mL,
-centroids in RAS and LPS mm, cranio-caudal extent, nearest vertebral centroids,
-vertebral z ranges, local spinal midline, side fractions, and distances to
-anatomical masks. Input files are identified by SHA-256. The measured grids
-must match after lossless axis permutations/flips; no registration is inferred.
-CT spatial units must explicitly be millimetres. Masks with unspecified units
-are accepted only when their grid exactly matches that CT; this inference is
-recorded in the report. Other unit declarations fail. Oblique measurements use
-the full affine. Review images sample true axial and coronal physical planes.
+Add `--fold-agreement fold-agreement.json` when the manager script has generated
+pairwise fold Dice. Agreement describes the individual folds, including on an
+ensemble sheet; it is not a comparison against a clinical reference contour.
+Both-absent labels have undefined Dice and one-absent labels have zero Dice.
 
-Patient left is negative x in RAS and positive x in DICOM LPS. DICOM LPS is
-`(-RAS x, -RAS y, RAS z)`. Both review panels place patient right at image left.
-A 3 mm band around the local midline is considered central; a side requires at
-least 80% of label voxels on that side. Cord centroids define the local midline
-when available, extended by vertebral centroids. Extrapolated segments are flagged.
+`review.html` starts with an 18-label summary: volume, component count, largest
+component share, its side and vertebral span, the top two candidate regions with
+scores, and fold agreement when available. Per-label axial/coronal panels follow.
+Raw measurements are inside collapsed details. `choi-review-template.csv` has
+columns `label`, `proposed region`, `reviewer region`, `confidence`, `comment`;
+reviewer fields start blank. Completing a CSV does not confirm the label map.
 
-`review.html` is self-contained, with 18 embedded PNGs and a review form.
-The PNGs are also saved separately. Each pair passes through a voxel nearest
-the centroid of the largest 6-neighbour component, with a close view of that
-component. The report retains full-label extents and the three largest component
-centroids/volumes. If the largest component holds less than 80% of label voxels and the two
-largest component centroids are more than 80 mm apart, confidence is capped at
-0.35. It is a sample of the contour, not a full-volume
-review. The HTML displays explicit proposal rules and competing candidates.
-Scores measure heuristic evidence strength; they are not calibrated probabilities.
-No unique assignment is forced when multiple labels suggest the same region.
+The largest 6-neighbour component determines the displayed side, span and
+candidate-region evidence. A separate span covers the union of components
+**individually at least 1 mL**. Full-label extents remain in `anatomy.json` so
+fragments remain inspectable. Vertebral spans use nearest centroids and
+intersecting physical z ranges, not vertebral boundary assignments. The report
+retains the three largest component centroids and volumes. Widely separated
+substantial components, competing rules and duplicate proposals lower confidence.
+Scores are heuristic evidence strengths, not calibrated probabilities.
 
-TotalSegmentator does not supply a separate obturator fossa, femoral head,
-carina or internal/external iliac vessel split. The report labels these proxies
-explicitly. Mediastinal and pelvic subdivisions require review in the original
-volume. Missing labels require another fold or case. Compare fold 0 with the
-five-fold ensemble, which previously suppressed several low-support labels.
+All measurements use the full NIfTI RAS affine. Patient left is negative RAS x,
+positive LPS x. Side uses the local spinal midline with a 3 mm central band and
+an 80% side threshold. Midline extrapolation is flagged. Review panels place
+patient right at image left; true axial and coronal planes also handle obliquity.
+The panels sample the largest component; inspect the full volume for extent.
 
-## Apply a confirmed mapping
+Input files are identified by SHA-256. Measured grids must match after lossless
+axis permutations/flips. A mask may inherit millimetre units only when its
+unspecified-unit grid matches the explicitly millimetre CT. No registration is
+inferred. TotalSegmentator lacks separate obturator fossa, femoral head, carina,
+and internal/external iliac vessel masks; these proxies cannot settle pelvic
+or mediastinal subdivisions. Missing labels require further folds or cases.
 
-1. A clinician reviews all 18 labels, resolves ambiguities, and records the cases
-   or review artifacts used. The form exports a JSON with reviewer, date,
-   evidence identifiers and 18 distinct region assignments.
-2. Replace `labels/choi-tmli.json` with that reviewed JSON. Keep private reviewer
-   identities and case details in the private review archive; use a review role
-   or identifier and opaque evidence identifiers in any public copy.
-3. Run technical inference, RTSTRUCT conversion and orientation checks. Preflight
-   requires the installed runtime, all five checkpoints, the confirmed mapping,
-   and the existing technical-validation marker contract. The portal separately
-   enforces its orientation and server configuration gates.
-4. After manager confirmation, change the single `choi_tmli` catalog line in
-   `app.py` to `enabled=True` and an accurate reviewed status. No other code
-   change is needed for naming. This does not establish clinical readiness.
+## Manager checks and mapping
 
-Both preflight and dispatch reject unconfirmed, incomplete, duplicate or
-unattributed mappings. The inference runner can produce numeric output for
-review without named RTSTRUCT export:
+The private manager script first compares fold 0 across eight variants using
+largest-component share, with absent labels scored zero. It then evaluates all
+five folds of the best two, ranks by mean inter-fold Dice followed by coherence,
+and runs the best variant's five-fold probability ensemble. Runtime and sampled
+process-group GPU memory, per-label volumes/components/spans and all pairwise
+fold Dice are recorded. Exploratory coherence thresholds do not select a
+clinically validated orientation or establish label identity.
 
-```sh
-python run_choi_tmli.py --input case.nii.gz --model RELEASE_TRAINER_FOLDER \
-  --work NEW_PRIVATE_WORK_DIRECTORY --output choi.nii.gz --folds 0
-```
+After manager geometry review, a clinician must resolve all 18 numeric labels
+and record review evidence. The HTML can export a complete, attributed mapping
+JSON; `labels/choi-tmli.json` accepts no partial or duplicate assignments.
+Preflight and dispatch reject unconfirmed mappings. Fresh inference, converter,
+and orientation checks remain necessary. Keep patient data and reviewer identities
+in private storage. Catalog enablement remains a separate manager decision after
+the axis contract and label mapping are resolved.
 
-The runner adds the release-specific +1024 offset exactly once to the original
-HU CT. Do not supply an already shifted CT. Omitting `--folds` uses all five
-folds; test-time mirroring stays disabled. Checkpoints are read through links;
-metadata and inference outputs are private to the supplied work directory.
-
-Sources: [Choi et al., 2024](https://doi.org/10.1371/journal.pone.0299448),
-[Zenodo release](https://zenodo.org/records/7839889). Checked 2026-10-15.
+Sources checked 2026-10-15: [PLOS ONE paper](https://doi.org/10.1371/journal.pone.0299448),
+[Zenodo release](https://zenodo.org/records/7839889).

@@ -7,9 +7,9 @@ No registration or interpolation of the measured masks is performed.
 import argparse
 import base64
 from collections import Counter
+import csv
 import hashlib
 import html
-import io
 import json
 from pathlib import Path
 
@@ -28,7 +28,7 @@ NEIGHBOURS = ('aorta', 'inferior_vena_cava', 'iliac_artery_left', 'iliac_artery_
 CONVENTION = ('NIfTI affine maps voxels to RAS mm (+x right, +y anterior, +z superior). '
               'DICOM LPS = (-RAS x, -RAS y, RAS z). Left is negative RAS x relative to the local spinal midline. '
               'Review panels are radiological: patient right at image left; axial top anterior, coronal top superior.')
-RULES = '''Rules use physical centroids and centroid-to-mask distances, not numeric label order.
+RULES = '''Rules use largest-component physical centroids and centroid-to-mask distances, not numeric label order.
 Cervical: above T1, within 80 mm of a cervical vertebra. Axillary: lateral displacement >60 mm,
 within 60 mm of the ipsilateral humerus/scapula, above T6. Mediastinal: T1–T12, displacement <70 mm,
 within 80 mm of trachea/heart/aorta; T4/T5 midpoint is a provisional superior/inferior separator.
@@ -155,7 +155,7 @@ def propose(row, landmarks):
     if row.get('largest_component_fraction',1)<.8 and len(components)>1:
         separation=np.linalg.norm(np.array(components[0]['centroid_ras_mm'])-components[1]['centroid_ras_mm'])
         if separation>80:
-            flags.append('Substantial disconnected components are >80 mm apart; the aggregate centroid may obscure their anatomy')
+            flags.append('Substantial disconnected components are >80 mm apart; the largest component does not represent all predicted tissue')
             for item in candidates:item['score']=min(item['score'],.35)
     candidates.sort(key=lambda item: (-item['score'], item['region']))
     if len(candidates)>1 and candidates[0]['score']-candidates[1]['score']<.2:
@@ -223,32 +223,91 @@ def review_png(ct,pred,affine,row,points,path):
     return base64.b64encode(path.read_bytes()).decode()
 
 
+def span_text(extent):
+    if not extent:
+        return 'Unavailable'
+    caudal=extent['caudal_nearest_centroid'].removeprefix('vertebrae_')
+    cranial=extent['cranial_nearest_centroid'].removeprefix('vertebrae_')
+    return cranial if caudal == cranial else f'{cranial}–{caudal}'
+
+
+def fold_text(agreement):
+    if not agreement:
+        return 'Not measured'
+    if agreement.get('mean_dice') is None:
+        return 'Undefined (both absent)' if agreement.get('both_absent_pairs') else 'Not measured'
+    return f"{agreement['mean_dice']:.3f} (mean Dice)"
+
+
+def summary_table(rows):
+    body=[]
+    for row in rows:
+        candidates='; '.join(f"{c['region'].replace('_', ' ')} ({c['score']:.2f})" for c in row['candidates'][:2]) or 'Unresolved'
+        fields=[f"{row['volume_ml']:.2f}",str(row['component_count']),
+                f"{100*row['largest_component_fraction']:.1f}%",
+                row['largest_component_side']['side'].replace('_', ' '),span_text(row['largest_component_vertebral_extent']),
+                candidates,fold_text(row.get('fold_agreement'))]
+        body.append(f'<tr><td><a href="#label-{row["label"]}">{row["label"]:02d}</a></td>'+''.join(
+            '<td>'+html.escape(value)+'</td>' for value in fields)+'</tr>')
+    return ('<div class="scroll"><table id="summary"><caption>Largest-component anatomy; candidate scores are heuristic. '
+            'Vertebral spans use nearest centroids.</caption><thead><tr>'+''.join('<th>'+heading+'</th>' for heading in (
+                'Label','Volume (mL)','Components','Largest share','Side (largest)',
+                'Span (largest)','Top two candidate regions (score)','Fold agreement'))+
+            '</tr></thead><tbody>'+''.join(body)+'</tbody></table></div>')
+
+
 def write_review(out,report,images):
-    options='<option value="">Choose after review</option>'+''.join(f'<option>{n}</option>' for n in REGIONS)
+    options='<option value="">Choose after review</option>'+''.join(f'<option value="{n}">{n.replace("_", " ")}</option>' for n in REGIONS)
     cards=[]
     for row,png in zip(report['labels'],images):
         facts={k:v for k,v in row.items() if k not in ('neighbours',)}
         neighbours=sorted(row['neighbours'],key=lambda n:n['minimum_voxel_centre_distance_mm'])[:10]
-        cards.append(f'<section><h2>Label {row["label"]:02d}</h2><img alt="Label {row["label"]} axial and coronal outlines" src="data:image/png;base64,{png}"><pre>{html.escape(json.dumps(facts,indent=2))}</pre><details><summary>Nearest anatomy (mm)</summary><pre>{html.escape(json.dumps(neighbours,indent=2))}</pre></details><label>Confirmed region <select data-label="{row["label"]}">{options}</select></label><p>Review notes: <input data-note="{row["label"]}" size="90"></p></section>')
+        candidates='; '.join(f"{c['region'].replace('_', ' ')} ({c['score']:.2f})" for c in row['candidates'][:2]) or 'Unresolved'
+        span=span_text(row['largest_component_vertebral_extent'])
+        substantial=span_text(row['components_ge_1ml_vertebral_extent'])
+        if not row['components_ge_1ml']:
+            substantial='No component ≥1 mL'
+        flags='; '.join(row['flags'])
+        cards.append(f'<section id="label-{row["label"]}"><h2>Label {row["label"]:02d}</h2>'
+                     f'<p>{row["volume_ml"]:.2f} mL · {row["component_count"]} components · '
+                     f'largest share {100*row["largest_component_fraction"]:.1f}% · '
+                     f'{html.escape(row["largest_component_side"]["side"].replace("_", " "))}</p>'
+                     f'<p>Largest component: {html.escape(span)}. Components ≥1 mL: {html.escape(substantial)}. '
+                     f'Fold agreement: {html.escape(fold_text(row.get("fold_agreement")))}.</p>'
+                     f'<p>Candidate regions: {html.escape(candidates)}.</p><p>{html.escape(flags)}</p>'
+                     f'<img alt="Label {row["label"]} axial and coronal outlines" src="data:image/png;base64,{png}">'
+                     f'<details><summary>Raw measurements</summary><pre>{html.escape(json.dumps(facts,indent=2))}</pre></details>'
+                     f'<details><summary>Nearest anatomy (mm; centroid distances use largest component)</summary><pre>{html.escape(json.dumps(neighbours,indent=2))}</pre></details>'
+                     f'<label>Confirmed region <select data-label="{row["label"]}">{options}</select></label>'
+                     f'<p>Review notes: <input data-note="{row["label"]}" size="90"></p></section>')
+    with (out/'choi-review-template.csv').open('w',newline='') as stream:
+        writer=csv.writer(stream)
+        writer.writerow(['label','proposed region','reviewer region','confidence','comment'])
+        for row in report['labels']:
+            writer.writerow([row['label'],row['proposal'] or '', '', '', ''])
     evidence=html.escape('prediction-sha256:'+report['inputs']['prediction_sha256'],quote=True)
     page='''<!doctype html><html lang="en"><meta charset="utf-8"><title>Choi label review</title>
-<style>body{font:16px sans-serif;margin:2em;max-width:1100px}img{max-width:100%}section{break-inside:avoid;border-top:2px solid #555;padding:1em 0}pre{white-space:pre-wrap;font-size:13px}input,select{font:inherit}label{display:block}button{padding:.7em}</style>
+<style>body{font:16px sans-serif;margin:2em;max-width:1100px}img{max-width:100%}section{break-inside:avoid;border-top:2px solid #555;padding:1em 0}table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;border-bottom:1px solid #ddd;padding:.45em}th{background:#eee}td:first-child{font-weight:bold}.scroll{overflow-x:auto}pre{white-space:pre-wrap;font-size:13px}input,select{font:inherit}label{display:block}button{padding:.7em}</style>
 <h1>Choi numeric label review</h1><p>These are anatomical proposals. Confirm every label using the original volume and, where a label is absent or ambiguous, other folds or cases. One slice pair cannot show the full extent. This sheet does not establish clinical or manuscript readiness.</p>'''
+    page+=summary_table(report['labels'])
     page+='<p>'+html.escape(CONVENTION)+'</p><details><summary>Explicit rules and limitations</summary><pre>'+html.escape(RULES)+'</pre></details>'
     page+=''.join(cards)+f'<h2>Review record</h2><label>Clinician reviewer <input id="reviewer"></label><label>Evidence identifiers (one per line; include additional cases if used)<textarea id="evidence" rows="4" cols="90">{evidence}</textarea></label><label><input type="checkbox" id="confirm"> I reviewed all 18 assignments and resolved missing labels and ambiguities.</label><p><button id="export">Download confirmed mapping JSON</button></p><p id="message"></p>'
     page+='''<script>document.getElementById('export').onclick=()=>{const labels={},notes={};document.querySelectorAll('[data-label]').forEach(e=>labels[e.dataset.label]=e.value);document.querySelectorAll('[data-note]').forEach(e=>notes[e.dataset.note]=e.value);const reviewer=document.getElementById('reviewer').value.trim(),evidence=document.getElementById('evidence').value.split('\\n').map(s=>s.trim()).filter(Boolean);if(!document.getElementById('confirm').checked||!reviewer||!evidence.length||Object.values(labels).some(x=>!x)||new Set(Object.values(labels)).size!==18){document.getElementById('message').textContent='Complete all 18 distinct regions, reviewer, evidence and confirmation.';return;}const record={schema_version:1,confirmed:true,reviewer,reviewed_utc:new Date().toISOString(),evidence,labels,notes,source:'https://zenodo.org/records/7839889'};const u=URL.createObjectURL(new Blob([JSON.stringify(record,null,2)+'\\n'],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download='choi-tmli-reviewed.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);};</script></html>'''
     (out/'review.html').write_text(page)
 
 
-def analyze(prediction,ct_path,total_dir,out):
+def analyze(prediction,ct_path,total_dir,out,fold_agreement=None):
     ct_img,ct=load_image(ct_path)
     pred_img,pred=load_image(prediction,ct_img,labels=True)
     if np.any(pred>18): raise ValueError('Choi prediction has labels outside 0–18')
     pred=pred.astype(np.uint8);affine=ct_img.affine
     volume=abs(np.linalg.det(affine[:3,:3]));rows=[];points_by_label={};surface_by_label={}
+    largest_points_by_label={}
     for label in range(1,19):
         mask=pred==label;indices=np.argwhere(mask);points=nib.affines.apply_affine(affine,indices)
-        row={'label':label, 'neighbours':[], 'voxels':0, 'volume_ml':0.0}
+        row={'label':label, 'neighbours':[], 'voxels':0, 'volume_ml':0.0,
+             'component_count':0, 'largest_component_fraction':0.0, 'largest_components':[],
+             'components_ge_1ml':None}
         if len(points):
             row.update(describe(points,volume))
             # Cropping avoids a full-volume erosion for each small target.
@@ -257,7 +316,7 @@ def analyze(prediction,ct_path,total_dir,out):
             surface_by_label[label]=nib.affines.apply_affine(affine,surface)
             components,count=connected_components(crop)
             ids=components[tuple((indices-lo).T)];counts=np.bincount(ids)
-            largest=np.argsort(counts[1:])[::-1][:3]+1
+            largest=np.argsort(-counts[1:],kind='stable')[:3]+1
             row['component_count']=int(count)
             row['largest_component_fraction']=float(counts[largest[0]]/len(points))
             row['largest_components']=[]
@@ -265,8 +324,14 @@ def analyze(prediction,ct_path,total_dir,out):
                 component_points=points[ids==component_id]
                 stats=describe(component_points,volume);row['largest_components'].append(stats)
                 if rank==0:
+                    largest_points_by_label[label]=component_points
                     distance=np.sum((component_points-np.array(stats['centroid_ras_mm']))**2,axis=1)
                     row['review_largest_component_point_ras_mm']=component_points[distance.argmin()].tolist()
+            substantial = np.flatnonzero(counts * volume / 1000 >= 1.0 - 1e-9)
+            substantial = substantial[substantial != 0]
+            if len(substantial):
+                row['components_ge_1ml'] = describe(points[np.isin(ids, substantial)], volume)
+                row['components_ge_1ml']['component_count'] = int(len(substantial))
             del components,ids,counts
         points_by_label[label]=points;rows.append(row)
     landmarks={};vertebral_midline=[];cord_midline=[];input_masks={}
@@ -300,7 +365,7 @@ def analyze(prediction,ct_path,total_dir,out):
             overlap=row['label'] in overlapping_labels
             minimum=0.0 if overlap else float(tree.query(surface,workers=1)[0].min())
             row['neighbours'].append({'structure':name,'minimum_voxel_centre_distance_mm':minimum,
-                                      'centroid_to_mask_mm':float(tree.query(row['centroid_ras_mm'])[0])})
+                                      'centroid_to_mask_mm':float(tree.query(row['largest_components'][0]['centroid_ras_mm'])[0])})
         del tree,points,indices,arr
     # Cord provides a local midline. Vertebral centroids extend it where the cord is absent.
     midpoints=cord_midline[:]
@@ -315,8 +380,20 @@ def analyze(prediction,ct_path,total_dir,out):
     for row in rows:
         row['side']=side_evidence(points_by_label[row['label']],midline) if row['voxels'] else {'side':'absent'}
         if row['voxels'] and len(midline): row['midline_x_at_centroid_mm']=float(np.interp(row['centroid_ras_mm'][2],midline[:,2],midline[:,0]))
-        row['vertebral_extent']=vertebral_extent(row,landmarks)
-        row['candidates'],row['flags']=propose(row,landmarks)
+        row['full_label_vertebral_extent']=vertebral_extent(row,landmarks)
+        largest = row['largest_components'][0] if row['largest_components'] else {'voxels':0}
+        row['largest_component_vertebral_extent']=vertebral_extent(largest,landmarks)
+        row['vertebral_extent']=row['largest_component_vertebral_extent']
+        row['components_ge_1ml_vertebral_extent']=vertebral_extent(row['components_ge_1ml'] or {'voxels':0},landmarks)
+        row['largest_component_side'] = {'side':'absent'}
+        if row['voxels']:
+            row['largest_component_side'] = side_evidence(largest_points_by_label[row['label']],midline)
+        proposal_row = {**row, **largest, 'side':row['largest_component_side']}
+        if row['voxels'] and len(midline):
+            proposal_row['midline_x_at_centroid_mm']=float(np.interp(largest['centroid_ras_mm'][2],midline[:,2],midline[:,0]))
+        row['candidates'],row['flags']=propose(proposal_row,landmarks)
+        row['candidate_basis']='Largest 6-neighbour component; scores are heuristic, not probabilities'
+        row['fold_agreement']=(fold_agreement or {}).get(str(row['label']))
         row['proposal']=row['candidates'][0]['region'] if row['candidates'] else None
         row['confidence']=row['candidates'][0]['score'] if row['candidates'] else 0.0
     counts=Counter(r['proposal'] for r in rows if r['proposal'])
@@ -324,8 +401,8 @@ def analyze(prediction,ct_path,total_dir,out):
         if counts.get(row['proposal'],0)>1:
             row['flags'].append('Duplicate region proposed for several labels; no bijection forced')
             row['confidence']=min(row['confidence'],.35)
-    report={'schema_version':1,'confirmed':False,'coordinate_convention':CONVENTION,'rules':RULES,
-            'distance_definition':'Euclidean distances between voxel centres in physical RAS mm; no sampling or registration',
+    report={'schema_version':2,'confirmed':False,'coordinate_convention':CONVENTION,'rules':RULES,
+            'distance_definition':'Euclidean distances between voxel centres in physical RAS mm; minimum distances use the full label, centroid distances use its largest component; no sampling or registration',
             'inputs':{'ct_sha256':digest(ct_path),'prediction_sha256':digest(prediction),'total_masks_sha256':input_masks},
             'grid':{'shape':list(ct.shape),'affine_ras_mm':affine.tolist()},
             'mask_units_inferred_from_identical_ct_grid':inferred_units,
@@ -344,9 +421,11 @@ def main(argv=None):
     parser.add_argument('--ct',type=Path,required=True,help='Original CT in HU')
     parser.add_argument('--total',type=Path,required=True,help='Separate TotalSegmentator total binary masks on the same grid')
     parser.add_argument('--output',type=Path,required=True,help='New review directory')
+    parser.add_argument('--fold-agreement',type=Path,help='JSON per_label fold Dice from the manager script')
     args=parser.parse_args(argv)
     if not args.total.is_dir(): parser.error('TotalSegmentator mask directory does not exist')
-    report=analyze(args.prediction,args.ct,args.total,args.output)
+    agreement=json.loads(args.fold_agreement.read_text())['per_label'] if args.fold_agreement else None
+    report=analyze(args.prediction,args.ct,args.total,args.output,agreement)
     print(json.dumps({'labels_present':sum(bool(r['voxels']) for r in report['labels']),
                       'proposed':sum(bool(r['proposal']) for r in report['labels']),
                       'confirmed':False,'review':str(args.output/'review.html')}))
