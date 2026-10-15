@@ -9,6 +9,7 @@ Upload DICOM CT, MR or PET series, select compatible segmentation models, and do
 - Separate uploaded studies into image series before selecting models. PET1 ISRT tasks require a CT in the same Study and Frame of Reference.
 - Upload folders, extensionless DICOM files and ZIP archives. Resumable upload sessions accept chunks up to 32 MiB and report upload progress.
 - Discover TotalSegmentator tasks from the installed runtime and external tasks from committed catalogs. Catalog results are cached; stale results remain available during a background refresh.
+- View uploaded and completed-job series with patient orientation markers (R/L, A/P, H/F). Standard orientation is on by default: axial A/R, coronal H/R and sagittal H/A at top/left. The toggle restores stored order; oblique series stay as stored with direction markers. Contours follow the image display transform.
 - Select prompted models through the slice viewer or the assessed-upload API. Each model retains its input contract and limitation text.
 - Run serialized GPU jobs with progress, retries using retained input, and per-task time limits. Timeout handling stops the runner and its process tree.
 - Use read-only model bundles. CADS and selected nnU-Net v1 pipelines create writable directory mirrors in each job while linking immutable model files.

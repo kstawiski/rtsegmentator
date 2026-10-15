@@ -107,7 +107,7 @@ const near = (a,b) => assert.ok(Math.abs(a-b) < 1e-9, `${a} != ${b}`);
 
 test('viewer fits the stored pixel grid, with contours at pixel centres and no implicit flips',()=>{
   const t = viewer.imageTransform(100, 50, 400, 300);
-  assert.deepEqual(t,{scale:4,x:2,y:52});
+  assert.deepEqual(t,{scale:4,a:4,b:0,c:0,d:4,x:2,y:52});
   assert.deepEqual(viewer.pixelToScreen([0,0],t),[2,52]);
   assert.deepEqual(viewer.pixelToScreen([99,49],t),[398,248]);
   // Image edges are half a pixel from the centres and share the contour transform.
@@ -281,4 +281,85 @@ test('section labels do not appear as failed coverage checks in report flags',()
   assert.ok(!html.includes(': CHEST'));
   assert.ok(html.includes(': Devices'));
   assert.equal(report.flags.length,2,'Original JSON evidence remains unchanged');
+});
+
+// Independently enumerate the eight possible stored in-plane axis orders/signs
+// for each patient plane, including the reported MSD vertical-flip case.
+for (const [plane,right,down,expected] of [
+  ['axial',[1,0,0],[0,1,0],{left:'R',right:'L',top:'A',bottom:'P'}],
+  ['coronal',[1,0,0],[0,0,-1],{left:'R',right:'L',top:'H',bottom:'F'}],
+  ['sagittal',[0,1,0],[0,0,-1],{left:'A',right:'P',top:'H',bottom:'F'}],
+]) {
+  for (const swap of [false,true]) for (const sx of [-1,1]) for (const sy of [-1,1]) {
+    test(`${plane} standard display: swap=${swap}, column sign=${sx}, row sign=${sy}`,()=>{
+      const series={column_direction:(swap?down:right).map(v=>v*sx),row_direction:(swap?right:down).map(v=>v*sy)};
+      const display=viewer.displayOrientation(series);
+      assert.deepEqual(viewer.orientationMarkers(series,display),expected);
+      assert.deepEqual(viewer.displayOrientation(series,false),{a:1,b:0,c:0,d:1});
+      const columns=7,rows=5,width=420,height=300,view={zoom:1.4,x:21,y:-17};
+      const t=viewer.imageTransform(columns,rows,width,height,view,display);
+      const displayColumns=swap?rows:columns,displayRows=swap?columns:rows;
+      const scale=Math.min(width/displayColumns,height/displayRows)*view.zoom;
+      const origin=[(width-displayColumns*scale)/2+view.x,(height-displayRows*scale)/2+view.y];
+      // Independent expected raster location for every asymmetric source pixel.
+      for(let x=0;x<columns;x++) for(let y=0;y<rows;y++) {
+        const u=swap?(sy>0?y:rows-1-y):(sx>0?x:columns-1-x);
+        const v=swap?(sx>0?x:columns-1-x):(sy>0?y:rows-1-y);
+        const screen=viewer.pixelToScreen([x,y],t);
+        near(screen[0],origin[0]+(u+.5)*scale);near(screen[1],origin[1]+(v+.5)*scale);
+        const roundTrip=viewer.screenToPixel(screen,t);near(roundTrip[0],x);near(roundTrip[1],y);
+        // Canvas drawImage starts at (-.5,-.5). Its source pixel centre (x+.5,y+.5)
+        // and the contour vertex (x,y) must coincide under the SAME canvas matrix.
+        const imagePoint=[t.a*((x+.5)-.5)+t.c*((y+.5)-.5)+t.x,t.b*((x+.5)-.5)+t.d*((y+.5)-.5)+t.y];
+        near(imagePoint[0],screen[0]);near(imagePoint[1],screen[1]);
+      }
+      const anchor=[151.2,92.8],g={columns,rows,width,height,display};
+      const pixel=viewer.screenToPixel(anchor,t),next=viewer.zoomAt(view,1.25,anchor,g);
+      const projected=viewer.pixelToScreen(pixel,viewer.imageTransform(columns,rows,width,height,next,display));
+      near(projected[0],anchor[0]);near(projected[1],anchor[1]);
+    });
+  }
+}
+
+test('edge letters follow stored orientation when standard display is disabled',()=>{
+  const series={column_direction:[1,0,0],row_direction:[0,-1,0]};
+  assert.deepEqual(viewer.orientationMarkers(series,viewer.displayOrientation(series,false)),{left:'R',right:'L',top:'P',bottom:'A'});
+  assert.deepEqual(viewer.orientationMarkers(series,viewer.displayOrientation(series,true)),{left:'R',right:'L',top:'A',bottom:'P'});
+});
+
+test('oblique edges stay as stored and use at most two letters, strongest first',()=>{
+  for(const series of [
+    {column_direction:[.8,0,.6],row_direction:[0,1,0]},
+    {column_direction:[Math.SQRT1_2,Math.SQRT1_2,0],row_direction:[-Math.SQRT1_2,Math.SQRT1_2,0]},
+  ]) assert.deepEqual(viewer.displayOrientation(series),{a:1,b:0,c:0,d:1});
+  assert.deepEqual(viewer.orientationMarkers({column_direction:[.8,0,.6],row_direction:[0,1,0]}),{left:'RF',right:'LH',top:'A',bottom:'P'});
+  assert.equal(viewer.directionLabel([Math.sqrt(1-.3**2),-.3,0]),'LA');
+  assert.equal(viewer.directionLabel([Math.sqrt(1-.299**2),-.299,0]),'L');
+  assert.equal(viewer.directionLabel([-.4,.5,.7681145748]),'HP');
+  assert.equal(viewer.directionLabel([0,0,-1]),'F');
+  assert.equal(viewer.directionLabel([NaN,0,0]),'?');
+});
+
+test('canvas image and contours use one affine for every signed permutation at device pixel ratio 2',()=>{
+  const priorWindow=global.window;global.window={devicePixelRatio:2};
+  try {
+    for(const swap of [false,true]) for(const sx of [-1,1]) for(const sy of [-1,1]) {
+      const series={columns:7,rows:5,slices:3,modality:'CT',orientation:'axial',
+        column_direction:swap?[0,sx,0]:[sx,0,0],row_direction:swap?[sy,0,0]:[0,sy,0],
+        window_presets:[{id:'test',label:'Test',center:40,width:400}]};
+      const display=viewer.displayOrientation(series),g={...series,width:420,height:300,display};
+      const elements=Object.fromEntries(['canvas','top','bottom','left','right','readout','opacity','mode'].map(k=>[k,{style:{},setAttribute(){}}]));
+      elements.opacity.value='80';elements.mode.value='outline';
+      let matrix,imagePixel,contourPixel,drawCount=0;
+      const map=([x,y])=>[matrix[0]*x+matrix[2]*y+matrix[4],matrix[1]*x+matrix[3]*y+matrix[5]];
+      const ctx={setTransform(...m){matrix=m;drawCount++;},drawImage(img,x,y,w,h){
+        assert.equal(w,7);assert.equal(h,5);imagePixel=map([x+2.5,y+1.5]);
+      },beginPath(){},rect(){},clip(){},moveTo(x,y){contourPixel=map([x,y]);},lineTo(){},closePath(){},stroke(){}};
+      viewer.Viewer.prototype.draw.call({el:k=>elements[k],geometry:()=>g,info:{series},window:'test',index:1,
+        view:{zoom:1.7,x:19,y:-31},ctx,image:{},paths:[{key:'roi',paths:[[[2,1],[4,1],[4,3]]]}],
+        visible:new Set(['roi']),rois:[{key:'roi',color:'#123456'}]});
+      assert.equal(drawCount,1);assert.deepEqual(contourPixel,imagePixel);
+      assert.deepEqual(['top','bottom','left','right'].map(k=>elements[k].textContent),['A','P','R','L']);
+    }
+  } finally {global.window=priorWindow;}
 });

@@ -108,7 +108,11 @@
           <p>Choose a slice and click inside the target. A box needs two corners. Coordinates are [column, row, slice], starting at zero.</p>
           <div class="prompt-layout"><div>
             <label for="promptSlice">Image slice <span id="promptSliceLabel"></span></label><input id="promptSlice" type="range" min="0" max="0" value="0">
-            <div id="promptCanvas" class="prompt-canvas"><img id="promptImage" alt="Selected DICOM slice for prompt placement" draggable="false"><div id="promptOverlay" aria-hidden="true"></div></div>
+            <label class="check-label"><input id="promptStandard" type="checkbox" checked> Standard orientation</label>
+            <div id="promptCanvas" class="prompt-canvas"><img id="promptImage" alt="Selected DICOM slice for prompt placement" draggable="false"><div id="promptOverlay" aria-hidden="true"></div>
+              <span class="orientation-marker" data-p-edge="top" hidden></span><span class="orientation-marker" data-p-edge="bottom" hidden></span>
+              <span class="orientation-marker" data-p-edge="left" hidden></span><span class="orientation-marker" data-p-edge="right" hidden></span>
+            </div>
             <p id="previewError" class="error" hidden>Preview unavailable. Use coordinates only if you can verify them against the source images.</p>
           </div><div class="prompt-controls">
             <label>Prompt type<select id="promptMode"><option value="positive">Positive point — inside target</option><option value="negative">Negative point — exclude area</option><option value="box">Box — two corners</option></select></label>

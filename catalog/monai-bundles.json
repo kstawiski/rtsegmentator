@@ -5,6 +5,7 @@
     "structures": "Spleen",
     "reference": "https://huggingface.co/MONAI/spleen_ct_segmentation",
     "bundle": "spleen_ct_segmentation",
+    "postprocess_on_cpu": true,
     "config": "configs/inference.json",
     "labels": {"1": "Spleen"}
   },
@@ -14,6 +15,7 @@
     "structures": "Artery, portal vein, liver, spleen, stomach, gallbladder and pancreas",
     "reference": "https://huggingface.co/MONAI/multi_organ_segmentation",
     "bundle": "multi_organ_segmentation",
+    "postprocess_on_cpu": true,
     "config": "configs/inference.yaml",
     "trusted_architecture_pickle": true,
     "datalist_records": true,
@@ -28,6 +30,7 @@
     "structures": "Pancreas and pancreatic tumor",
     "reference": "https://huggingface.co/MONAI/pancreas_ct_dints_segmentation",
     "bundle": "pancreas_ct_dints_segmentation",
+    "postprocess_on_cpu": true,
     "config": "configs/inference.yaml",
     "trusted_architecture_pickle": true,
     "datalist_records": true,
@@ -39,6 +42,7 @@
     "structures": "Liver, spleen and pancreas",
     "reference": "https://huggingface.co/MONAI/pediatric_abdominal_ct_segmentation",
     "bundle": "pediatric_abdominal_ct_segmentation",
+    "postprocess_on_cpu": true,
     "config": "configs/inference.yaml",
     "checkpoint": "models/dynunet_FT.pt",
     "datalist_records": true,
@@ -51,6 +55,7 @@
     "structures": "Kidney cortex, medulla and pelvicalyceal system",
     "reference": "https://huggingface.co/MONAI/renalStructures_UNEST_segmentation",
     "bundle": "renalStructures_UNEST_segmentation",
+    "postprocess_on_cpu": true,
     "config": "configs/inference.json",
     "run_id": "evaluating",
     "labels": {"1": "Kidney_Cortex", "2": "Kidney_Medulla", "3": "Pelvicalyceal_System"}
@@ -61,6 +66,7 @@
     "structures": "13 abdominal organs, vessels and adrenal glands",
     "reference": "https://huggingface.co/MONAI/swin_unetr_btcv_segmentation",
     "bundle": "swin_unetr_btcv_segmentation",
+    "postprocess_on_cpu": true,
     "config": "configs/inference.json",
     "remove_network_img_size": true,
     "labels": {
@@ -77,6 +83,7 @@
     "structures": "104 whole-body organs, vessels, bones and muscles",
     "reference": "https://huggingface.co/MONAI/wholeBody_ct_segmentation",
     "bundle": "wholeBody_ct_segmentation",
+    "postprocess_on_cpu": false,
     "config": "configs/inference.json",
     "overrides": {"displayable_configs#highres": false},
     "labels_from_metadata": true
@@ -87,6 +94,7 @@
     "structures": "Left-ventricular blood pool, myocardium and right-ventricular blood pool",
     "reference": "https://huggingface.co/MONAI/ventricular_short_axis_3label",
     "bundle": "ventricular_short_axis_3label",
+    "postprocess_on_cpu": false,
     "config": "configs/inference.json",
     "run_id": "evaluating",
     "labels_from_metadata": true
@@ -97,6 +105,7 @@
     "structures": "132 foreground ventricular, deep-gray, cerebellar and cortical structures",
     "reference": "https://huggingface.co/MONAI/wholeBrainSeg_Large_UNEST_segmentation",
     "bundle": "wholeBrainSeg_Large_UNEST_segmentation",
+    "postprocess_on_cpu": false,
     "config": "configs/inference.json",
     "run_id": "evaluating",
     "labels_from_metadata": true
@@ -107,6 +116,7 @@
     "structures": "Prostate central gland and peripheral zone",
     "reference": "https://huggingface.co/MONAI/prostate_mri_anatomy",
     "bundle": "prostate_mri_anatomy",
+    "postprocess_on_cpu": false,
     "config": "configs/inference.json",
     "labels_from_metadata": true
   }

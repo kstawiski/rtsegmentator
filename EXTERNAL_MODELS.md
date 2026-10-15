@@ -439,10 +439,12 @@ Nonempty labels with no valid polygon are omitted with the ROI name and voxel co
   venous and excretory CT volumes as three channels; the current one-series
   portal contract cannot satisfy that requirement without fabricating phases.
 - The MONAI Model Zoo `swin_unetr_btcv_segmentation` bundle version 0.5.8 is
-  installed. Its MONAI 1.4-era config is adapted per job by removing only the
+  installed. Its MONAI 1.4-era config is adapted per job by removing the
   now-obsolete `SwinUNETR.img_size` constructor argument; the checksum-recorded
-  upstream bundle remains unchanged. All 13 checkpoint labels were non-empty
-  on the abdominal CT fixture, producing a strictly valid 3,272,662-byte
+  upstream bundle remains unchanged. The CPU-postprocessing flag also moves
+  the multi-channel inversion to CPU (see the decision table below). Before this
+  CPU change, all 13 checkpoint labels were non-empty on the abdominal CT
+  fixture, producing a strictly valid 3,272,662-byte
   RTSTRUCT with the complete 167-image source series referenced.
 - The MONAI Model Zoo `wholeBody_ct_segmentation` bundle version 0.2.7 is
   installed with both official 1.5 mm and 3 mm checkpoints. Full-resolution
@@ -657,3 +659,24 @@ The operator GPU audit runs every integrated LNCTVSeg task and HNLNL. It records
 - **Buhl et al., Radiotherapy and Oncology 2024**, [doi:10.1016/j.radonc.2024.110567](https://www.thegreenjournal.com/article/S0167-8140(24)03545-X/fulltext): accessible full text describes four nnU-Net v1 models, by laterality and internal-mammary extension to intercostal space 3 or 4. It links one 3.03 MB DOCX supplement, whose retrieval returned HTTP 403. No trained checkpoint was identified in the paper or author/DBCG searches across GitHub, Zenodo and Hugging Face. A future release would need the four checkpoint ensembles, exact class maps, preprocessing, postprocessing and a model licence.
 
 These are bounded availability checks, not proof that no release exists elsewhere.
+
+## MONAI postprocessing device decisions
+
+Inspection of the catalog-selected inference configs on 2026-10-15 gives the following decisions. Channel counts include background. `postprocess_on_cpu: true` inserts `EnsureTyped(keys="pred", device="cpu")` immediately before inversion and sets `Invertd.device` to CPU in a job-local compatibility config. Softmax remains before inversion; argmax remains after it. Network/inferer devices and bundle files remain unchanged. YAML loading uses PyYAML in the worker environment.
+
+| Catalog task | Channels | Postprocessing order relevant to inversion | CPU flag |
+| --- | ---: | --- | --- |
+| `monai_spleen_ct` | 2 | Softmax → inversion → argmax | On |
+| `monai_multi_organ_ct` | 8 | Softmax → inversion → argmax | On |
+| `monai_pancreas_dints_ct` | 3 | Softmax → inversion → argmax | On |
+| `monai_pediatric_abdominal_ct` | 4 | Softmax → inversion → argmax | On |
+| `monai_renal_unest_ct` | 4 | Softmax → inversion → argmax | On |
+| `monai_swin_unetr_btcv_ct` | 14 | Softmax → inversion → argmax | On |
+| `monai_whole_body_ct` | 105 | Softmax → argmax → nearest-neighbour inversion of one label channel | Off |
+| `monai_ventricular_short_axis_mr` | 4 | Softmax → `Invertd` → argmax; preprocessing has no spatial transform to invert | Off |
+| `monai_whole_brain_unest_mr` | 133 | Softmax → `Invertd` → argmax; preprocessing has no spatial transform to invert | Off |
+| `monai_prostate_anatomy_mr` | 3 | Argmax → connected-component filtering → inversion of one label channel | Off |
+
+The six enabled pipelines invert interpolated multi-channel predictions on the original grid. Whole-body CT and prostate anatomy MRI already reduce them to one label channel before inversion. Cardiac MRI and whole-brain MRI perform loading, channel setup and intensity/type conversion without spatial resampling or orientation changes, so their `Invertd` calls do not perform spatial inversion. The change does not reduce inference or softmax memory. CPU inversion uses host RAM and may change numerical results or wall time; GPU off/on agreement remains to be measured with the [comparison script](scripts/compare_monai_postprocessing.py) and [operations procedure](docs/OPERATIONS.md#image-libraries-and-monai-inversion). Existing model-domain and acceptance restrictions still apply.
+
+The container also installs Ubuntu Jammy `libxrender1`, which supplies the `libXrender.so.1` required by OpenCV in the CERR prostate runtime. This library addition requires an image rebuild.

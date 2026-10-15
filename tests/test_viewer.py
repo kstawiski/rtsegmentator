@@ -178,6 +178,9 @@ def test_orientation_exact_mask_pixels(portal, synthetic_ct, tmp_path, iop, spac
     assert response.status_code == 200, response.text
     info = response.json()
     assert info["series"]["orientation"] == orientation
+    assert info["series"]["plane"] == orientation
+    assert info["series"]["column_direction"] == iop[:3]
+    assert info["series"]["row_direction"] == iop[3:]
     assert info["series"]["pixel_spacing"] == spacing
     roi = info["structure_sets"][0]["rois"][0]
     assert roi["slices"] == [1, 3, 4]
@@ -198,7 +201,9 @@ def test_orientation_exact_mask_pixels(portal, synthetic_ct, tmp_path, iop, spac
         new = client.get(f"{upload_base}/slices/{k}.png")
         assert old.content == new.content
         assert old.headers["X-Slice-Index"] == str(k)
-    assert client.get(upload_base).json()["structure_sets"] == []
+    upload_info = client.get(upload_base).json()
+    assert upload_info["structure_sets"] == []
+    assert upload_info["series"] == info["series"]
     print(f"orientation={orientation} iop={iop} spacing={spacing} reversed={reverse} gaps={gaps}: Dice=1.0, exact pixels, preview order identical")
 
 

@@ -231,7 +231,10 @@ def test_ssh_alias_replaces_unused_port_setting():
 
 def test_docker_rtstruct_runtime_libraries_and_import_check():
     dockerfile = (ROOT / 'Dockerfile').read_text()
-    packages = {'libgl1', 'libglib2.0-0', 'libxcb1', 'libx11-6', 'libxext6', 'libsm6', 'libice6'}
+    packages = {
+        'libgl1', 'libglib2.0-0', 'libxcb1', 'libx11-6', 'libxext6',
+        'libxrender1', 'libsm6', 'libice6',
+    }
     assert packages <= set(dockerfile.replace('\\\n', ' ').split())
     assert 'import cv2' in dockerfile and 'import rt_utils' in dockerfile
 

@@ -224,6 +224,7 @@ if (typeof document !== 'undefined') {
     crop:{files:[],session:null,busy:false,selection:$('cropSelection'),drop:$('cropDropZone'),filesInput:$('cropFiles'),folderInput:$('cropFolder'),buttons:[$('chooseCropFiles'),$('chooseCropFolder')],progress:$('cropProgress'),bar:$('cropBar'),text:$('cropText'),error:$('cropError')}
   };
   let prompt={positive_points:[],negative_points:[],box:null,text:''}, boxCorner=null, previewToken=0;
+  let promptSeries=null, promptSeriesKey=null, promptTransform=null;
   const reportTask=()=>state.config?.report_task || 'nv_reason_ct_report';
   const chosen=()=>state.catalog.filter(t=>state.selected.has(t.name));
   const prompted=()=>chosen().filter(t=>t.prompt);
@@ -450,20 +451,45 @@ if (typeof document !== 'undefined') {
   function resetPrompt(){prompt={positive_points:[],negative_points:[],box:null,text:''};boxCorner=null;$('promptText').value='';writePrompt();showError($('promptError'),'');}
   function writePrompt(){ $('promptJson').value=JSON.stringify(prompt,null,2);$('promptText').value=prompt.text||'';drawPrompt(); }
   function readPrompt(){try{const p=JSON.parse($('promptJson').value);if(!p||typeof p!=='object'||Array.isArray(p))throw Error();return p;}catch(_){throw Error('Prompt JSON must be a valid JSON object.');}}
-  function loadPromptSlice(){
+  async function loadPromptSlice(){
     if(!state.series||!state.upload)return;const index=Number($('promptSlice').value),token=++previewToken;
     $('promptSliceLabel').textContent=`${index+1} of ${state.series.slices} (index ${index})`;$('previewError').hidden=true;
-    $('promptImage').onload=()=>{if(token===previewToken)drawPrompt();};$('promptImage').onerror=()=>{$('previewError').hidden=false;};
+    $('promptImage').style.visibility='hidden';promptTransform=null;$('promptOverlay').replaceChildren();
+    $('promptCanvas').querySelectorAll('[data-p-edge]').forEach(el=>{el.hidden=true;});
+    const key=`${state.upload.upload_id}/${state.series.key}`;
+    try {
+      if(promptSeriesKey!==key){
+        const info=await request(`/api/v1/uploads/${encodeURIComponent(state.upload.upload_id)}/series/${encodeURIComponent(state.series.key)}/viewer`);
+        if(token!==previewToken)return;promptSeries=info.series;promptSeriesKey=key;
+      }
+    }catch(_){if(token===previewToken)$('previewError').hidden=false;return;}
+    $('promptImage').onload=()=>{if(token===previewToken)drawPrompt();};$('promptImage').onerror=()=>{if(token===previewToken)$('previewError').hidden=false;};
     $('promptImage').src=previewURL(state.series,index);drawPrompt();
   }
   function drawPrompt(){
     const s=state.series;if(!s)return;const index=Number($('promptSlice').value);let html='';
+    $('promptStatus').textContent=`${Array.isArray(prompt.positive_points)?prompt.positive_points.length:0} positive · ${Array.isArray(prompt.negative_points)?prompt.negative_points.length:0} negative · ${prompt.box?'1 box':'no box'}${boxCorner?' · Choose the second corner on this slice.':''}`;
+    if(promptSeriesKey!==`${state.upload?.upload_id}/${s.key}`)return;
+    const display=DicomUI.displayOrientation(promptSeries,$('promptStandard').checked);
+    const width=$('promptCanvas').getBoundingClientRect().width;if(!width)return;
+    const height=width*(Math.abs(display.b)*s.columns+Math.abs(display.d)*s.rows)/(Math.abs(display.a)*s.columns+Math.abs(display.c)*s.rows);
+    $('promptCanvas').style.height=`${height}px`;
+    const t=promptTransform=DicomUI.imageTransform(s.columns,s.rows,width,height,{zoom:1,x:0,y:0},display);
+    Object.assign($('promptImage').style,{position:'absolute',left:'0',top:'0',width:`${s.columns}px`,height:`${s.rows}px`,transformOrigin:'0 0',
+      transform:`matrix(${t.a},${t.b},${t.c},${t.d},${t.x-.5*(t.a+t.c)},${t.y-.5*(t.b+t.d)})`});
+    if($('promptImage').complete&&$('promptImage').naturalWidth)$('promptImage').style.visibility='visible';
+    const position=p=>{const [x,y]=DicomUI.pixelToScreen(p,t);return `left:${x}px;top:${y}px`;};
     for(const [key,cls] of [['positive_points','positive'],['negative_points','negative']]){
-      if(!Array.isArray(prompt[key]))continue;for(const p of prompt[key]){if(!Array.isArray(p)||p.length!==3||p.some(v=>!Number.isFinite(v))||p[2]!==index)continue;html+=`<span class="prompt-marker ${cls}" style="left:${(p[0]+.5)/s.columns*100}%;top:${(p[1]+.5)/s.rows*100}%">${cls==='positive'?'+':'−'}</span>`;}
+      if(!Array.isArray(prompt[key]))continue;for(const p of prompt[key]){if(!Array.isArray(p)||p.length!==3||p.some(v=>!Number.isFinite(v))||p[2]!==index)continue;html+=`<span class="prompt-marker ${cls}" style="${position(p)}">${cls==='positive'?'+':'−'}</span>`;}
     }
-    const box=prompt.box;if(Array.isArray(box)&&box.length===2&&box.every(p=>Array.isArray(p)&&p.length===3&&p.every(Number.isFinite))&&index>=Math.min(box[0][2],box[1][2])&&index<=Math.max(box[0][2],box[1][2]))html+=`<span class="prompt-box" style="left:${Math.min(box[0][0],box[1][0])/s.columns*100}%;top:${Math.min(box[0][1],box[1][1])/s.rows*100}%;width:${Math.abs(box[1][0]-box[0][0])/s.columns*100}%;height:${Math.abs(box[1][1]-box[0][1])/s.rows*100}%"></span>`;
-    if(boxCorner&&boxCorner[2]===index)html+=`<span class="prompt-marker" style="left:${(boxCorner[0]+.5)/s.columns*100}%;top:${(boxCorner[1]+.5)/s.rows*100}%">1</span>`;
-    $('promptOverlay').innerHTML=html;$('promptStatus').textContent=`${Array.isArray(prompt.positive_points)?prompt.positive_points.length:0} positive · ${Array.isArray(prompt.negative_points)?prompt.negative_points.length:0} negative · ${prompt.box?'1 box':'no box'}${boxCorner?' · Choose the second corner on this slice.':''}`;
+    const box=prompt.box;if(Array.isArray(box)&&box.length===2&&box.every(p=>Array.isArray(p)&&p.length===3&&p.every(Number.isFinite))&&index>=Math.min(box[0][2],box[1][2])&&index<=Math.max(box[0][2],box[1][2])){
+      const [a,b]=box.map(p=>DicomUI.pixelToScreen(p,t));
+      html+=`<span class="prompt-box" style="left:${Math.min(a[0],b[0])}px;top:${Math.min(a[1],b[1])}px;width:${Math.abs(b[0]-a[0])}px;height:${Math.abs(b[1]-a[1])}px"></span>`;
+    }
+    if(boxCorner&&boxCorner[2]===index)html+=`<span class="prompt-marker" style="${position(boxCorner)}">1</span>`;
+    $('promptOverlay').innerHTML=html;
+    const markers=DicomUI.orientationMarkers(promptSeries,display),positions={top:[width/2,14],bottom:[width/2,height-14],left:[18,height/2],right:[width-18,height/2]};
+    $('promptCanvas').querySelectorAll('[data-p-edge]').forEach(el=>{const edge=el.dataset.pEdge;el.hidden=false;el.textContent=markers[edge];el.style.left=`${positions[edge][0]}px`;el.style.top=`${positions[edge][1]}px`;});
   }
   function addPoint(point){
     try{prompt=readPrompt();const s=state.series;if(point.some((v,i)=>!Number.isFinite(v)||v<0||v>=[s.columns,s.rows,s.slices][i]))throw Error('The point must be within this series.');
@@ -472,7 +498,9 @@ if (typeof document !== 'undefined') {
       showError($('promptError'),'');writePrompt();
     }catch(error){showError($('promptError'),error.message);}
   }
-  $('promptImage').onclick=e=>{if(!$('previewError').hidden||!e.target.naturalWidth)return;const s=state.series,r=e.target.getBoundingClientRect();addPoint([Math.max(0,Math.min(s.columns-1,Math.floor((e.clientX-r.left)/r.width*s.columns))),Math.max(0,Math.min(s.rows-1,Math.floor((e.clientY-r.top)/r.height*s.rows))),Number($('promptSlice').value)]);};
+  $('promptImage').onclick=e=>{if(!$('previewError').hidden||!e.target.naturalWidth||!promptTransform)return;const s=state.series,r=$('promptCanvas').getBoundingClientRect(),p=DicomUI.screenToPixel([e.clientX-r.left,e.clientY-r.top],promptTransform);addPoint([Math.max(0,Math.min(s.columns-1,Math.floor(p[0]+.5))),Math.max(0,Math.min(s.rows-1,Math.floor(p[1]+.5))),Number($('promptSlice').value)]);};
+  $('promptStandard').onchange=drawPrompt;
+  new ResizeObserver(()=>drawPrompt()).observe($('promptCanvas'));
   $('addPoint').onclick=()=>addPoint([$('promptColumn').valueAsNumber,$('promptRow').valueAsNumber,Number($('promptSlice').value)]);
   $('promptSlice').oninput=loadPromptSlice;$('clearPrompt').onclick=resetPrompt;
   $('promptText').oninput=()=>{try{prompt=readPrompt();prompt.text=$('promptText').value;$('promptJson').value=JSON.stringify(prompt,null,2);showError($('promptError'),'');}catch(error){showError($('promptError'),error.message);}};

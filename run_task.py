@@ -13,6 +13,7 @@ from pathlib import Path
 import pydicom
 from nv_segment_logic import MODES as NV_SEGMENT_MODES
 import lnctvseg_bundle
+from monai_bundle import compatible_config, bundle_command
 
 job=Path(sys.argv[1]); task=sys.argv[2]
 if not re.fullmatch(r"[A-Za-z0-9_]+",task): raise SystemExit("Invalid task")
@@ -667,31 +668,9 @@ try:
         else:
             label_map = spec["labels"]
         labels.write_text(json.dumps(label_map, indent=2, sort_keys=True) + "\n")
-        bundle_config = bundle / spec["config"]
-        if spec.get("remove_network_img_size"):
-            # MONAI <=1.4 SwinUNETR accepted img_size; MONAI 1.6 infers it
-            # dynamically. Keep the official bundle immutable and make a
-            # job-local compatibility config with only that obsolete key gone.
-            compatible = json.loads(bundle_config.read_text())
-            compatible["network_def"].pop("img_size", None)
-            bundle_config = work / "inference-compatible.json"
-            bundle_config.write_text(json.dumps(compatible, indent=2) + "\n")
-        datalist = [{"image": str(nifti)}] if spec.get("datalist_records") else [str(nifti)]
-        bundle_command = [str(RUNTIME_ROOT / "envs/lnq/bin/python"), "-m", "monai.bundle", "run",
-                          "--config_file", str(bundle_config),
-                          "--bundle_root", str(bundle), "--datalist", repr(datalist),
-                          "--output_dir", str(inference_output), "--dataloader#num_workers", "0"]
-        if spec.get("trusted_architecture_pickle"):
-            # MONAI's official DiNTS search-code file contains NumPy objects
-            # and predates PyTorch 2.6's weights_only=True default. Restrict
-            # unsafe deserialization to the checksum-pinned bundle artifact.
-            bundle_command += ["--arch_ckpt", "$torch.load(@arch_ckpt_path, map_location=torch.device('cuda'), weights_only=False)"]
-        if spec.get("run_id"):
-            bundle_command += ["--run_id", spec["run_id"]]
-        for key, value in spec.get("overrides", {}).items():
-            encoded = str(value) if isinstance(value, (bool, int, float)) else json.dumps(value) if isinstance(value, (list, dict)) else str(value)
-            bundle_command += [f"--{key}", encoded]
-        run(bundle_command)
+        bundle_config = compatible_config(bundle, spec, work)
+        run(bundle_command(RUNTIME_ROOT / "envs/lnq/bin/python", bundle, spec,
+                           bundle_config, nifti, inference_output))
         prediction = inference_output / spec.get("output_relative", "input/input_trans.nii.gz")
         if not prediction.exists():
             raise SystemExit(f"MONAI bundle did not create {prediction}")

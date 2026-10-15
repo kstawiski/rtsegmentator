@@ -47,7 +47,7 @@ The synthetic checks verify software geometry. GPU inference on these variants r
 
 ## Prompts
 
-Prompt coordinates are `[column, row, slice]` on the selected series, sorted along the DICOM slice normal. The upload preview and viewer share this order and the stored pixel grid. Recreate prompts saved with the older raw-z preview for flipped or non-axial series. Keep prompt data with its source series. The catalog describes the required prompt type and supported modality for each model.
+Prompt coordinates are `[column, row, slice]` on the selected series, sorted along the DICOM slice normal. The upload preview and viewer APIs share this order and the stored pixel grid. Standard orientation changes the display only; prompt clicks map back to stored coordinates. Recreate prompts saved with the older raw-z preview for flipped or non-axial series. Keep prompt data with its source series. The catalog describes the required prompt type and supported modality for each model.
 
 - PAM propagates a positive point or axial box through a volume.
 - SAT3D needs a positive 3D point and supports negative points within its prompt-centred ROI.
@@ -148,7 +148,7 @@ The four fixture assignments are in `catalog/orientation-audit-fixtures.json`. B
 
 ## Viewing job results in the portal
 
-Open a job from Jobs to follow its progress. A completed job shows the selected image series and RTSTRUCT overlays alongside Report, Structures and Downloads tabs. Scroll or use arrow keys on the focused image to change slices; drag or use Shift + arrow keys to pan, use +/− to zoom and 0 to reset. Keys 1–4 select soft tissue, lung, bone and brain windows when supplied by the API. Slice indices start at zero. The viewer preserves the stored pixel grid without an implicit flip or rotation.
+Open a job from Jobs to follow its progress. A completed job shows the selected image series and RTSTRUCT overlays alongside Report, Structures and Downloads tabs. Scroll or use arrow keys on the focused image to change slices; drag or use Shift + arrow keys to pan, use +/− to zoom and 0 to reset. Keys 1–4 select soft tissue, lung, bone and brain windows when supplied by the API. Slice indices start at zero. Standard orientation is on by default: axial shows anterior at the top and patient right on the left, coronal shows head at the top and patient right on the left, and sagittal shows head at the top and anterior on the left. The option flips/transposes axis-aligned displays only; oblique edges stay as stored. Four patient-direction markers follow the displayed axes. Switching it off restores stored order. Images and contours share the same transform, including zoom and pan. API pixels and coordinates retain the stored grid.
 
 Overlay controls group ROIs by model. Search, show/hide all, opacity and outline/filled display affect the preview only. “Jump to” selects an acquired slice in the middle of that ROI's available slices. Structures shows approximate volumes only when the report supplies them. The report retains coverage, withheld/partial findings and flags; Open full report includes the original provenance and raw output. The Markdown download is generated from report JSON; the original Markdown is in the result ZIP.
 
@@ -169,3 +169,23 @@ For the manager's GPU audit, set `RTSEG_MODEL_ROOT`, `RTSEG_RUNTIME_ROOT` and `R
 This operator-only script runs every task in `lnctvseg_bundle.INTEGRATED_TASKS` (currently `lnctvseg_nnunet_v1`) and `hnlnl_2d3d` sequentially through `run_task.py --nodal-acceptance-audit`. For LNCTVSeg, `dice.json` compares numeric IDs 1–6 with the checksum-pinned author reference and reports unmapped class 7 separately. Storage-axis differences are aligned; a different physical voxel grid fails. Dice uses raw predictions and is retained if conversion fails. Laterality uses the export copy containing only IDs 1–6. The resolved omission contract permits acceptance markers after all GPU checks pass; stale manifest digests are rejected. Development-cohort Dice is descriptive. The script requires the converter's contour-to-mask round trip, checks each labelled component ≥1 mL against the slice-wise CT body midline in patient LPS coordinates, and checks RTSTRUCT identity and references. Left has positive LPS X. Missing bilateral evidence fails the check; LNCTVSeg must also produce all six grouped labels at ≥1 mL on this fixture. Components below 1 mL are counted but excluded from the laterality decision. This centroid check detects gross side reversal; it does not measure contour accuracy.
 
 The audit records elapsed time and peak task-process GPU allocation sampled every 0.5 seconds. It excludes unrelated processes, but transient peaks between samples may be missed. A failed run removes that task's acceptance and orientation markers. Successful LNCTVSeg markers are bound to the pinned manifest and include laterality evidence. The script does not change the enabled-model list or resolve a weight licence. GPU checks have not been executed by the implementation worker. A cropped CPU smoke and strict loading are separate from this full-fixture GPU audit.
+
+## Image libraries and MONAI inversion
+
+The Ubuntu 22.04 image installs `libxrender1` for `libXrender.so.1`, needed by OpenCV in the CERR prostate runtime. The [Jammy package file list](https://packages.ubuntu.com/jammy/amd64/libxrender1/filelist) confirms the mapping. The Dockerfile keeps each image-library package on its own line; its regression test maintains the required package set. Rebuild the image to apply this change.
+
+The catalog flag `postprocess_on_cpu` moves `pred` to CPU immediately before the first postprocessing inversion/resampling operation. `Invertd` also returns its tensor on CPU. The network, sliding-window inference and preceding softmax retain their official devices. JSON and YAML bundles receive a job-local JSON compatibility copy; installed bundle files remain unchanged. Host RAM replaces VRAM for multi-channel inversion, with possible numerical differences and longer postprocessing. This does not address GPU memory use in inference or softmax. See the per-bundle decisions in [EXTERNAL_MODELS.md](../EXTERNAL_MODELS.md#monai-postprocessing-device-decisions).
+
+A manager can compare the production invocation with the flag off and on on an authorized GPU host:
+
+```bash
+python scripts/compare_monai_postprocessing.py \
+  --dicom /fixtures/ct-series --model-root /models \
+  --runtime-python /runtimes/envs/lnq/bin/python \
+  --output /validation/monai-cpu-comparison \
+  --task monai_swin_unetr_btcv_ct
+```
+
+Use a new output directory on project storage and a fixture appropriate to each selected model. Repeat `--task` for compatible bundles; omitting it selects all six flagged CT bundles; a single fixture may not match every model's anatomical domain. The caller needs `nibabel`, `numpy` and PyYAML; `--conversion-python` can select a Python with SimpleITK. Each run uses a fresh process and the same seed. Official bundle initialization can still enable nondeterministic CUDA kernels.
+
+The script retains predictions, generated configs, commands, per-run logs and `summary.json`. It prints whole-volume exact voxel agreement and per-label voxel counts, binary voxel agreement and Dice; labels absent in both outputs have Dice 1. Shape or affine disagreement refuses comparison. Peak allocated/reserved MiB are PyTorch CUDA allocator peaks on `cuda:0`, excluding non-PyTorch allocations. Wall time includes a per-process measurement and a bundle measurement. Per-run wall time includes config preparation and process startup; shared DICOM conversion is excluded. An OOM or other failed baseline is reported as unavailable agreement; flag-on still runs, and the script exits nonzero. Use a smaller suitable fixture if both runs are needed to measure agreement. These results do not establish clinical accuracy.

@@ -258,3 +258,45 @@ def test_remote_native_preflight_is_authoritative(portal,monkeypatch):
     assert not item['enabled'] and item['status']=='dependencies_missing'
     command=next(c for c in calls if c[0]=='ssh')
     assert shlex.split(command[-1])[-2:]==['--tasks','total']
+
+
+def test_slow_worker_cleanup_after_retrieval_does_not_fail_task(portal, monkeypatch):
+    job = job_at(portal, [TASK])
+    monkeypatch.setattr(portal, 'prepare_worker_job', lambda *args: None)
+    monkeypatch.setattr(portal, 'run_worker_task', lambda *args: None)
+    retrieved = []
+    monkeypatch.setattr(portal, 'retrieve_worker_results', lambda *args: retrieved.append(args))
+    def slow(*args, **kwargs): raise subprocess.TimeoutExpired('ssh', kwargs.get('timeout', 30))
+    monkeypatch.setattr(portal, 'remove_worker_job', slow)
+    portal.run_remote_gpu_task(job, TASK, 1, 1)
+    assert len(retrieved) == 1
+    meta = portal.metadata(job)
+    assert meta['remote_cleanup_pending'] and not meta['remote_results_retained']
+    assert meta['remote_task_active'] is None
+
+
+def test_cleanup_uses_the_longer_post_retrieval_timeout(portal, monkeypatch):
+    job = job_at(portal, [TASK]); calls = []
+    monkeypatch.setattr(portal.subprocess, 'run', lambda command, **kw: calls.append(kw) or SimpleNamespace(returncode=0))
+    portal.cleanup_worker_job(job, '/jobs/test')
+    assert calls[0]['timeout'] == portal.REMOTE_CLEANUP_TIMEOUT_SECONDS >= 300
+    assert portal.metadata(job)['remote_cleanup_pending'] is False
+
+
+def test_retention_removes_pending_worker_copies_and_requeues_failures(portal, monkeypatch):
+    job = job_at(portal, [TASK])
+    portal.save_metadata(job, created=0, remote_cleanup_pending=True)
+    attempts = []
+    def run(command, **kw):
+        attempts.append(command)
+        raise subprocess.TimeoutExpired('ssh', kw['timeout'])
+    monkeypatch.setattr(portal.subprocess, 'run', run)
+    portal.cleanup_once()
+    assert not job.exists()
+    remote = f"{portal.REMOTE_BASE}/{job.name}"
+    assert remote in attempts[0][-1] or remote in attempts[0]
+    queue = portal.BASE / portal.REMOTE_CLEANUP_QUEUE
+    assert json.loads(queue.read_text()) == [remote]
+    monkeypatch.setattr(portal.subprocess, 'run', lambda command, **kw: SimpleNamespace(returncode=0))
+    portal.cleanup_once()
+    assert not queue.exists()

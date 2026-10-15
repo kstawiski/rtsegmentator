@@ -4,22 +4,64 @@
 // The same affine transform is used for the PNG and every contour path.
 const DicomUI = (() => {
   const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  function imageTransform(columns, rows, width, height, view = {zoom:1, x:0, y:0}) {
-    const scale = Math.min(width / columns, height / rows) * view.zoom;
-    return {scale, x:(width - columns * scale) / 2 + view.x + scale / 2,
-      y:(height - rows * scale) / 2 + view.y + scale / 2};
+  const identity = () => ({a:1, b:0, c:0, d:1});
+  function displayOrientation(series, standard = true) {
+    if (!standard) return identity();
+    const column = series?.column_direction, row = series?.row_direction;
+    // Only signed patient-axis permutations qualify. An axial plane can still
+    // have oblique in-plane edges; do not snap those to a different orientation.
+    const axis = v => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite)
+      && v.every(n => Math.abs(n - Math.round(n)) <= 1e-4)
+      && v.reduce((sum,n) => sum + Math.abs(Math.round(n)), 0) === 1;
+    if (!axis(column) || !axis(row)) return identity();
+    const c = column.map(Math.round), r = row.map(Math.round);
+    const dot = (u,v) => u.reduce((sum,n,i) => sum + n*v[i], 0);
+    if (dot(c,r) !== 0) return identity();
+    const normalAxis = [0,1,2].find(i => !c[i] && !r[i]);
+    // DICOM LPS: screen right/down = L/P (axial), L/F (coronal), P/F (sagittal).
+    const right = normalAxis === 0 ? [0,1,0] : [1,0,0];
+    const down = normalAxis === 2 ? [0,1,0] : [0,0,-1];
+    return {a:dot(c,right), b:dot(c,down), c:dot(r,right), d:dot(r,down)};
+  }
+  function directionLabel(vector) {
+    if (!Array.isArray(vector) || vector.length !== 3 || !vector.every(Number.isFinite)) return '?';
+    const length = Math.hypot(...vector); if (!length) return '?';
+    return vector.map((v,i) => ({magnitude:Math.abs(v)/length, letter:(v < 0 ? ['R','A','F'] : ['L','P','H'])[i]}))
+      .sort((a,b) => b.magnitude-a.magnitude).filter((v,i) => i === 0 || v.magnitude >= .3 - 1e-12)
+      .slice(0,2).map(v => v.letter).join('');
+  }
+  function orientationMarkers(series, display = identity()) {
+    const column = series?.column_direction, row = series?.row_direction;
+    if (!Array.isArray(column) || !Array.isArray(row)) return {left:'?',right:'?',top:'?',bottom:'?'};
+    const right = column.map((v,i) => v*display.a + row[i]*display.c);
+    const down = column.map((v,i) => v*display.b + row[i]*display.d);
+    return {left:directionLabel(right.map(v => -v)), right:directionLabel(right),
+      top:directionLabel(down.map(v => -v)), bottom:directionLabel(down)};
+  }
+  function imageTransform(columns, rows, width, height, view = {zoom:1, x:0, y:0}, display = identity()) {
+    const {a,b,c,d} = display;
+    const displayColumns = Math.abs(a)*columns + Math.abs(c)*rows;
+    const displayRows = Math.abs(b)*columns + Math.abs(d)*rows;
+    const scale = Math.min(width / displayColumns, height / displayRows) * view.zoom;
+    const minX = Math.min(0,a*(columns-1)) + Math.min(0,c*(rows-1));
+    const minY = Math.min(0,b*(columns-1)) + Math.min(0,d*(rows-1));
+    return {scale, a:a*scale, b:b*scale, c:c*scale, d:d*scale,
+      x:(width - displayColumns*scale)/2 + view.x + scale/2 - minX*scale,
+      y:(height - displayRows*scale)/2 + view.y + scale/2 - minY*scale};
   }
   function pixelToScreen(point, transform) {
-    return [point[0] * transform.scale + transform.x, point[1] * transform.scale + transform.y];
+    const {a,b,c,d,x,y} = transform;
+    return [point[0]*a + point[1]*c + x, point[0]*b + point[1]*d + y];
   }
   function screenToPixel(point, transform) {
-    return [(point[0] - transform.x) / transform.scale, (point[1] - transform.y) / transform.scale];
+    const {a,b,c,d,x,y} = transform, determinant = a*d-b*c;
+    return [(d*(point[0]-x)-c*(point[1]-y))/determinant, (-b*(point[0]-x)+a*(point[1]-y))/determinant];
   }
   function zoomAt(view, factor, anchor, geometry) {
-    const {columns, rows, width, height} = geometry;
-    const pixel = screenToPixel(anchor, imageTransform(columns, rows, width, height, view));
+    const {columns, rows, width, height, display} = geometry;
+    const pixel = screenToPixel(anchor, imageTransform(columns, rows, width, height, view, display));
     const next = {...view, zoom:Math.max(.5, Math.min(8, view.zoom * factor))};
-    const moved = pixelToScreen(pixel, imageTransform(columns, rows, width, height, next));
+    const moved = pixelToScreen(pixel, imageTransform(columns, rows, width, height, next, display));
     next.x += anchor[0] - moved[0]; next.y += anchor[1] - moved[1];
     return next;
   }
@@ -42,12 +84,16 @@ const DicomUI = (() => {
   class Viewer {
     constructor(host, {overlays = false} = {}) {
       this.host = host; this.overlays = overlays; this.view = {zoom:1, x:0, y:0};
+      this.standard = true;
       this.visible = new Set(); this.image = null; this.paths = []; this.token = 0;
       host.innerHTML = `<div class="dicom-viewer">
         <div class="viewer-toolbar"><label>Window<select data-v="window" disabled></select></label>
+        <label class="viewer-orientation-option"><input type="checkbox" data-v="standard" checked> Standard orientation</label>
         <div class="button-row"><button type="button" data-v="out" aria-label="Zoom out">−</button><button type="button" data-v="in" aria-label="Zoom in">+</button><button type="button" data-v="reset">Reset view</button></div></div>
         <div class="viewer-stage" data-v="stage" tabindex="0" role="group" aria-label="DICOM image. Arrow keys or wheel: slices. Shift and arrow keys or drag: pan. Plus or minus: zoom. Zero: reset. One: soft tissue, two: lung, three: bone, four: brain.">
           <canvas data-v="canvas" role="img" aria-label="DICOM slice"></canvas><span class="viewer-message" data-v="message" role="status">Choose a series to preview.</span>
+          <span class="orientation-marker" data-v="top" hidden></span><span class="orientation-marker" data-v="bottom" hidden></span>
+          <span class="orientation-marker" data-v="left" hidden></span><span class="orientation-marker" data-v="right" hidden></span>
         </div>
         <div class="slice-controls"><button type="button" data-v="previous" aria-label="Previous slice" disabled>←</button><label>Slice <span data-v="index">—</span><input data-v="slice" type="range" min="0" max="0" value="0" disabled></label><button type="button" data-v="next" aria-label="Next slice" disabled>→</button></div>
         <p class="viewer-readout" data-v="readout"></p><p class="viewer-help">Scroll or ↑ ↓: slices · Drag or Shift + arrows: pan · + / −: zoom · 0: reset · Windows: 1 soft tissue, 2 lung, 3 bone, 4 brain. Focus the image to use shortcuts.</p>
@@ -63,6 +109,16 @@ const DicomUI = (() => {
       this.el('previous').onclick = () => this.setSlice(this.index - 1);
       this.el('next').onclick = () => this.setSlice(this.index + 1);
       this.el('window').onchange = () => { this.window = this.el('window').value; this.schedule(); };
+      this.el('standard').onchange = () => {
+        const g = this.geometry(), anchor = [g.width/2,g.height/2];
+        const pixel = this.info ? screenToPixel(anchor, imageTransform(g.columns,g.rows,g.width,g.height,this.view,g.display)) : null;
+        this.standard = this.el('standard').checked;
+        if (pixel) {
+          const moved = pixelToScreen(pixel, imageTransform(g.columns,g.rows,g.width,g.height,this.view,displayOrientation(this.info.series,this.standard)));
+          this.view.x += anchor[0]-moved[0]; this.view.y += anchor[1]-moved[1];
+        }
+        this.draw();
+      };
       this.el('reset').onclick = () => { this.view = {zoom:1, x:0, y:0}; this.draw(); };
       this.el('in').onclick = () => this.zoom(1.25); this.el('out').onclick = () => this.zoom(.8);
       this.el('retry').onclick = () => this.load(this.base);
@@ -155,7 +211,8 @@ const DicomUI = (() => {
       else errors.push(`Contours unavailable: ${contours.reason?.message || 'slice mismatch'}`);
       this.error(errors.join(' · ')); this.draw();
     }
-    geometry() { const r = this.el('stage').getBoundingClientRect(); return {...this.info?.series, width:r.width, height:r.height}; }
+    geometry() { const r = this.el('stage').getBoundingClientRect(); return {...this.info?.series, width:r.width, height:r.height,
+      display:displayOrientation(this.info?.series,this.standard)}; }
     zoom(factor) {
       if (!this.info) return; const g = this.geometry(); if (!g.width || !g.height) return;
       this.view = zoomAt(this.view, factor, [g.width / 2, g.height / 2], g); this.draw();
@@ -163,14 +220,25 @@ const DicomUI = (() => {
     draw() {
       const canvas = this.el('canvas'), g = this.geometry(); if (!g.width || !g.height) return;
       const ratio = window.devicePixelRatio || 1; canvas.width = Math.round(g.width * ratio); canvas.height = Math.round(g.height * ratio);
+      for (const edge of ['top','bottom','left','right']) this.el(edge).hidden = !this.info;
       if (!this.info) return;
       const p = this.info.series.window_presets.find(p => p.id === this.window);
       this.el('readout').textContent = `${this.info.series.modality} · ${this.info.series.orientation} · ${g.columns} × ${g.rows} · ${p?.label || this.window} · C ${p?.center ?? '—'} / W ${p?.width ?? '—'} · Zoom ${Math.round(this.view.zoom * 100)}%`;
+      const t = imageTransform(g.columns, g.rows, g.width, g.height, this.view, g.display), ctx = this.ctx;
+      const markers = orientationMarkers(this.info.series,g.display);
+      const corners = [[-.5,-.5],[g.columns-.5,-.5],[-.5,g.rows-.5],[g.columns-.5,g.rows-.5]].map(p => pixelToScreen(p,t));
+      const xs = corners.map(p => p[0]), ys = corners.map(p => p[1]);
+      const left = Math.min(...xs), right = Math.max(...xs), top = Math.min(...ys), bottom = Math.max(...ys);
+      const positions = {top:[(left+right)/2,top+14],bottom:[(left+right)/2,bottom-14],left:[left+14,(top+bottom)/2],right:[right-14,(top+bottom)/2]};
+      for (const [edge,label] of Object.entries(markers)) {
+        const el = this.el(edge); el.textContent = label; el.setAttribute('aria-label', `${edge}: ${label}`);
+        el.style.left = `${Math.max(18,Math.min(g.width-18,positions[edge][0]))}px`;
+        el.style.top = `${Math.max(14,Math.min(g.height-14,positions[edge][1]))}px`;
+      }
       if (!this.image) return;
-      const t = imageTransform(g.columns, g.rows, g.width, g.height, this.view), ctx = this.ctx;
-      ctx.setTransform(t.scale * ratio, 0, 0, t.scale * ratio, t.x * ratio, t.y * ratio);
+      ctx.setTransform(t.a * ratio, t.b * ratio, t.c * ratio, t.d * ratio, t.x * ratio, t.y * ratio);
       ctx.drawImage(this.image, -.5, -.5, g.columns, g.rows);
-      // Clip overlays to the exact image bounds. No implicit flip or aspect correction.
+      // Image and contour pixel centres share this signed affine, including clipping.
       ctx.beginPath(); ctx.rect(-.5, -.5, g.columns, g.rows); ctx.clip();
       ctx.lineWidth = 1.6 / t.scale; ctx.lineJoin = 'round';
       ctx.globalAlpha = Number(this.el('opacity').value) / 100;
@@ -203,6 +271,6 @@ const DicomUI = (() => {
     }
     destroy() { ++this.token; clearTimeout(this.timer); this.controller?.abort(); this.resize.disconnect(); this.host.replaceChildren(); }
   }
-  return {Viewer, imageTransform, pixelToScreen, screenToPixel, zoomAt, visibility, setVisible, middleSlice};
+  return {Viewer, displayOrientation, directionLabel, orientationMarkers, imageTransform, pixelToScreen, screenToPixel, zoomAt, visibility, setVisible, middleSlice};
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = DicomUI;
