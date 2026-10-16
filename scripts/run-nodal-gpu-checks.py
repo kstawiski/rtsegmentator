@@ -65,14 +65,23 @@ def measured_run(command, env, log, metrics_path, timeout):
             if time.monotonic() - started > timeout:
                 raise TimeoutError(f'Inference exceeded {timeout} seconds')
             pids = descendants(process.pid)
-            result = subprocess.run(['nvidia-smi', '--query-compute-apps=pid,used_gpu_memory,gpu_uuid',
-                                     '--format=csv,noheader,nounits'], text=True, capture_output=True,
-                                    check=True, timeout=10)
+            try:
+                result = subprocess.run(['nvidia-smi', '--query-compute-apps=pid,used_gpu_memory,gpu_uuid',
+                                         '--format=csv,noheader,nounits'], text=True, capture_output=True,
+                                        check=True, timeout=30)
+            except (subprocess.SubprocessError, OSError):
+                # A slow or failed sample on a busy shared host must not stop the task it measures.
+                samples.append({'elapsed_seconds': round(time.monotonic() - started, 3), 'task_vram_mib': None})
+                time.sleep(0.5)
+                continue
             memory = 0
             for line in result.stdout.splitlines():
-                pid, used, _ = [part.strip() for part in line.split(',')]
-                if int(pid) in pids:
-                    memory += int(used)
+                try:
+                    pid, used, _ = [part.strip() for part in line.split(',')]
+                    if int(pid) in pids:
+                        memory += int(used)
+                except ValueError:
+                    continue
             peak = max(peak, memory)
             samples.append({'elapsed_seconds': round(time.monotonic() - started, 3),
                             'task_vram_mib': memory})
@@ -89,7 +98,10 @@ def measured_run(command, env, log, metrics_path, timeout):
         try:
             process.wait(timeout=45)
         except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
             process.wait()
         raise
     finally:
