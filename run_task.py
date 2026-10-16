@@ -669,11 +669,23 @@ try:
             label_map = spec["labels"]
         labels.write_text(json.dumps(label_map, indent=2, sort_keys=True) + "\n")
         bundle_config = compatible_config(bundle, spec, work)
+        model_input = nifti
+        if spec.get("input_axcodes"):
+            # Bundles without their own Orientationd see the stored array; give them the
+            # storage they were trained on and map the labels back exactly afterwards.
+            model_input = work / "model" / "input.nii.gz"
+            run([sys.executable, str(APP_ROOT / "reorient_nifti.py"), str(nifti), str(model_input),
+                 spec["input_axcodes"]])
         run(bundle_command(RUNTIME_ROOT / "envs/lnq/bin/python", bundle, spec,
-                           bundle_config, nifti, inference_output))
+                           bundle_config, model_input, inference_output))
         prediction = inference_output / spec.get("output_relative", "input/input_trans.nii.gz")
         if not prediction.exists():
             raise SystemExit(f"MONAI bundle did not create {prediction}")
+        if spec.get("input_axcodes"):
+            restored = work / "prediction-on-input.nii.gz"
+            run([sys.executable, str(APP_ROOT / "resample_label_to_reference.py"),
+                 str(prediction), str(nifti), str(restored)])
+            prediction = restored
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),

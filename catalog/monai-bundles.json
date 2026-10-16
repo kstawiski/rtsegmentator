@@ -106,6 +106,7 @@
     "reference": "https://huggingface.co/MONAI/wholeBrainSeg_Large_UNEST_segmentation",
     "bundle": "wholeBrainSeg_Large_UNEST_segmentation",
     "postprocess_on_cpu": false,
+    "input_axcodes": "RAS",
     "config": "configs/inference.json",
     "run_id": "evaluating",
     "labels_from_metadata": true

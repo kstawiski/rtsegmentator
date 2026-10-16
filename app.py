@@ -233,7 +233,7 @@ for _name, _details in MULTITALENT_V1_TASKS.items():
 MONAI_BUNDLE_TASKS = json.loads((Path(__file__).parent / "catalog/monai-bundles.json").read_text())
 for _name, _details in MONAI_BUNDLE_TASKS.items():
     EXTERNAL_TASKS[_name] = {k: v for k, v in _details.items()
-                             if k not in {"bundle", "config", "checkpoint", "labels", "labels_from_metadata", "trusted_architecture_pickle", "datalist_records", "output_relative", "run_id", "remove_network_img_size", "overrides"}}
+                             if k not in {"bundle", "config", "checkpoint", "labels", "labels_from_metadata", "trusted_architecture_pickle", "datalist_records", "output_relative", "run_id", "remove_network_img_size", "overrides", "postprocess_on_cpu", "input_axcodes"}}
 
 CADS_OPEN_TASKS = json.loads((Path(__file__).parent / "catalog/cads-open.json").read_text())
 for _name, _details in CADS_OPEN_TASKS.items():

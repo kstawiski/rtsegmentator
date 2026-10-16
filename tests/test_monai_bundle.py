@@ -205,3 +205,30 @@ def test_overlay_keeps_bundle_code_and_metadata_importable(tmp_path):
                             'import scripts.networks as n; print(n.VALUE)', str(root)],
                            capture_output=True, text=True, check=True)
     assert probe.stdout.strip() == '7'
+
+
+def test_whole_brain_bundle_gets_its_training_storage():
+    # wholeBrainSeg_Large_UNEST has no Orientationd: with L,P,S input 55 of 61 left/right pairs were
+    # mirrored on the MNI template; with R,A,S input a real T1 brain had 0 of 63 swapped (GPU, 2026-10-16).
+    catalog = json.loads((Path(__file__).resolve().parents[1] / 'catalog/monai-bundles.json').read_text())
+    assert catalog['monai_whole_brain_unest_mr']['input_axcodes'] == 'RAS'
+    source = (Path(__file__).resolve().parents[1] / 'run_task.py').read_text()
+    block = source[source.index('elif task in MONAI_BUNDLE_TASKS:'):source.index('elif task == "hd_bet_mr":')]
+    assert 'reorient_nifti.py' in block and 'resample_label_to_reference.py' in block
+    assert '"--model-input", str(nifti)' in block
+
+
+def test_reorient_and_restore_are_exact(tmp_path):
+    import subprocess, sys
+    import nibabel as nib
+    import numpy as np
+    root = Path(__file__).resolve().parents[1]
+    affine = np.diag([-1.0, -1.0, 2.0, 1.0]); affine[:3, 3] = [10, 20, 30]  # L,P,S storage
+    labels = np.zeros((6, 5, 4), np.uint8); labels[:2, 1:3, 1] = 7; labels[4:, :, 3] = 3
+    source = tmp_path / 'input.nii.gz'; nib.save(nib.Nifti1Image(labels, affine), source)
+    ras = tmp_path / 'ras.nii.gz'; restored = tmp_path / 'restored.nii.gz'
+    subprocess.run([sys.executable, str(root / 'reorient_nifti.py'), str(source), str(ras), 'RAS'], check=True)
+    assert ''.join(nib.aff2axcodes(nib.load(ras).affine)) == 'RAS'
+    subprocess.run([sys.executable, str(root / 'resample_label_to_reference.py'), str(ras), str(source), str(restored)], check=True)
+    back = nib.load(restored)
+    assert np.allclose(back.affine, affine) and np.array_equal(np.asarray(back.dataobj), labels)
