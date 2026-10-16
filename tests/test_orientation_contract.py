@@ -15,7 +15,7 @@ import SimpleITK as sitk
 
 from dicom_series import ordered_dicom_files
 from orientation_contract import (exact_orientation, map_prompt, normalize_image,
-                                  restore_image, sidecar_path)
+                                  restore_image, sidecar_path, input_sidecar_path, normalize_file)
 from test_rtstruct_geometry import convert
 from test_viewer import rasterize
 import viewer
@@ -173,7 +173,7 @@ def test_hfs_sitk_byte_identity(tmp_path, plane):
     assert np.asanyarray(original.dataobj).tobytes() == np.asanyarray(actual.dataobj).tobytes()
     assert gzip.decompress(old.read_bytes()) == gzip.decompress(new.read_bytes())
     assert old.read_bytes() == new.read_bytes()
-    assert not json.loads(sidecar_path(new).read_text())['changed']
+    assert not json.loads(input_sidecar_path(new).read_text())['changed']
     print('HFS_BYTE_IDENTITY ' + json.dumps(dict(plane=plane, axcodes=''.join(nib.aff2axcodes(original.affine)),
         arrays_equal=True, affines_equal=True, nifti_payload_equal=True, gzip_equal=True,
         sha256=hashlib.sha256(old.read_bytes()).hexdigest())))
@@ -404,3 +404,14 @@ def test_colab_and_download_archive_retain_orientation_record(tmp_path, portal, 
     with zipfile.ZipFile(job / 'rtstruct-results.zip') as archive:
         assert archive.read(name + '.orientation.json').decode() == record
         assert archive.read(name) == b'synthetic result'
+
+
+def test_input_record_stays_outside_the_model_input_directory(tmp_path):
+    # Some runners read every file in their input directory as an image (SIAM did).
+    folder = tmp_path / 'input'; folder.mkdir()
+    image = folder / 'case.nii.gz'
+    nib.save(nib.Nifti1Image(np.zeros((4, 3, 2), np.int16), np.diag([1.0, 1.0, 1.0, 1.0])), image)
+    record = normalize_file(image)
+    assert sorted(p.name for p in folder.iterdir()) == ['case.nii.gz']
+    assert input_sidecar_path(image).parent == tmp_path
+    assert json.loads(input_sidecar_path(image).read_text())['target_axcodes'] == record['target_axcodes']

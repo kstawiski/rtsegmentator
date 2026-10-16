@@ -22,7 +22,25 @@ AFFINE_ATOL = 1e-3  # Existing DICOM/GDCM grid tolerance, in millimetres.
 
 
 def sidecar_path(path):
+    """Record beside an exported file (RTSTRUCT outputs keep it next to the .dcm)."""
     return Path(str(path) + '.orientation.json')
+
+
+def input_sidecar_path(path):
+    """Record for a model input, kept outside the input's directory.
+
+    Some runners read every file in their input directory as an image (SIAM failed on
+    case.nii.gz.orientation.json), so the record sits one level up.
+    """
+    path = Path(path)
+    return path.parent.parent / f'.{path.parent.name}--{path.name}.orientation.json'
+
+
+def read_input_record(path):
+    for candidate in (input_sidecar_path(path), sidecar_path(path)):
+        if candidate.is_file():
+            return json.loads(candidate.read_text())
+    return None
 
 
 def grid_record(shape, affine):
@@ -64,7 +82,7 @@ def normalize_file(path):
     # Record the serialized affine, including NIfTI float32 header precision.
     saved = nib.load(path)
     record['model'] = grid_record(saved.shape, saved.affine)
-    sidecar_path(path).write_text(json.dumps(record, indent=2) + '\n')
+    input_sidecar_path(path).write_text(json.dumps(record, indent=2) + '\n')
     return record
 
 
@@ -129,9 +147,9 @@ def map_prompt(prompt, record):
 
 def write_export_record(output, model_input, inverse):
     record = {'version': VERSION, 'inverse': inverse}
-    sidecar = sidecar_path(model_input)
-    if sidecar.is_file():
-        record['input_contract'] = json.loads(sidecar.read_text())
+    contract = read_input_record(model_input)
+    if contract is not None:
+        record['input_contract'] = contract
     sidecar_path(output).write_text(json.dumps(record, indent=2) + '\n')
 
 
@@ -141,7 +159,9 @@ def main():
     parser.add_argument('--model-input', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
     args = parser.parse_args()
-    record = json.loads(sidecar_path(args.model_input).read_text())
+    record = read_input_record(args.model_input)
+    if record is None:
+        raise SystemExit(f'No orientation record for {args.model_input}')
     args.output.write_text(json.dumps(map_prompt(json.loads(args.prompt.read_text()), record), indent=2) + '\n')
 
 
