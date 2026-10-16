@@ -1221,7 +1221,9 @@ try:
         config = work / "config.yaml"
         run([sys.executable, str(APP_ROOT / "prepare_isrt_pet_config.py"),
              str(source / "configs/hyper_parameters.yaml"), str(data_dir),
-             str(datalist), str(bundle), str(config)])
+             str(datalist), str(bundle), str(config),
+             # Late fusion runs two Swin encoders; one window at a time keeps it on a 24 GiB GPU.
+             *(["--sw-batch-size", "1"] if fusion == "Late_fusion" else [])])
         probabilities = []
         checkpoint_link = checkpoint_dir / "model.pt"
         for fold in range(1, 4):
