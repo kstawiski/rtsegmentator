@@ -398,8 +398,10 @@ def test_retry_report_preserves_finished_segmentation(tmp_path, monkeypatch):
     (job / 'output').mkdir(parents=True); (job / 'input').mkdir()
     (job / 'input/source.dcm').write_bytes(b'source')
     (job / 'output/total_RTSTRUCT.dcm').write_bytes(b'finished')
+    # A job from this version records its complete input; retry checks it before requeueing.
     (job / 'job.json').write_text(json.dumps({'id':job.name,'status':'failed','models':['total',TASK],
-                                            'completed_models':['total']}))
+                                            'completed_models':['total'],
+                                            'input_manifest': mod.job_input_manifest(job)}))
     with TestClient(api) as client:
         assert client.post('/api/v1/jobs/retry-report/retry').status_code == 202
     assert (job / 'output/total_RTSTRUCT.dcm').read_bytes() == b'finished'
