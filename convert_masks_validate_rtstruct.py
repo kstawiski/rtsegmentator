@@ -9,9 +9,9 @@ import nibabel as nib
 import numpy as np
 import pydicom
 from pydicom.uid import RTStructureSetStorage
-from rtstruct_geometry import add_roi, create_rtstruct, mask_bounds, report_omissions, dicom_grid, unique_roi_names
+from rtstruct_geometry import add_roi, slice_geometry, create_rtstruct, report_omissions, dicom_grid, unique_roi_names
 from orientation_contract import exact_orientation, restore_image, write_export_record
-from rtstruct_roundtrip import CroppedMask, data_box, validate_roi_roundtrip
+from rtstruct_roundtrip import CroppedMask, has_coordinates, data_box, read_rtstruct, source_plane_geometry, validate_roi_roundtrip
 from task_progress import Progress
 
 
@@ -40,6 +40,7 @@ def main() -> None:
     source_input, inverse = restore_image(model_input, shape, affine)
     inverse["masks"] = {}
     rtstruct = create_rtstruct(args.dicom, source_input)
+    plane_geometry = [slice_geometry(ds) for ds in rtstruct.series_data]
     expected_bounds: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     expected_sources = {}
     progress = Progress()
@@ -58,12 +59,14 @@ def main() -> None:
         if not np.any(mask):
             del mask, mask_image
             continue
-        if not add_roi(rtstruct, mask, str(name), deterministic_color(str(name)), offset=offset):
+        bounds = []
+        if not add_roi(rtstruct, mask, str(name), deterministic_color(str(name)), offset=offset, bounds_out=bounds,
+                       plane_geometry=plane_geometry):
             omitted.append({"name": str(name), "voxels": int(mask.sum()),
                             "reason": "no contour returned for nonempty mask"})
             del mask, mask_image
             continue
-        expected_bounds[str(name)] = mask_bounds(mask, rtstruct.series_data, offset=offset)
+        expected_bounds[str(name)] = bounds
         expected_sources[str(name)] = (filename, box)
         del mask, mask_image
         progress.emit("rtstruct_contours", done, len(mappings))
@@ -76,7 +79,7 @@ def main() -> None:
     rtstruct.save(args.output)
     progress.emit("rtstruct_validation", 0, len(expected_bounds))
 
-    ds = pydicom.dcmread(args.output, stop_before_pixels=True)
+    ds = read_rtstruct(args.output)
     if ds.SOPClassUID != RTStructureSetStorage or ds.Modality != "RTSTRUCT":
         raise SystemExit("output is not DICOM RT Structure Set Storage")
     rois = getattr(ds, "StructureSetROISequence", [])
@@ -102,13 +105,14 @@ def main() -> None:
     roi_names = {int(roi.ROINumber): str(roi.ROIName) for roi in rois}
     spacing = np.asarray(model_input.header.get_zooms()[:3], dtype=float)
     tolerance = max(2.1, float(spacing.max()) * 2.1)
+    source_geometry = source_plane_geometry(rtstruct.series_data)
     max_delta = 0.0
     roundtrip = {}
     for done, roi in enumerate(contours, 1):
         name = roi_names[int(roi.ReferencedROINumber)]
         pieces = [np.asarray(c.ContourData, dtype=float).reshape(-1, 3)
                   for c in getattr(roi, "ContourSequence", [])
-                  if getattr(c, "ContourData", None)]
+                  if has_coordinates(getattr(c, "ContourData", None))]
         if not pieces or name not in expected_bounds:
             raise SystemExit(f"missing contour geometry for {name}")
         points = np.concatenate(pieces)
@@ -124,7 +128,7 @@ def main() -> None:
         # One independent mask is loaded at a time; retain only its voxel box.
         mask = CroppedMask(np.asanyarray(image.dataobj)[box] > args.threshold,
                            tuple(s.start for s in box), tuple(shape))
-        roundtrip[name] = validate_roi_roundtrip(roi, image, mask, source_slices=rtstruct.series_data)
+        roundtrip[name] = validate_roi_roundtrip(roi, image, mask, source_geometry=source_geometry)
         del mask, image
         progress.emit("rtstruct_validation", done, len(contours))
 

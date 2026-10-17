@@ -664,28 +664,55 @@ def save_metadata(job: Path, **changes):
         incoming.write_text(json.dumps(data, indent=2))
         incoming.replace(target)
 
+_rsync_zstd_supported: dict[str, bool] = {}
+
+
+def worker_rsync_command(source, destination, *, compressed=True):
+    command = ["rsync", "-a", "--info=progress2", "--no-inc-recursive"]
+    if compressed:
+        command.extend(["--compress", "--compress-choice=zstd", "--compress-level=3"])
+    return [*command, str(source), f"{WORKER}:{destination}"]
+
+
+def rsync_compression_rejected(output):
+    text = output.lower()
+    return (any(word in text for word in ("compress", "zstd")) and
+            any(word in text for word in ("unknown option", "unrecognized option", "unknown compress",
+                                         "not support", "unsupported", "failed to negotiate",
+                                         "rejected", "not compiled with", "invalid compress")))
+
+
 def transfer_to_worker(job: Path, source: Path, destination: str):
     """Copy one archive while publishing rsync's real byte progress."""
     total = source.stat().st_size
     save_metadata(job, status="transferring", detail="Sending DICOM series to GPU worker",
                   progress=0, transferred_bytes=0, total_bytes=total)
-    command = ["rsync", "-a", "--info=progress2", "--no-inc-recursive",
-               str(source), f"{WORKER}:{destination}"]
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                               text=True, bufsize=1)
-    last = -1
-    assert process.stdout is not None
-    for line in process.stdout:
-        match = re.search(r"([0-9,]+)\s+(\d+)%", line)
-        if not match: continue
-        transferred = int(match.group(1).replace(",", ""))
-        percent = int(match.group(2))
-        if percent != last:
-            save_metadata(job, progress=percent, transferred_bytes=min(transferred, total))
-            last = percent
-    returncode = process.wait()
-    if returncode:
-        raise subprocess.CalledProcessError(returncode, command)
+    compressed = _rsync_zstd_supported.get(WORKER, True)
+    while True:
+        command = worker_rsync_command(source, destination, compressed=compressed)
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   text=True, bufsize=1)
+        last, diagnostics = -1, ""
+        assert process.stdout is not None
+        for line in process.stdout:
+            diagnostics = (diagnostics + line)[-8192:]
+            for match in re.finditer(r"([0-9,]+)\s+(\d+)%", line):
+                # progress2 counts original file bytes, even with compression.
+                transferred = int(match.group(1).replace(",", ""))
+                percent = int(match.group(2))
+                if percent != last:
+                    save_metadata(job, progress=percent, transferred_bytes=min(transferred, total))
+                    last = percent
+        returncode = process.wait()
+        if not returncode:
+            _rsync_zstd_supported[WORKER] = compressed
+            break
+        if compressed and rsync_compression_rejected(diagnostics):
+            _rsync_zstd_supported[WORKER] = False
+            compressed = False
+            save_metadata(job, progress=0, transferred_bytes=0)
+            continue
+        raise subprocess.CalledProcessError(returncode, command, output=diagnostics)
     save_metadata(job, progress=100, transferred_bytes=total,
                   detail="Transfer complete; preparing worker input")
 

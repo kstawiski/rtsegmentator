@@ -12,6 +12,8 @@ import cv2
 import numpy as np
 import pydicom
 from pydicom.dataset import Dataset
+from pydicom.dataelem import RawDataElement
+from pydicom.tag import Tag
 from pydicom.valuerep import format_number_as_ds
 from rt_utils import RTStructBuilder, ds_helper
 from rt_utils.utils import ROIData
@@ -117,25 +119,42 @@ def unique_roi_names(names):
     return normalised
 
 
-def add_roi(rt, mask, name, color, *, offset=(0, 0, 0)):
+def add_roi(rt, mask, name, color, *, offset=(0, 0, 0), bounds_out=None, plane_geometry=None):
     """Add a [column,row,slice] box at its source offset; False if no contour exists."""
     contours = []
+    lower, upper = np.full(3, np.inf), np.full(3, -np.inf)
     ox, oy, oz = offset
     for k in range(mask.shape[2]):
         ds = rt.series_data[k + oz]
         polygons, _ = cv2.findContours(mask[:, :, k].T.astype(np.uint8),
                                       cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        origin, column, row = slice_geometry(ds)
+        origin, column, row = (slice_geometry(ds) if plane_geometry is None
+                               else plane_geometry[k + oz])
         for polygon in polygons:
             xy = polygon[:, 0, :] + np.array([ox, oy])
             # Match rt-utils' complete pixel-centre contour set, including
             # single points and zero-area lines. Removing these pieces loses
             # source voxels and can shrink an ROI's physical bounds.
             contour = Dataset()
+            syntax = rt.ds.file_meta.TransferSyntaxUID
+            contour.set_original_encoding(syntax.is_implicit_VR, syntax.is_little_endian,
+                                          contour._character_set)
             contour.ContourGeometricType = "CLOSED_PLANAR"
             contour.NumberOfContourPoints = len(xy)
             points = origin + xy[:, :1] * column + xy[:, 1:] * row
-            contour.ContourData = [format_number_as_ds(float(value)) for value in points.ravel()]
+            # Store exactly the original DS strings as an unconverted element.
+            # pydicom writes raw elements directly; callers inspecting this
+            # dataset still get the usual lazy DS conversion on first access.
+            # No global validation settings are changed.
+            encoded = "\\".join(format_number_as_ds(float(value))
+                                for value in points.ravel()).encode("ascii")
+            if len(encoded) % 2:
+                encoded += b" "
+            tag = Tag(0x3006, 0x0050)
+            contour[tag] = RawDataElement(tag, "DS", len(encoded), encoded,
+                                          0, syntax.is_implicit_VR, syntax.is_little_endian)
+            lower = np.minimum(lower, points.min(0))
+            upper = np.maximum(upper, points.max(0))
             reference = Dataset()
             reference.ReferencedSOPClassUID = ds.SOPClassUID
             reference.ReferencedSOPInstanceUID = ds.SOPInstanceUID
@@ -154,6 +173,10 @@ def add_roi(rt, mask, name, color, *, offset=(0, 0, 0)):
     geometry.ContourSequence = contours
     rt.ds.ROIContourSequence.append(geometry)
     rt.ds.RTROIObservationsSequence.append(ds_helper.create_rtroi_observation(roi_data))
+    if bounds_out is not None:
+        # Every linear-coordinate extremum of foreground pixels lies on its
+        # contour, including points/lines and interior/exterior boundaries.
+        bounds_out.extend((lower, upper))
     return True
 
 

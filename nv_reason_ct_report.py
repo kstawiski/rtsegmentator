@@ -66,16 +66,40 @@ def detect_cbct(ds) -> dict:
     return {'is_cbct': False, 'reason': 'No CBCT header indicator detected; this does not establish image quality'}
 
 
-def hu_check(data) -> dict:
+def hu_check(data, *, dicom_headers=()) -> dict:
     data = np.asarray(data)
+    rule = ('After excluding values below -1500 HU and DICOM PixelPaddingValue/'
+            'PixelPaddingRangeLimit converted with RescaleSlope and RescaleIntercept: '
+            '0.1 percentile between -1100 and -900 HU and maximum >300 HU')
+    result = {'looks_like_hu': False, 'padding_fraction': 0.0, 'rule': rule}
     if data.size == 0 or not np.isfinite(data).all():
-        return {'looks_like_hu': False, 'reason': 'Empty or nonfinite intensities'}
-    p = np.percentile(data, [0.1, 1, 50, 99, 99.9])
+        return dict(result, reason='Empty or nonfinite intensities')
+    padding = data < -1500
+    ranges = set()
+    for ds in dicom_headers:
+        if not hasattr(ds, 'PixelPaddingValue'):
+            continue
+        try:
+            slope = float(getattr(ds, 'RescaleSlope', 1))
+            intercept = float(getattr(ds, 'RescaleIntercept', 0))
+            endpoints = np.array([float(ds.PixelPaddingValue),
+                                  float(getattr(ds, 'PixelPaddingRangeLimit', ds.PixelPaddingValue))])
+            endpoints = endpoints * slope + intercept
+            if np.isfinite(endpoints).all():
+                ranges.add((float(endpoints.min()), float(endpoints.max())))
+        except (TypeError, ValueError):
+            continue
+    for low, high in ranges:
+        padding |= (data >= low) & (data <= high)
+    result['padding_fraction'] = round(float(np.count_nonzero(padding) / data.size), 6)
+    values = data[~padding]
+    if not values.size:
+        return dict(result, reason='All intensities are padding')
+    p = np.percentile(values, [0.1, 1, 50, 99, 99.9])
     # Reuse the reference input-QC rule; air and high-density tissue must be visible.
-    return {'looks_like_hu': bool(-1100 <= p[0] <= -900 and data.max() > 300),
+    return {**result, 'looks_like_hu': bool(-1100 <= p[0] <= -900 and values.max() > 300),
             'hu_percentiles': [round(float(x), 2) for x in p],
-            'hu_min': float(data.min()), 'hu_max': float(data.max()),
-            'rule': '0.1 percentile between -1100 and -900 HU and maximum >300 HU'}
+            'hu_min': float(values.min()), 'hu_max': float(values.max())}
 
 
 def mask_stats(mask, voxel_mm3, slice_axis=2) -> dict:
