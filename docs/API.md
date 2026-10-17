@@ -171,18 +171,29 @@ including the report model; it is null in the others. Older jobs can lack the ne
 The recent-jobs list groups batches newest first and keeps each batch in series order. Its
 100-job limit includes the whole last batch so sibling links remain available.
 Use `GET /api/v1/jobs?batch_id=BATCH_ID` to retrieve an older batch for sibling navigation.
-Jobs execute sequentially in FIFO submission order; a batch reserves consecutive queue
-positions in the submitted series order. Waiting `detail` reports the number of earlier
+Jobs execute sequentially in FIFO acceptance order; each submission or manual retry
+receives a new `queue_sequence`. A manual retry joins behind jobs already waiting.
+A batch reserves consecutive queue positions in the submitted series order.
+Waiting `detail` reports the number of earlier
 jobs and updates as jobs finish: "Next in queue", "Queued behind 1 earlier job", or
 "Queued behind N earlier jobs". Restart and watchdog recovery re-enter this dispatcher
-in creation order among waiting jobs. FIFO reservations and jobs awaiting input staging
-are live to the watchdog. A task stall retry keeps the running job’s queue position.
+in original creation order among waiting jobs without reordering existing reservations.
+FIFO reservations and jobs awaiting input staging are live to the watchdog.
+A task stall retry keeps the running job’s queue position.
 
 The legacy `POST /api/uploads/{uid}/start` accepts one `series_key` with its existing
 strict model/series validation and still returns HTTP 200 with `{"id":"JOB_ID"}`.
 It uses the shared creation code and records batch fields with `batch_size=1`.
 Direct and resumable single-series segmentation submissions also record size-one batches;
 resumable submissions fill the series metadata after staging and before inference.
+Input preparation uses a non-runnable `staging` status. New jobs record expected input
+file names and sizes in `input_manifest`, including PET CT companions. Only complete
+inputs become `queued`; interrupted assessed batches are restored to their upload when
+safe, and their job records fail with an explicit preparation error. Incomplete retained
+input cannot be retried; submit the upload again.
+Older queued or interrupted jobs without an input manifest also fail preparation:
+their current files cannot establish whether the original upload was complete.
+Submit those jobs again from a complete upload.
 
 ## Job activity and task logs
 
@@ -214,6 +225,9 @@ resumable submissions fill the series metadata after staging and before inferenc
 
 Job viewer metadata returns series geometry without waiting for the overlay index.
 `contours_ready` is a boolean; `contours_state` is `building`, `ready` or `failed`.
+Automatic metadata polling stops at `failed`. The viewer shows the error in its
+overlay controls. **Retry viewer** reloads metadata with `retry_contours=true`,
+which discards only failed background index entries and starts another build.
 While building, `structure_sets` can be empty. Poll the metadata route to obtain
 ROI names, colours and available slice indices after the build finishes. A failed
 index leaves the image viewer available and supplies `contours_error`; contour

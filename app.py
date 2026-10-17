@@ -90,6 +90,8 @@ queue_running = False
 queue_active = False
 queue_current = None
 queue_thread = None
+queue_sequence = 0
+recovery_barriers = set()
 metadata_lock = threading.Lock()
 job_workers = {}
 job_workers_lock = threading.Lock()
@@ -770,6 +772,43 @@ def stop_process_tree(process: subprocess.Popen):
         process.kill()
     process.wait()
 
+
+def stop_recorded_task_tree(data):
+    """Stop an unmonitored runner only while its recorded process identity matches."""
+    pid, started = data.get('task_pid'), data.get('task_pid_started')
+    def alive(pid, started):
+        stat = proc_stat(pid)
+        return bool(stat and stat[0] != 'Z' and stat[2] == started)
+    if not pid or not started or not alive(pid, started):
+        return
+    tree = process_tree(pid)
+    if tree.get(pid) != started or not alive(pid, started):
+        return
+    def signal_verified(pid, started, sig):
+        if alive(pid, started):
+            try: os.kill(pid, sig)
+            except ProcessLookupError: pass
+    signal_verified(pid, started, signal.SIGTERM)
+    deadline = time.monotonic() + TASK_STOP_GRACE_SECONDS
+    while any(alive(p, s) for p, s in tree.items()) and time.monotonic() < deadline:
+        time.sleep(.05)
+    # Retain detached children from the original snapshot, and include children
+    # started during shutdown before killing any remaining verified process.
+    for p, s in list(tree.items()):
+        if alive(p, s):
+            descendants = process_tree(p)
+            # A PID can be reused during the /proc scan. Do not adopt the new
+            # process or its children into the tree we are authorized to stop.
+            if descendants.get(p) == s and alive(p, s):
+                tree.update(descendants)
+    for p, s in tree.items():
+        signal_verified(p, s, signal.SIGKILL)
+    deadline = time.monotonic() + max(1, min(5, TASK_STOP_GRACE_SECONDS))
+    while any(alive(p, s) for p, s in tree.items()) and time.monotonic() < deadline:
+        time.sleep(.05)
+    if any(alive(p, s) for p, s in tree.items()):
+        raise RuntimeError('Could not confirm that the interrupted task tree stopped')
+
 # Runs on the worker: SIGTERM to the run_task.py process whose arguments match this job.
 REMOTE_STOP_SCRIPT = """
 import os, signal, sys
@@ -957,10 +996,13 @@ def run_monitored_task(job, task, index, total, command, *, environment=None, re
     data = metadata(job)
     retries = sum(event.get('task') == task and event.get('action') == 'retry'
                   for event in data.get('stall_events', []))
+    deadline = time.monotonic() + TASK_TIME_LIMIT_SECONDS
     while True:
+        if time.monotonic() >= deadline:
+            finish_task_timing(job, task, 'failed')
+            raise subprocess.TimeoutExpired(command, TASK_TIME_LIMIT_SECONDS)
         now = time.time()
         activity = TaskActivity(now)
-        started = time.monotonic()
         timings = metadata(job).get('task_timings', {})
         prior = timings.get(task, {})
         timings[task] = {**prior, 'started': prior.get('started', now), 'attempt_started': now,
@@ -994,7 +1036,7 @@ def run_monitored_task(job, task, index, total, command, *, environment=None, re
                     idle = activity.stalled(now, RTSEG_STALL_SECONDS, remote=remote is not None)
                     save_metadata(job, **fields, stall_warning=idle,
                                   detail=task_detail(task, index, total, fields))
-                    if time.monotonic() - started > TASK_TIME_LIMIT_SECONDS:
+                    if time.monotonic() >= deadline:
                         if remote: stop_remote_task(remote, task)
                         stop_process_tree(process)
                         stopped = True
@@ -1016,6 +1058,9 @@ def run_monitored_task(job, task, index, total, command, *, environment=None, re
                     if remote: stop_remote_task(remote, task)
                     stop_process_tree(process)
                 save_metadata(job, task_pid=None, task_pid_started=None)
+        if time.monotonic() >= deadline:
+            finish_task_timing(job, task, 'failed')
+            raise subprocess.TimeoutExpired(command, TASK_TIME_LIMIT_SECONDS)
         if stalled:
             data = metadata(job)
             retry = retries < RTSEG_STALL_RETRIES
@@ -1453,6 +1498,88 @@ def single_series_batch(series):
     return {"batch_id": new_batch_id(), "batch_index": 1, "batch_size": 1, "series": series_metadata(series)}
 
 
+INPUT_PREPARATION_ERROR = "Interrupted while preparing input; start the job again"
+
+
+def directory_manifest(directory, names=None):
+    names = sorted(names if names is not None else (p.name for p in directory.iterdir() if p.is_file()))
+    return [{'name': name, 'size': (directory / name).stat().st_size} for name in names]
+
+
+def job_input_manifest(job):
+    return {name: directory_manifest(job / name) for name in ('input', 'input_ct') if (job / name).is_dir()}
+
+
+def legacy_input_complete(job, data):
+    """Jobs created before input manifests: their metadata was written only after the series was in place, so a
+    nonempty input holding one image series is the original input. Jobs from this version always carry a manifest
+    (or a staging marker), so the fallback never applies to them."""
+    if 'input_manifest' in data or 'staging_upload' in data or data.get('input_preparation_interrupted'):
+        return False
+    try:
+        slices, _ = validate_series(job / 'input')
+        expected = (data.get('series') or {}).get('slices')
+        return expected is None or slices == expected
+    except Exception:
+        return False
+
+
+def input_manifest_complete(job, data):
+    """Exact names and sizes prevent dispatch after an interrupted move or copy."""
+    try:
+        if data.get('input_preparation_interrupted'):
+            return False
+        manifest = data.get('input_manifest')
+        # Never create a manifest from a possibly interrupted input directory.
+        if not isinstance(manifest, dict):
+            return legacy_input_complete(job, data)
+        return (bool(manifest.get('input')) and set(manifest) <= {'input', 'input_ct'}
+                and all(directory_manifest(job / name) == expected for name, expected in manifest.items()))
+    except (OSError, ValueError, TypeError, KeyError):
+        return False
+
+
+def fail_input_preparation(job):
+    save_metadata(job, status='failed', detail=INPUT_PREPARATION_ERROR,
+                  error=INPUT_PREPARATION_ERROR, input_preparation_interrupted=True)
+
+
+def rollback_staged_batch(jobs):
+    """Restore primary inputs only if the complete assessed upload can be rebuilt."""
+    try:
+        records = [(job, metadata(job)) for job in jobs]
+        uid = records[0][1].get('staging_upload', '')
+        if not re.fullmatch(r'upload-[A-Za-z0-9-]+', uid):
+            return False
+        if any(data.get('staging_upload') != uid for _, data in records):
+            return False
+        stage = BASE / uid
+        upload = json.loads((stage / 'upload.json').read_text())
+        available = {p.name: p for p in (stage / 'input').iterdir() if p.is_file()}
+        moves = []
+        for job, data in records:
+            for item in data['input_manifest']['input']:
+                name = item['name']
+                source = job / 'input' / name
+                if source.exists():
+                    if name in available or not source.is_file() or source.stat().st_size != item['size']:
+                        return False
+                    available[name] = source
+                    moves.append((source, stage / 'input' / name))
+                elif name not in available or available[name].stat().st_size != item['size']:
+                    return False
+        if any(name not in available for series in upload['series'] for name in series['files']):
+            return False
+        for source, destination in moves:
+            shutil.move(source, destination)
+        for job, _ in records:
+            shutil.rmtree(job / 'input_ct', ignore_errors=True)
+        return True
+    except (OSError, ValueError, KeyError, TypeError):
+        logger.warning('Could not roll back interrupted input preparation', exc_info=True)
+        return False
+
+
 def new_job_id():
     # Nanoseconds preserve creation order within one timestamp second on recovery.
     return time.strftime("%Y%m%d-%H%M%S-") + f"{time.time_ns():020d}-" + secrets.token_hex(4)
@@ -1469,7 +1596,7 @@ def update_queue_details():
     ahead = int(queue_active)
     for job, _, _ in pending_jobs:
         try:
-            if metadata(job).get("status") != "queued":
+            if metadata(job).get("status") not in {"queued", "staging"}:
                 continue
             save_metadata(job, detail=queue_detail(ahead))
             ahead += 1
@@ -1482,6 +1609,9 @@ def drain_jobs():
     global queue_running, queue_active, queue_current
     while True:
         with queue_guard:
+            if recovery_barriers:
+                queue_running = False
+                return
             if not pending_jobs:
                 queue_running = False
                 return
@@ -1490,7 +1620,11 @@ def drain_jobs():
             queue_current = (job, current_thread())
             update_queue_details()
         try:
-            if metadata(job).get("status") != "queued":
+            status = metadata(job).get("status")
+            if status != "queued" and not (status == "staging" and target == process_prepared_session):
+                continue
+            if status == "queued" and not input_manifest_complete(job, metadata(job)):
+                fail_input_preparation(job)
                 continue
             save_metadata(job, detail="Preparing queued job")
             target(*args)
@@ -1512,33 +1646,50 @@ def drain_jobs():
 
 def dispatcher_can_restart():
     """Do not pass an active job whose dispatcher died, even before it is stale."""
+    if recovery_barriers:
+        return False
     if queue_current is None:
         return True
     job, _ = queue_current
     try:
-        return (metadata(job).get("status") not in {"queued", "transferring", "processing", "retrieving"}
+        return (metadata(job).get("status") not in {"staging", "queued", "transferring", "processing", "retrieving"}
                 or any(queued == job for queued, _, _ in pending_jobs))
     except HTTPException:
         return True
 
 
-def enqueue_jobs(jobs, target=None, args=None):
+def enqueue_jobs(jobs, target=None, args=None, *, recovery=False):
     """Reserve the entire batch before starting one FIFO dispatcher."""
-    global queue_running, queue_thread, queue_current, queue_active
+    global queue_running, queue_thread, queue_current, queue_active, queue_sequence
     with submission_lock, queue_guard:
-        for job in jobs:
-            pending_jobs.append((job, target or process, args if args is not None else (job,)))
-        # Recovered older jobs join ahead of newer waiting jobs. Never preempt
-        # the running job or its in-place stall retry/readiness wait.
         def creation_order(entry):
             try:
                 return metadata(entry[0]).get("created", 0), entry[0].name
             except HTTPException:
                 return 0, entry[0].name
-        ordered = sorted(pending_jobs, key=creation_order)
+        entries = list(pending_jobs)
+        additions = [(job, target or process, args if args is not None else (job,)) for job in jobs]
+        for entry in sorted(additions, key=creation_order) if recovery else additions:
+            job = entry[0]
+            try:
+                prior_sequence = metadata(job).get('queue_sequence', 0)
+                queue_sequence = max(queue_sequence, prior_sequence)
+                if not recovery or not prior_sequence:
+                    queue_sequence += 1
+                    save_metadata(job, queue_sequence=queue_sequence)
+            except HTTPException:
+                pass  # A removed reservation is skipped by the dispatcher.
+            if recovery:
+                # Insert recovered jobs by original creation time without
+                # changing the acceptance order of jobs already waiting.
+                position = next((i for i, waiting in enumerate(entries)
+                                 if creation_order(waiting) > creation_order(entry)), len(entries))
+                entries.insert(position, entry)
+            else:
+                entries.append(entry)
         pending_jobs.clear()
-        pending_jobs.extend(ordered)
-        start = ((not queue_running or (queue_thread is not None and not queue_thread.is_alive()))
+        pending_jobs.extend(entries)
+        start = ((not queue_running or queue_thread is None or not queue_thread.is_alive())
                  and dispatcher_can_restart())
         queue_running = True
         if start:
@@ -1885,6 +2036,7 @@ async def create_prostate_sbrt_crop(files: list[UploadFile]=File(...), margin_mm
                 if expanded>MAX_BYTES: raise ValueError("Expanded upload exceeds configured 8 GiB limit")
                 shutil.move(target, inp/(secrets.token_hex(4)+"_"+name))
         (job/"job.json").write_text(json.dumps({"id":jid,"status":"queued","detail":"Prostate SBRT crop queued on CPU",
+            "input_manifest": job_input_manifest(job),
             "models":["prostate_sbrt_crop"],"created":time.time(),"error":None,"tool":"prostate_sbrt_crop",
             "margin_mm":margin_mm,"keep_uids":keep_uids},indent=2))
     except Exception as exc:
@@ -2084,20 +2236,27 @@ def assess_upload_session(session_id: str):
 
 def process_prepared_session(job: Path, ready: Event):
     ready.wait()
-    if metadata(job).get("status") == "queued":
-        process(job)
+    data = metadata(job)
+    if data.get("status") == "queued":
+        if input_manifest_complete(job, data):
+            process(job)
+        else:
+            fail_input_preparation(job)
 
 
 def finish_session_job(session: Path, data: dict, job: Path, crop: bool, ready: Event | None = None):
     try:
         stage_session_files(session, data, job, crop)
-        if crop: process_prostate_sbrt_crop(job)
+        if crop:
+            save_metadata(job, status='queued', input_manifest=job_input_manifest(job))
+            process_prostate_sbrt_crop(job)
         else:
             slices, modality = validate_series(job / "input")
             selected = inspect_upload(job / "input")["series"][0]
-            with queue_guard:
-                save_metadata(job, series=series_metadata(selected))
             validate_job_series(metadata(job)["models"], selected)
+            with queue_guard:
+                save_metadata(job, status='queued', series=series_metadata(selected),
+                              input_manifest=job_input_manifest(job))
             if ready is None:
                 save_metadata(job, detail=f"{slices} {modality} DICOM slices received")
                 process(job)
@@ -2119,7 +2278,7 @@ def queue_session_job(session_id: str, options: dict, crop: bool):
         complete_session_files(session, data)
         jid = new_job_id(); job = BASE / jid
         (job / "input").mkdir(parents=True); (job / "output").mkdir()
-        (job / "job.json").write_text(json.dumps({"id":jid, "status":"queued", "created":time.time(),
+        (job / "job.json").write_text(json.dumps({"id":jid, "status":"staging", "created":time.time(),
             "detail":"Prostate SBRT crop queued on CPU" if crop else "Staging uploaded files", "error":None,
             **({} if crop else single_series_batch(None)), **options}, indent=2))
         data.update(status="used", operation=operation, options=options, job_id=jid); save_session(session, data)
@@ -2358,30 +2517,40 @@ def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="
         batch_id = new_batch_id()
         created, moved, results = [], [], []
         try:
-            # Copies precede every move: selected CT can also accompany several PET jobs.
+            # Persist non-runnable metadata before copying or moving any input.
             for index, (series, subset, companion, prompt_data, postprocessing) in enumerate(plans, 1):
                 jid = new_job_id()
                 job = BASE / jid
                 created.append(job)
                 (job / "input").mkdir(parents=True)
                 (job / "output").mkdir()
-                if companion:
-                    (job / "input_ct").mkdir()
-                    for name in companion["files"]:
-                        shutil.copy2(stage / "input" / name, job / "input_ct" / name)
                 if prompt_data:
                     (job / "prompt.json").write_text(json.dumps(prompt_data, indent=2))
                 public_series = series_metadata(series)
-                (job / "job.json").write_text(json.dumps({"id": jid, "status": "queued", "detail": "Next in queue",
+                manifest = {'input': directory_manifest(stage / 'input', series['files'])}
+                if companion:
+                    manifest['input_ct'] = directory_manifest(stage / 'input', companion['files'])
+                (job / "job.json").write_text(json.dumps({"id": jid, "status": "staging", "detail": "Preparing input",
+                    "input_manifest": manifest, "staging_upload": uid,
                     "models": subset, "report_status": "pending" if REPORT_TASK in subset else None,
                     "created": time.time(), "error": None, "prompted": bool(prompt_data), "postprocess": postprocessing,
                     "batch_id": batch_id, "batch_index": index, "batch_size": len(plans), "series": public_series}, indent=2))
                 results.append({"id": jid, "series_key": series["key"], "models": subset})
+            # Copies precede every move: selected CT can also accompany several PET jobs.
+            for job, (_, _, companion, _, _) in zip(created, plans):
+                if companion:
+                    (job / "input_ct").mkdir()
+                    for name in companion['files']:
+                        shutil.copy2(stage / 'input' / name, job / 'input_ct' / name)
             for job, (series, _, _, _, _) in zip(created, plans):
                 for name in series["files"]:
                     source, destination = stage / "input" / name, job / "input" / name
                     shutil.move(source, destination)
                     moved.append((source, destination))
+            if not all(input_manifest_complete(job, metadata(job)) for job in created):
+                raise ValueError('Prepared input does not match its manifest')
+            for job in created:
+                save_metadata(job, status='queued', detail='Next in queue')
         except Exception:
             for source, destination in reversed(moved):
                 shutil.move(destination, source)
@@ -2409,7 +2578,8 @@ async def start_assessed(uid: str, series_key: str=Form(...), models: list[str]=
 def queue_ready_job(job: Path, data: dict):
     """Publish a fully staged direct job and reserve its position with batch creation."""
     with submission_lock:
-        (job / "job.json").write_text(json.dumps({**data, "created": time.time()}, indent=2))
+        (job / "job.json").write_text(json.dumps({**data, "created": time.time(),
+                                                "input_manifest": job_input_manifest(job)}, indent=2))
         enqueue_jobs([job])
 
 
@@ -2498,8 +2668,8 @@ def retry_job(jid: str):
         if not re.fullmatch(r"[A-Za-z0-9-]+", jid): raise HTTPException(404)
         job=BASE/jid; data=metadata(job)
         if data.get("status") != "failed": raise HTTPException(409,"Only failed jobs can be retried")
-        if not (job/"input").is_dir() or not any((job/"input").iterdir()):
-            raise HTTPException(409,"The retained input series is unavailable; upload it again")
+        if not input_manifest_complete(job, data):
+            raise HTTPException(409,"The retained input series is unavailable or incomplete; upload it again")
         reset_job_output(job, data)
         save_metadata(job,status="queued",detail="Retry queued",error=None,progress=0,model_index=0,
                       recovery_count=int(data.get("recovery_count",0)), fallback_reason=None,
@@ -2643,6 +2813,7 @@ def cleanup_loop():
 
 def recover_interrupted_jobs(candidates=None, *, orphaned=False):
     """Requeue interrupted jobs when their retained input permits a safe rerun."""
+    global queue_sequence
     # Keep later reservations from dispatching while older jobs are reset.
     with submission_lock, queue_guard:
         interrupted = []
@@ -2651,13 +2822,44 @@ def recover_interrupted_jobs(candidates=None, *, orphaned=False):
                 continue
             try:
                 data = metadata(job)
-                if not job_is_live(job, data) and data.get("status") in {"queued", "transferring", "processing", "retrieving"}:
+                queue_sequence = max(queue_sequence, data.get('queue_sequence', 0))
+                if not job_is_live(job, data) and data.get("status") in {"staging", "queued", "transferring", "processing", "retrieving"}:
                     interrupted.append((job, data.get("status", "unknown")))
             except Exception:
                 continue
         interrupted.sort(key=lambda entry: (metadata(entry[0]).get("created", 0), entry[0].name))
+        # A surviving PID is not a monitor. Reconcile every orphan before any
+        # recovered job can start, including jobs whose recovery limit is spent.
+        for job, _ in interrupted:
+            recovery_barriers.add(job)
+            stop_recorded_task_tree(metadata(job))
+            save_metadata(job, task_pid=None, task_pid_started=None)
+            recovery_barriers.discard(job)
+        handled = set()
+        for job, previous_status in interrupted:
+            if previous_status != 'staging' or job in handled:
+                continue
+            data = metadata(job)
+            group = [job]
+            if data.get('batch_id') and data.get('staging_upload'):
+                group = []
+                for sibling in BASE.iterdir():
+                    try:
+                        record = metadata(sibling)
+                        if (record.get('batch_id') == data['batch_id'] and
+                                record.get('status') in {'staging', 'queued'} and not job_is_live(sibling, record)):
+                            group.append(sibling)
+                    except HTTPException:
+                        continue
+            restored = rollback_staged_batch(group)
+            for sibling in group:
+                fail_input_preparation(sibling)
+                save_metadata(sibling, input_rolled_back=restored)
+            handled.update(group)
         retry = []
         for job, previous_status in interrupted:
+            if job in handled:
+                continue
             data = metadata(job)
             is_tool = bool(data.get("tool"))
             active_remote = data.get("remote_task_active")
@@ -2690,7 +2892,11 @@ def recover_interrupted_jobs(candidates=None, *, orphaned=False):
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 shutil.rmtree(job / "colab-stage", ignore_errors=True)
             data = metadata(job); recovery_count = int(data.get("recovery_count",0)) + 1
-            has_input = (job/"input").is_dir() and any((job/"input").iterdir())
+            has_input = input_manifest_complete(job, data)
+            if not has_input:
+                fail_input_preparation(job)
+                save_metadata(job, recovery_count=recovery_count, interrupted_status=previous_status)
+                continue
             if has_input and recovery_count <= 3:
                 completed = data.get("completed_models", [])
                 if not completed or (REPORT_TASK in data.get("models", []) and REPORT_TASK not in completed):
@@ -2703,20 +2909,19 @@ def recover_interrupted_jobs(candidates=None, *, orphaned=False):
                               interrupted_status=previous_status)
                 retry.append(job)
             else:
-                reason = "retained input is unavailable" if not has_input else "automatic recovery limit was reached"
                 detail = "Job worker stopped unexpectedly" if orphaned else "Processing was interrupted by a portal service restart"
                 save_metadata(job,status="failed",detail=detail,
-                              error=f"Could not restart automatically because {reason}.",
+                              error="Could not restart automatically because automatic recovery limit was reached.",
                               recovery_count=recovery_count,interrupted_status=previous_status)
         segmentation_jobs = [job for job in retry if not metadata(job).get("tool")]
         if segmentation_jobs:
-            enqueue_jobs(segmentation_jobs)
+            enqueue_jobs(segmentation_jobs, recovery=True)
         for job in retry:
             if metadata(job).get("tool"):
                 threading.Thread(target=process_prostate_sbrt_crop, args=(job,), daemon=True).start()
 
 def job_is_live(job, data):
-    """FIFO reservations, readiness waits, workers and matching processes are live."""
+    """Only a process-local reservation or live monitor owns a running job."""
     with queue_guard:
         if any(queued == job for queued, _, _ in pending_jobs):
             return True
@@ -2726,9 +2931,7 @@ def job_is_live(job, data):
             worker = job_workers.get(job.name)
             if worker and worker.is_alive():
                 return True
-        pid = data.get('task_pid')
-        stat = proc_stat(pid) if pid else None
-        return bool(stat and stat[0] != 'Z' and stat[2] == data.get('task_pid_started'))
+        return False
 
 
 def watchdog_once(now=None):
@@ -2742,8 +2945,9 @@ def watchdog_once(now=None):
             if not job.is_dir() or job.name.startswith('upload-'): continue
             try:
                 data = metadata(job)
-                if data.get('status') not in {'queued', 'transferring', 'processing', 'retrieving'}: continue
-                if now - data.get('updated', data.get('created', now)) < RTSEG_STALL_SECONDS: continue
+                if data.get('status') not in {'staging', 'queued', 'transferring', 'processing', 'retrieving'}: continue
+                if (job not in recovery_barriers and
+                        now - data.get('updated', data.get('created', now)) < RTSEG_STALL_SECONDS): continue
                 if job_is_live(job, data): continue
                 events = data.get('stall_events', [])
                 save_metadata(job, stall_events=[*events, {'task': data.get('current_task'),

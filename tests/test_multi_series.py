@@ -25,7 +25,7 @@ def batch(portal, monkeypatch):
         ('unavailable', 'CT', {'enabled': False})]]
     monkeypatch.setattr(portal, 'tasks', lambda: {'tasks': catalog})
     enqueued = []
-    monkeypatch.setattr(portal, 'enqueue_jobs', lambda jobs: enqueued.extend(jobs))
+    monkeypatch.setattr(portal, 'enqueue_jobs', lambda jobs, **kwargs: enqueued.extend(jobs))
     def stage(rows):
         uid = 'upload-synthetic'
         root = portal.BASE / uid
@@ -206,7 +206,8 @@ def make_job(portal, jid):
     (job/'input').mkdir(parents=True)
     (job/'input/synthetic.txt').write_text('Synthetic only')
     (job/'output').mkdir()
-    (job/'job.json').write_text(json.dumps({'id': jid, 'status': 'queued', 'created': 1, 'models': ['total']}))
+    (job/'job.json').write_text(json.dumps({'id': jid, 'status': 'queued', 'created': 1, 'models': ['total'],
+                                              'input_manifest': portal.job_input_manifest(job)}))
     return job
 
 
@@ -251,7 +252,7 @@ def test_fifo_reserves_batch_and_updates_waiting_positions(portal, monkeypatch):
 def test_recovery_requeues_in_creation_order(portal, monkeypatch):
     jobs = [make_job(portal, jid) for jid in ['20260103-synthetic', '20260101-synthetic', '20260102-synthetic']]
     queued = []
-    monkeypatch.setattr(portal, 'enqueue_jobs', lambda batch: queued.extend(batch))
+    monkeypatch.setattr(portal, 'enqueue_jobs', lambda batch, **kwargs: queued.extend(batch))
     portal.recover_interrupted_jobs()
     assert queued == sorted(jobs)
     assert all(portal.metadata(job)['recovery_count'] == 1 for job in queued)
@@ -313,7 +314,7 @@ def test_recovery_uses_creation_time_for_older_random_id_suffixes(portal, monkey
     portal.save_metadata(early, created=1)
     portal.save_metadata(late, created=2)
     queued = []
-    monkeypatch.setattr(portal, 'enqueue_jobs', lambda jobs: queued.extend(jobs))
+    monkeypatch.setattr(portal, 'enqueue_jobs', lambda jobs, **kwargs: queued.extend(jobs))
     portal.recover_interrupted_jobs()
     assert queued == [early, late]
 

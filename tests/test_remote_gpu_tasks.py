@@ -15,7 +15,8 @@ def job_at(portal, models):
     (job / 'input').mkdir(parents=True)
     (job / 'output').mkdir()
     (job / 'input/image.dcm').write_bytes(b'synthetic input')
-    (job / 'job.json').write_text(json.dumps({'id':job.name, 'models':models, 'status':'queued'}))
+    (job / 'job.json').write_text(json.dumps({'id':job.name, 'models':models, 'status':'queued',
+                                              'input_manifest':portal.job_input_manifest(job)}))
     return job
 
 
@@ -98,10 +99,14 @@ def test_ssh_command_quotes_paths_and_times_out_with_remote_stop(portal, monkeyp
     monkeypatch.setattr(portal, 'REMOTE_RUNNER', '/app with spaces/run_task.py')
     monkeypatch.setattr(portal, 'REMOTE_MODEL_ROOT', '/models with spaces')
     monkeypatch.setattr(portal, 'REMOTE_NV_REASON_CT_COVERAGE_MODE', 'full')
-    monkeypatch.setattr(portal, 'TASK_TIME_LIMIT_SECONDS', -1)
+    monkeypatch.setattr(portal, 'TASK_TIME_LIMIT_SECONDS', 1)
+    clock = SimpleNamespace(now=0.)
+    monkeypatch.setattr(portal, 'time', SimpleNamespace(time=portal.time.time, monotonic=lambda: clock.now))
     calls = []
     class Process:
-        def __init__(self, command, **kwargs): self.args = command; calls.append(('popen',command))
+        def __init__(self, command, **kwargs):
+            self.args = command; calls.append(('popen',command))
+            clock.now = 2.  # Expire the budget after the SSH client has started.
         def poll(self): return None
     monkeypatch.setattr(portal.subprocess, 'Popen', Process)
     monkeypatch.setattr(portal, 'stop_remote_task', lambda *args: calls.append(('remote_stop',args)))

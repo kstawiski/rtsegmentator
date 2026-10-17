@@ -17,7 +17,8 @@ def make_job(portal, models=('total',), **extra):
     (job / 'input/synthetic.txt').write_text('synthetic input')
     (job / 'output').mkdir()
     (job / 'job.json').write_text(json.dumps({'id': job.name, 'status': 'processing', 'created': 100,
-                                            'updated': 100, 'models': list(models), **extra}))
+                                            'updated': 100, 'models': list(models),
+                                            'input_manifest': portal.job_input_manifest(job), **extra}))
     return job
 
 
@@ -178,7 +179,7 @@ def test_proc_cpu_sampling_counts_children_and_checks_start_time(portal, monkeyp
 def test_watchdog_requeues_orphan_via_recovery_and_obeys_limit(portal, monkeypatch):
     job = make_job(portal, current_task='total', stage='Running model inference')
     started = []
-    monkeypatch.setattr(portal, 'enqueue_jobs', lambda jobs: started.extend(job.name for job in jobs))
+    monkeypatch.setattr(portal, 'enqueue_jobs', lambda jobs, **kwargs: started.extend(job.name for job in jobs))
     portal.watchdog_once(1400)
     data = portal.metadata(job)
     assert data['status'] == 'queued' and data['recovery_count'] == 1 and started == [job.name]
@@ -189,16 +190,14 @@ def test_watchdog_requeues_orphan_via_recovery_and_obeys_limit(portal, monkeypat
     assert 'automatic recovery limit' in portal.metadata(job)['error']
 
 
-def test_watchdog_ignores_live_thread_live_process_and_recent_metadata(portal, monkeypatch):
+def test_watchdog_ignores_live_thread_and_recent_metadata(portal, monkeypatch):
     job = make_job(portal)
     monkeypatch.setattr(portal, 'recover_interrupted_jobs', lambda jobs, **kwargs: pytest.fail('unexpected recovery'))
     portal.watchdog_once(110)
     portal.job_workers[job.name] = SimpleNamespace(is_alive=lambda: True)
     portal.watchdog_once(2000)
     portal.job_workers.clear()
-    portal.save_metadata(job, task_pid=42, task_pid_started='start')
-    monkeypatch.setattr(portal, 'proc_stat', lambda pid: ('R', 1, 'start'))
-    portal.watchdog_once(portal.metadata(job)['updated'] + 1300)
+    assert not portal.job_is_live(job, portal.metadata(job))
 
 
 @pytest.mark.parametrize('name,stage', [

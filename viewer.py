@@ -102,6 +102,13 @@ class BackgroundCache(Cache):
                 if Path(key[0]).is_relative_to(root):
                     self.items.pop(key).cancel()
 
+    def retry_failed(self, root):
+        with self.lock:
+            for key, future in list(self.items.items()):
+                if (Path(key[0]).is_relative_to(root) and future.done() and
+                        not future.cancelled() and future.exception() is not None):
+                    del self.items[key]
+
 
 def contained(root: Path, path: Path) -> Path:
     """Reject symlinks as well as traversal, including metadata-supplied filenames."""
@@ -554,8 +561,10 @@ class ViewerService:
 
     def add_routes(self):
         @self.router.get("/api/v1/jobs/{jid}/viewer")
-        def job_viewer(jid: str, response: Response):
+        def job_viewer(jid: str, response: Response, retry_contours: bool = False):
             root, data, key, series = self.job_series(jid)
+            if retry_contours:
+                self.overlay_cache.retry_failed(root)
             future = self.overlays(root, key, series)
             state, error, result = "building", None, None
             try:

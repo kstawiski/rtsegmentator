@@ -4,6 +4,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -48,9 +49,25 @@ def test_local_timeout_calls_tree_stop(portal, tmp_path, monkeypatch):
     runner = tmp_path / "slow_runner.py"
     runner.write_text("import time\ntime.sleep(60)\n")
     monkeypatch.setattr(portal, "LOCAL_RUNNER", str(runner))
-    monkeypatch.setattr(portal, "TASK_TIME_LIMIT_SECONDS", -1)
+    monkeypatch.setattr(portal, "TASK_TIME_LIMIT_SECONDS", 1)
     monkeypatch.setattr(portal, "TASK_STOP_GRACE_SECONDS", .05)
+    clock = SimpleNamespace(now=0.)
+    monkeypatch.setattr(portal, 'time', SimpleNamespace(time=time.time, monotonic=lambda: clock.now))
+    launches, stops = [], []
+    popen, tree_stop = portal.subprocess.Popen, portal.stop_process_tree
+    def launch(*args, **kwargs):
+        child = popen(*args, **kwargs)
+        launches.append(child)
+        clock.now = 2.
+        return child
+    def stop(child):
+        stops.append(child)
+        tree_stop(child)
+    monkeypatch.setattr(portal.subprocess, 'Popen', launch)
+    monkeypatch.setattr(portal, 'stop_process_tree', stop)
     # The monitored runner records progress in the job's metadata, so the job needs one.
     (tmp_path / "job.json").write_text('{"id": "synthetic-job", "status": "processing", "models": ["synthetic"]}')
     with pytest.raises(subprocess.TimeoutExpired):
         portal.run_local_task(tmp_path, "synthetic", 1, 1)
+    assert len(launches) == 1 and stops == launches
+    assert launches[0].poll() is not None

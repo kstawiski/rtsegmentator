@@ -35,7 +35,7 @@ function fixture(t, metadata = info) {
       }};
       options.signal?.addEventListener('abort',()=>{if(!request.done){request.done=true;current--;reject(new DOMException('Aborted','AbortError'));}},{once:true});
       requests.push(request);
-      if(url==='/series' || url==='/other')request.respond(metadata);
+      if(url.split('?')[0]==='/series' || url==='/other')request.respond(metadata);
     });
   });
   for(const key of ['window','ResizeObserver','Image']) { const value=global[key];t.after(()=>{if(value===undefined)delete global[key];else global[key]=value;}); }
@@ -142,4 +142,51 @@ test('oversized payloads display without refetch loops when memory budgets canno
   v.schedule();await sleep(80);
   assert.equal(f.requests.filter(r=>/slices\/50\.png/.test(r.url)).length,1);
   assert.equal(f.requests.filter(r=>/contours\/50$/.test(r.url)).length,1);
+});
+
+test('contour failure before pixels remains failed after the image and metadata arrive',async t=>{
+  const f=fixture(t),v=f.viewer;await v.load('/series');
+  await until(()=>f.pending(/contours\/50$/));
+  f.pending(/contours\/50$/).respond({detail:'Synthetic contour failure'},500);
+  await until(()=>v.retryAt.get(v.contourKey(50))===Infinity);
+  assert.equal(v.image,null);
+  f.png(50);await until(()=>v.image);
+  assert.equal(v.contourState,'failed');
+  assert.match(f.element('loading').textContent,/Contours unavailable/);
+  assert.doesNotMatch(f.element('loading').textContent,/Contours loading/);
+  assert.match(f.element('error').textContent,/Synthetic contour failure/);
+  v.updateMetadata(info);v.showContours();
+  assert.equal(v.contourState,'failed');
+  assert.equal(f.requests.filter(r=>/contours\/50$/.test(r.url)).length,1);
+});
+
+for(const initial of ['failed','building'])test(`${initial} contour index stops polling at failure; explicit retry restarts`,async t=>{
+  const metadata={...info,structure_sets:[],contours_ready:false,contours_state:initial,contours_error:'Synthetic invalid RTSTRUCT'};
+  const f=fixture(t,metadata),v=f.viewer;await v.load('/series');
+  await until(()=>f.pending(/slices\/50\.png/));
+  f.png(50);await until(()=>v.image);
+  if(initial==='building'){
+    metadata.contours_state='failed';
+    // The initial immediate poll can still contain building metadata; force
+    // the next due poll after a slot becomes available.
+    await sleep(10);v.metadataRetry=0;
+    for(const r of f.requests.filter(r=>!r.done)){
+      if(/contours/.test(r.url))r.respond({contours_ready:false},202);
+      else if(/slices\//.test(r.url))r.respond({index:Number(r.url.match(/slices\/(\d+)/)[1])});
+    }
+    v.fetchSlice();await until(()=>v.info.contours_state==='failed');
+  }
+  const polls=f.requests.filter(r=>r.url==='/series').length;
+  await sleep(1100);
+  assert.equal(f.requests.filter(r=>r.url==='/series').length,polls);
+  assert.equal(v.contourState,'failed');
+  assert.match(f.element('empty').textContent,/Contours unavailable: Synthetic invalid RTSTRUCT/);
+  assert.doesNotMatch(f.element('empty').textContent,/loading/);
+  assert.equal(f.element('retry').hidden,false);
+  metadata.contours_state='building';metadata.contours_error=null;
+  await f.element('retry').onclick();
+  assert.ok(f.requests.some(r=>r.url==='/series?retry_contours=true'));
+  await until(()=>f.pending(/contours\/50$/));
+  assert.match(f.element('empty').textContent,/Contours loading/);
+  assert.equal(v.info.contours_state,'building');
 });

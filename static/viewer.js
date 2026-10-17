@@ -153,7 +153,7 @@ const DicomUI = (() => {
       };
       this.el('reset').onclick = () => { this.view = {zoom:1, x:0, y:0}; this.draw(); };
       this.el('in').onclick = () => this.zoom(1.25); this.el('out').onclick = () => this.zoom(.8);
-      this.el('retry').onclick = () => this.load(this.base);
+      this.el('retry').onclick = () => this.load(this.base, true);
       const stage = this.el('stage');
       stage.addEventListener('wheel', e => { if (!this.info || !e.deltaY) return; e.preventDefault(); this.setSlice(this.index + Math.sign(e.deltaY)); }, {passive:false});
       stage.addEventListener('keydown', e => {
@@ -197,7 +197,7 @@ const DicomUI = (() => {
       for (const task of this.active.values()) task.controller.abort();
       this.active.clear(); this.retryAt.clear(); this.prefetched.clear(); this.images.clear(); this.contours.clear(); this.settled = false;
     }
-    async load(base) {
+    async load(base, retry = false) {
       this.clearRequests(); const token = ++this.token;
       this.controller = new AbortController(); this.base = base; this.info = null; this.image = null; this.paths = [];
       this.displayed = null; this.shownContourKey = null; this.contourState = 'ready'; this.rois = []; this.visible.clear(); this.direction = 1; this.metadataRetry = 0;
@@ -206,7 +206,7 @@ const DicomUI = (() => {
       this.el('overlays').hidden = true; this.el('readout').textContent = ''; this.el('index').textContent = '—';
       ['slice','window','previous','next'].forEach(key => { this.el(key).disabled = true; }); this.draw();
       try {
-        const info = await json(base, this.controller.signal); if (token !== this.token) return;
+        const info = await json(retry ? `${base}?retry_contours=true` : base, this.controller.signal); if (token !== this.token) return;
         this.info = info; this.index = Math.floor(info.series.slices / 2); this.window = info.series.default_window;
         this.el('window').innerHTML = info.series.window_presets.map(p => `<option value="${escape(p.id)}">${escape(p.label)}</option>`).join('');
         this.el('window').value = this.window; this.el('window').disabled = false;
@@ -226,7 +226,8 @@ const DicomUI = (() => {
     }
     schedule() {
       if (!this.info) return;
-      clearTimeout(this.timer); clearTimeout(this.retryTimer); this.settled = false; this.error('');
+      clearTimeout(this.timer); clearTimeout(this.retryTimer); this.settled = false;
+      this.error(this.info.contours_state === 'failed' ? `Contours: ${this.info.contours_error || 'index failed'}` : '');
       this.wanted = prefetchIndices(this.index, this.info.series.slices, this.direction);
       const wanted = new Set(this.wanted);
       for (const task of this.active.values()) {
@@ -242,6 +243,8 @@ const DicomUI = (() => {
     }
     imageKey(index, window = this.window) { return JSON.stringify([this.base, window, index]); }
     contourKey(index) { return JSON.stringify([this.base, index]); }
+    contoursBuilding() { return this.overlays && this.info?.contours_ready === false &&
+      ['building', 'pending', undefined].includes(this.info.contours_state); }
     needsContours() { return this.overlays && this.info?.contours_state !== 'failed' && (this.info?.contours_ready === false || this.rois.length > 0); }
     updateMetadata(info) {
       const previous = new Set(this.rois.map(r => r.key)); this.info = info;
@@ -256,7 +259,7 @@ const DicomUI = (() => {
       const key = this.contourKey(index), cached = this.contours.get(key);
       this.paths = cached || (this.shownContourKey === key ? this.paths : []);
       this.shownContourKey = (cached || this.shownContourKey === key) ? key : null;
-      this.contourState = this.info.contours_state === 'failed' ? 'failed' :
+      this.contourState = this.info.contours_state === 'failed' || this.retryAt.get(key) === Infinity ? 'failed' :
         this.needsContours() && (this.shownContourKey !== key || this.info.contours_ready === false) ? 'loading' : 'ready';
       this.updateStatus(); this.draw();
     }
@@ -274,7 +277,7 @@ const DicomUI = (() => {
     showContours() {
       if (!this.displayed) return;
       const key = this.contourKey(this.displayed.index), paths = this.contours.get(key);
-      if (this.info.contours_state === 'failed') { this.paths = []; this.shownContourKey = null; this.contourState = 'failed'; }
+      if (this.info.contours_state === 'failed' || this.retryAt.get(key) === Infinity) { this.paths = []; this.shownContourKey = null; this.contourState = 'failed'; }
       else if (paths) { this.paths = paths; this.shownContourKey = key; this.contourState = this.info.contours_ready === false ? 'loading' : 'ready'; }
       else if (this.shownContourKey === key) this.contourState = this.info.contours_ready === false ? 'loading' : 'ready';
       else if (!this.needsContours()) { this.paths = []; this.contourState = this.info.contours_state === 'failed' ? 'failed' : 'ready'; }
@@ -290,7 +293,7 @@ const DicomUI = (() => {
         && (!this.prefetched.has(key) || index === this.index && this.shownContourKey !== key) && (this.retryAt.get(key) || 0) <= now; };
       const current = image(this.index); if (current) return current;
       if (this.needsContours() && missing(this.index)) return {key:`contour:${this.index}`,type:'contours',indices:[this.index],single:true};
-      if (this.overlays && this.info.contours_ready === false && this.metadataRetry <= now && !this.active.has('metadata')) return {key:'metadata',type:'metadata'};
+      if (this.contoursBuilding() && this.metadataRetry <= now && !this.active.has('metadata')) return {key:'metadata',type:'metadata'};
       if (this.needsContours()) {
         const missingIndices = this.wanted.filter(missing).sort((a,b) => a-b);
         if (missingIndices.length) {
@@ -314,7 +317,7 @@ const DicomUI = (() => {
         task.controller = new AbortController(); this.active.set(task.key, task); this.runTask(task);
       }
       clearTimeout(this.retryTimer);
-      const dates = [...this.retryAt.values(), this.overlays && this.info.contours_ready === false ? this.metadataRetry : Infinity].filter(t => Number.isFinite(t) && t > Date.now());
+      const dates = [...this.retryAt.values(), this.contoursBuilding() ? this.metadataRetry : Infinity].filter(t => Number.isFinite(t) && t > Date.now());
       if (dates.length) this.retryTimer = setTimeout(() => this.fetchSlice(), Math.max(10, Math.min(...dates) - Date.now()));
     }
     async runTask(task) {
@@ -410,7 +413,8 @@ const DicomUI = (() => {
     }
     renderROIs() {
       this.el('overlays').hidden = !this.overlays;
-      this.el('empty').textContent = this.info.contours_ready === false ? 'Contours loading…' : this.rois.length ? '' : 'No RTSTRUCT structures are available for this job.';
+      this.el('empty').textContent = this.info.contours_state === 'failed' ? `Contours unavailable: ${this.info.contours_error || 'index failed'}. Use Retry viewer to try again.` :
+        this.contoursBuilding() ? 'Contours loading…' : this.rois.length ? '' : 'No RTSTRUCT structures are available for this job.';
       this.el('groups').innerHTML = this.info.structure_sets.map(s => `<details open><summary>${escape(s.model)} <span class="muted">· ${escape(s.label)} · ${s.rois.length} ROI${s.rois.length === 1 ? '' : 's'}</span></summary>${s.rois.map(r => `<div class="roi-row" data-search="${escape((s.model+' '+r.name).toLowerCase())}"><label><input type="checkbox" data-roi="${escape(r.key)}" checked><span class="swatch" style="background:${color(r.color)}" aria-hidden="true"></span><span>${escape(r.name)}</span></label><button type="button" data-jump="${escape(r.key)}" aria-label="Jump to middle slice of ${escape(r.name)}" ${middleSlice(r) === null ? 'disabled title="No matching source slices"' : ''}>Jump to</button></div>`).join('')}</details>`).join('');
       this.syncROIs(); this.filterROIs();
     }

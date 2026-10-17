@@ -12,7 +12,8 @@ def make_job(portal, name, created, status='queued', **extra):
     (job / 'input/synthetic.txt').write_text('synthetic input')
     (job / 'output').mkdir()
     (job / 'job.json').write_text(json.dumps(dict(
-        id=name, models=['total'], status=status, created=created, updated=created, **extra)))
+        id=name, models=['total'], status=status, created=created, updated=created,
+        input_manifest=portal.job_input_manifest(job), **extra)))
     return job
 
 
@@ -301,7 +302,7 @@ def test_watchdog_survives_recovery_error_and_can_retry_later(portal, monkeypatc
 
 
 @pytest.mark.parametrize('live_process', [False, True])
-def test_dead_dispatcher_does_not_pass_live_or_recent_current_job(portal, monkeypatch, live_process):
+def test_dead_dispatcher_waits_for_stale_metadata_then_stops_unmonitored_process(portal, monkeypatch, live_process):
     current = make_job(portal, 'current', 1, 'processing', task_pid=42, task_pid_started='start')
     waiting = make_job(portal, 'waiting', 2)
     starts = pause_dispatcher(portal, monkeypatch)
@@ -311,20 +312,22 @@ def test_dead_dispatcher_does_not_pass_live_or_recent_current_job(portal, monkey
     portal.queue_current = (current, dead)
     portal.queue_active = True
     monkeypatch.setattr(portal, 'proc_stat', lambda pid: ('R', 0, 'start') if live_process else None)
-    now = stale_time(portal, [current, waiting]) if live_process else 1 + portal.RTSEG_STALL_SECONDS - 1
+    stopped = []
+    monkeypatch.setattr(portal, 'stop_recorded_task_tree', lambda data: stopped.append(data.get('task_pid')))
+    now = 1 + portal.RTSEG_STALL_SECONDS - 1
     portal.watchdog_once(now)
     new = make_job(portal, 'new', 3)
     portal.enqueue_jobs([new])
     assert len(starts) == 1 and portal.queue_current[0] == current
     assert [entry[0] for entry in portal.pending_jobs] == [waiting, new]
     assert not portal.metadata(current).get('recovery_count')
-    # Once the task is gone and metadata is stale, recovery reserves its
+    # An unmonitored matching PID must be stopped, then recovery reserves its
     # position before a replacement dispatcher can start later jobs.
-    monkeypatch.setattr(portal, 'proc_stat', lambda pid: None)
     portal.watchdog_once(stale_time(portal, [current, waiting, new]))
     assert len(starts) == 2 and portal.queue_current is None
     assert [entry[0] for entry in portal.pending_jobs] == [current, waiting, new]
     assert portal.metadata(current)['recovery_count'] == 1
+    assert stopped == [42]
 
 
 def test_actual_dispatcher_exit_retains_current_reservation_until_recovery(portal, monkeypatch):
@@ -357,10 +360,10 @@ def test_actual_dispatcher_exit_retains_current_reservation_until_recovery(porta
     portal.queue_thread.join(30)
     assert not portal.queue_thread.is_alive() and not portal.job_workers
     assert portal.queue_active and portal.queue_current[0] == current
+    stopped = []
+    monkeypatch.setattr(portal, 'stop_recorded_task_tree', lambda data: stopped.append(data.get('task_pid')))
     portal.watchdog_once(stale_time(portal, [current, waiting]))
-    assert order == [current] and not portal.metadata(current).get('recovery_count')
-    monkeypatch.setattr(portal, 'proc_stat', lambda pid: None)
-    portal.watchdog_once(stale_time(portal, [current, waiting]))
+    assert stopped == [42]
     assert drained.wait(30)
     portal.queue_thread.join(30)
     assert order == [current, current, waiting]
