@@ -19,7 +19,7 @@ from nibabel.processing import resample_from_to
 import numpy as np
 import pydicom
 
-from nv_reason_ct_report import (TASK, REVISION, REGION_ORGANS, detect_cbct, hu_check,
+from nv_reason_ct_report import (TASK, REVISION, REGION_ORGANS, detect_cbct, hu_check, padding_values_hu,
     mask_stats, covered_regions, check_consistency, thumbnail, rtstruct_summary, write_report, wait_for_free_memory)
 
 
@@ -132,6 +132,10 @@ def headers_and_summary(job, report):
     ds = headers[0]
     report['inputs'] = {'modality': str(getattr(ds, 'Modality', '')), 'slices': len(headers),
                         'rows': int(ds.Rows), 'columns': int(ds.Columns)}
+    # Padding identified by the headers: None if no header identifies it; inconsistent headers authorise none.
+    paddings = {None if (v := padding_values_hu(x)) is None else tuple(v) for x in headers}
+    report['inputs']['padding_values_hu'] = (None if paddings == {None} else
+                                             list(paddings.pop()) if len(paddings) == 1 else [])
     orientation = np.asarray(getattr(ds, 'ImageOrientationPatient', [1, 0, 0, 0, 1, 0]), dtype=float)
     normal = np.cross(orientation[:3], orientation[3:])
     positions = sorted({float(np.dot(np.asarray(x.ImagePositionPatient, dtype=float), normal))
@@ -214,7 +218,7 @@ def main():
                         str(job / 'input'), str(nifti)], check=True)
         img = nib.load(str(nifti)); data = np.asarray(img.dataobj, dtype=np.float32)
         report['inputs'].update(shape=list(img.shape), spacing_mm=list(map(float, img.header.get_zooms()[:3])),
-                                hu_check=hu_check(data))
+                                hu_check=hu_check(data, padding_values=report['inputs']['padding_values_hu']))
         del data
         report['timings']['convert_s'] = round(time.perf_counter() - step, 3)
         if not report['inputs']['hu_check']['looks_like_hu']: raise Refusal('Non-HU or unsupported intensity distribution')
