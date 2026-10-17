@@ -105,7 +105,7 @@ The service handles medical data and does not implement user identity or tenant 
 1. `POST /api/v1/upload-sessions` returns `session_id`, `max_request_bytes` (33554432) and `max_total_bytes`.
 2. `PUT /api/v1/upload-sessions/{session_id}/files/{file_index}?name=CT.dcm&offset=0&size=TOTAL_BYTES` sends raw bytes. Use a stable numeric file index, original total size and basename. Continue at the returned `received` offset. A `409` response with `expected_offset` indicates where to resume.
 3. `POST /api/v1/upload-sessions/{session_id}/assess` starts assessment; poll `GET /api/v1/upload-sessions/{session_id}` for `ready` or `failed`. A ready result contains the assessed `upload_id` and series list.
-4. `POST /api/uploads/{upload_id}/start` selects `series_key`, repeated `models`, optional `prompt_json` and optional `postprocess`. This route supplies paired-series/prompt contracts.
+4. `POST /api/v1/uploads/{upload_id}/jobs` selects repeated `series_keys` and `models`, optional `prompt_json` and optional `postprocess`. This route supplies paired-series/prompt contracts and creates one job per series. The single-series legacy `/api/uploads/{upload_id}/start` remains available.
 
 For one unambiguous series without prompts or pairing, `/api/v1/upload-sessions/{session_id}/jobs` accepts repeated `models`. It has a four-second catalog wait and can return `503` while the catalog warms. Use assessed uploads for paired/prompted tasks; the direct and session-job routes return HTTP `400` for them because they do not supply those inputs. All creation routes check the catalog's prompt and paired-input contract. Assessed submission requires a JSON object in `prompt_json` with the task's required points, box and/or text. Coordinates must be finite numbers within the selected series. Paired CT requires present, matching Study and Frame of Reference identifiers. Request chunks over 32 MiB return `413`; stalled bodies return `408`; a busy session lock returns `429`. Finalization is idempotent for the same operation/options.
 
@@ -129,8 +129,54 @@ Select `nv_reason_ct_report` alone or with segmentation tasks. It runs last and 
 
 Job metadata includes `report_status` (`pending`, `running`, `generated`, `not_generated`, `failed`) and `report_reason`. Expected input/resource refusals produce a downloadable `not_generated` report. Worker crashes fail the job but retain completed contours for retry. Failed SSH retrieval retains the remote copy. Report routes return HTTP 409 until the job completes.
 
-Inspection adds `cbct` and `cbct_reason` to each series. MR, PET and detected CBCT submissions are rejected with HTTP 400 through direct/assessed routes. Resumable direct-job submissions are accepted asynchronously; incompatible inputs then fail during staging before inference. HU and coverage refusals are recorded in the report.
+Inspection adds `cbct` and `cbct_reason` to each series. Single-series MR, PET and detected CBCT submissions with a report model are rejected with HTTP 400 through direct/legacy assessed routes. Batch submission applies the report only to non-CBCT CT series and rejects models applying to no selected series. Resumable direct-job submissions are accepted asynchronously; incompatible inputs then fail during staging before inference. HU and coverage refusals are recorded in the report.
 
 JSON includes revision/hashes, package versions, geometry/HU checks, coverage mode and volumes, region decisions, raw output, filtered statements, unchecked headings, flags, crop QC/thumbnails, timings and peak model VRAM. DICOM demographic/identifier fields are excluded. ROI names and approximate contour volumes remain medical data.
 
 When remote tasks are configured, health adds `remote_gpu_tasks`, `remote_worker` and `remote_worker_reachable`; failed reachability makes overall health `degraded` without changing local worker reachability. Routed catalog entries expose `execution_backend: "ssh"`. Unreachable remote preflight disables those tasks with `remote_worker_unreachable_or_preflight_failed`; missing task results use `remote_preflight_missing`. Catalog caching and refresh rules remain the same.
+
+
+## Several series from one assessed upload
+
+After assessment, submit repeated `series_keys` and `models` form fields to
+`POST /api/v1/uploads/{uid}/jobs`. Optional fields are `prompt_json` and `postprocess`.
+Models form one selection: each job receives the subset supporting its series modality.
+For example, select `total`, `nv_segment_ctmr_ct_body`, `total_mr` and
+`nv_segment_ctmr_mri_body` for a CT/MR upload. The report model runs only on non-CBCT CT.
+PET models requiring CT use a copy of a series with matching, present Study and Frame of
+Reference identifiers. The matching CT can also be selected for its own job.
+
+The response is HTTP 202:
+
+```json
+{"batch_id":"batch-example","ids":["JOB_CT","JOB_MR"],"jobs":[
+  {"id":"JOB_CT","series_key":"CT_KEY","models":["total","nv_segment_ctmr_ct_body"]},
+  {"id":"JOB_MR","series_key":"MR_KEY","models":["total_mr","nv_segment_ctmr_mri_body"]}
+]}
+```
+
+All selection validation precedes job creation. HTTP 400 identifies duplicate/unknown
+series keys, unavailable models, models applying to no selected series, a series with
+nothing to run, missing paired CT, or invalid prompts/postprocessing. Interactive models
+require exactly one selected series because prompt coordinates refer to that series.
+`postprocess=prostate_sbrt_crop` applies only to jobs supporting local `total` inference;
+requesting it when no job qualifies returns 400. A rejected selection leaves the staged
+upload available for correction. Successful submission moves the selected series into
+separate jobs and removes the staged upload, including unselected series.
+
+`GET /api/v1/jobs` and `GET /api/v1/jobs/{id}` expose `batch_id`, `batch_index` (one based),
+`batch_size`, and `series` with `key`, `series_uid`, `modality`, `description`, `slices`,
+`rows`, `columns`, `study_date`, and `cbct`. `report_status` is `pending` only in jobs
+including the report model; it is null in the others. Older jobs can lack the new fields.
+The recent-jobs list groups batches newest first and keeps each batch in series order. Its
+100-job limit includes the whole last batch so sibling links remain available.
+Use `GET /api/v1/jobs?batch_id=BATCH_ID` to retrieve an older batch for sibling navigation.
+Jobs execute sequentially in FIFO submission order; a batch reserves consecutive queue
+positions in the submitted series order. Waiting `detail` reports the number of earlier
+jobs and updates as jobs finish. Restart recovery requeues retained jobs in creation order.
+
+The legacy `POST /api/uploads/{uid}/start` accepts one `series_key` with its existing
+strict model/series validation and still returns HTTP 200 with `{"id":"JOB_ID"}`.
+It uses the shared creation code and records batch fields with `batch_size=1`.
+Direct and resumable single-series segmentation submissions also record size-one batches;
+resumable submissions fill the series metadata after staging and before inference.

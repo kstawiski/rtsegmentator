@@ -29,12 +29,12 @@
   <noscript><p class="error">JavaScript is required to upload studies and follow jobs.</p></noscript>
   <main id="main" tabindex="-1">
     <section id="newPage" aria-labelledby="newTitle">
-      <div class="page-heading"><div><p class="eyebrow">NEW JOB</p><h1 id="newTitle" tabindex="-1">Segment structures and draft a report</h1><p class="muted">Upload a study, choose a series and select the outputs you need.</p></div><span class="subtle-label">DICOM · CT / MR / PET</span></div>
+      <div class="page-heading"><div><p class="eyebrow">NEW JOB</p><h1 id="newTitle" tabindex="-1">Segment structures and draft a report</h1><p class="muted">Upload a study, choose series and select the outputs you need.</p></div><span class="subtle-label">DICOM · CT / MR / PET</span></div>
       <ol class="steps" aria-label="Job steps">
         <li><button type="button" data-step="0" aria-current="step"><span class="step-number">1</span><span><strong>Upload</strong><small id="uploadSummary">Files, folder or ZIP</small></span></button></li>
-        <li><button type="button" data-step="1" disabled><span class="step-number">2</span><span><strong>Series</strong><small id="seriesSummary">Choose the image series</small></span></button></li>
-        <li><button type="button" data-step="2" disabled><span class="step-number">3</span><span><strong>Actions</strong><small id="modelsSummary">Choose the outputs</small></span></button></li>
-        <li><button type="button" data-step="3" disabled><span class="step-number">4</span><span><strong>Review &amp; start</strong><small id="reviewSummary">Confirm the job</small></span></button></li>
+        <li><button type="button" data-step="1" disabled><span class="step-number">2</span><span><strong>Series</strong><small id="seriesSummary">Choose image series</small></span></button></li>
+        <li><button type="button" data-step="2" disabled><span class="step-number">3</span><span><strong>Models</strong><small id="modelsSummary">Choose the outputs</small></span></button></li>
+        <li><button type="button" data-step="3" disabled><span class="step-number">4</span><span><strong>Review &amp; start</strong><small id="reviewSummary">Confirm the plan</small></span></button></li>
       </ol>
       <div class="step-progress" aria-hidden="true"><span></span></div>
       <section id="uploadStep" class="panel step-panel" aria-labelledby="uploadTitle">
@@ -59,19 +59,20 @@
             <p id="assessment" class="success-text" role="status"></p>
             <button type="button" class="primary" id="toSeries" hidden>Continue to series</button>
           </div>
-          <aside class="context-note"><h3>Inspection starts automatically</h3><p>The portal separates your upload into image series. You will choose one series before starting a job.</p><p>Inspection stays on the portal server. Images are sent to the configured inference worker only when you start.</p><p id="uploadLimit" class="muted">Upload size is limited by the server configuration.</p></aside>
+          <aside class="context-note"><h3>Inspection starts automatically</h3><p>The portal separates your upload into image series. Choose several series to process them in one upload. Each series becomes one job.</p><p>Inspection stays on the portal server. Images are sent to the configured inference worker only when you start.</p><p id="uploadLimit" class="muted">Upload size is limited by the server configuration.</p></aside>
         </div>
       </section>
       <section id="seriesStep" class="panel step-panel" aria-labelledby="seriesTitle" hidden>
-        <div class="section-heading"><div><p class="eyebrow">STEP 2 OF 4</p><h2 id="seriesTitle" tabindex="-1">Choose the image series</h2><p class="muted">Select a series, then scroll through the images to check coverage.</p></div></div>
-        <div class="series-layout"><div id="series" class="series-grid" role="radiogroup" aria-label="Detected image series"></div><div id="seriesViewer" aria-label="Selected series preview"></div></div>
+        <div class="section-heading"><div><p class="eyebrow">STEP 2 OF 4</p><h2 id="seriesTitle" tabindex="-1">Choose image series</h2><p class="muted">Select series to process. Preview each series to check coverage.</p></div></div>
+        <div class="button-row"><button type="button" id="selectAllSeries">Select all CT and MR</button><button type="button" id="clearSeries">Clear</button><span id="seriesCount" role="status"></span></div><p class="small muted">CT and MR series with at least 20 images are preselected; localisers and scouts are excluded. A single series is always selected.</p>
+        <div class="series-layout"><div id="series" class="series-grid" role="group" aria-label="Detected image series"></div><div id="seriesViewer" aria-label="Series preview"></div></div>
         <div id="seriesWarnings" class="notice" hidden></div>
         <p id="seriesError" class="error" role="alert" hidden></p>
-        <div class="step-actions"><button type="button" data-back="0">Back to upload</button><button type="button" class="primary" id="toModels">Continue to actions</button></div>
+        <div class="step-actions"><button type="button" data-back="0">Back to upload</button><button type="button" class="primary" id="toModels">Continue</button></div>
       </section>
       <section id="modelsStep" class="step-panel" aria-labelledby="modelsTitle" hidden>
         <div class="panel">
-          <div class="section-heading"><div><p class="eyebrow">STEP 3 OF 4</p><h2 id="modelsTitle" tabindex="-1">What do you want?</h2><p id="modelNote" class="muted">The default starting model is total for CT and total_mr for MR. Choose it explicitly.</p></div><span id="modalityLabel" class="pill"></span></div>
+          <div class="section-heading"><div><p class="eyebrow">STEP 3 OF 4</p><h2 id="modelsTitle" tabindex="-1">Choose models</h2><p id="modelNote" class="muted">Default CT and MR segmentation models are selected when available.</p></div><span id="modalityLabel" class="pill"></span></div>
           <div id="catalogStatus" role="status">Loading model catalog…</div><button type="button" id="reloadCatalog" hidden>Retry loading models</button>
           <div class="primary-actions" aria-label="Primary actions">
             <article class="action-card" id="segmentCard">
@@ -79,7 +80,6 @@
               <p id="segmentDescription">Create RTSTRUCT contours with the selected segmentation models.</p>
               <p id="segmentDefault" class="action-default"></p><div id="segmentBadges" class="badges"></div>
               <p id="segmentReason" class="reason" hidden></p><p id="segmentSelection" class="small muted"></p>
-              <button type="button" id="chooseModels" aria-expanded="false" aria-controls="catalogPicker">Choose other models…</button>
             </article>
             <article class="action-card" id="reportCard">
               <label class="action-choice"><input type="checkbox" id="reportAction" aria-describedby="reportDescription reportReason"><span>AI draft report <small>(NV-Reason-CT)</small></span></label>
@@ -89,7 +89,7 @@
               <details class="model-details" id="reportDetails"><summary>Model details, limitations and licence</summary><div id="reportModelDetails" class="detail-body"></div></details>
             </article>
           </div>
-          <section id="catalogPicker" aria-label="Other models" hidden>
+          <section id="catalogPicker" aria-label="All compatible models">
           <div class="filters">
             <label class="search-field">Find a model<input id="modelSearch" type="search" placeholder="Name, structure or clinical tag"></label>
             <label>Tumour site<select id="clinicalFilter"><option value="">All tumour sites</option></select></label>
@@ -101,8 +101,8 @@
           </section>
           <p id="modelError" class="error" role="alert" hidden></p>
         </div>
-        <div class="selection-tray" aria-label="Selected models"><div><strong id="selectionCount">0 models selected</strong><div id="selectedChips" class="chips"><span class="muted">Select models to build this job.</span></div></div><button type="button" class="primary" id="toReview">Review selection</button></div>
-        <div class="step-actions"><button type="button" data-back="1">Back to series</button><button type="button" id="clearModels">Clear selection</button></div>
+        <div class="selection-tray" aria-label="Selected models"><div><strong id="selectionCount">0 models selected</strong><div id="selectedChips" class="chips"><span class="muted">Select models to build the plan.</span></div></div><button type="button" class="primary" id="toReview">Review</button></div>
+        <div class="step-actions"><button type="button" data-back="1">Back to series</button><button type="button" id="restoreDefaults">Restore defaults</button><button type="button" id="clearModels">Clear selection</button></div>
       </section>
       <section id="reviewStep" class="panel step-panel" aria-labelledby="reviewTitle" hidden>
         <div class="section-heading"><div><p class="eyebrow">STEP 4 OF 4</p><h2 id="reviewTitle" tabindex="-1">Review and start</h2><p class="muted">Confirm the series, model inputs and requested outputs.</p></div></div>
@@ -130,7 +130,7 @@
         </section>
         <div id="reviewWarnings" class="notice" hidden></div>
         <p id="startError" class="error" role="alert" hidden></p>
-        <div class="step-actions"><button type="button" data-back="2">Edit actions</button><button type="button" class="primary" id="startJob">Start job</button></div>
+        <div class="step-actions"><button type="button" data-back="2">Edit models</button><button type="button" class="primary" id="startJob">Start job</button></div>
       </section>
     </section>
     <section id="jobsPage" aria-labelledby="jobsTitle" hidden>
@@ -139,6 +139,7 @@
     </section>
     <section id="jobDetailPage" aria-labelledby="jobDetailTitle" hidden>
       <div class="page-heading"><div><a class="text-link" href="#jobs">← All jobs</a><p class="eyebrow">JOB RESULTS</p><h1 id="jobDetailTitle" tabindex="-1">Job details</h1><p id="jobDetailMeta" class="small muted"></p></div><div class="button-row"><button type="button" id="refreshDetail">Refresh</button><button type="button" id="deleteJob" class="danger" disabled>Delete job</button></div></div>
+      <nav id="batchSiblings" class="chips batch-siblings" aria-label="Jobs from this upload" hidden></nav>
       <p id="jobDetailError" class="error" role="alert" hidden></p>
       <section class="panel job-status" aria-label="Job status"><span id="jobDetailStatus" class="pill"></span><p id="jobDetailProgress" role="status"></p><progress id="jobDetailBar" max="100" aria-label="Job progress"></progress><p id="jobDetailReportStatus" class="small"></p><details id="jobDetailErrors" class="error-details" hidden><summary>Error details</summary><pre id="jobDetailFailure"></pre></details><button type="button" id="retryDetail" hidden>Retry using retained input</button></section>
       <div id="jobResults" class="results-layout" hidden>

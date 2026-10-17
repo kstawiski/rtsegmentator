@@ -363,3 +363,72 @@ test('canvas image and contours use one affine for every signed permutation at d
     }
   } finally {global.window=priorWindow;}
 });
+
+test('preselection includes eligible CT/MR and excludes scouts, localisers and PET',()=>{
+  const rows=[{...ct,key:'ct',slices:20},{...mr,key:'mr',slices:80},
+    {...ct,key:'short',slices:3},{...ct,key:'scout',slices:30,description:'CT Scout'},
+    {...mr,key:'localiser',slices:25,image_type:['LOCALIZER']},{...pet,key:'pet',slices:200}];
+  assert.deepEqual(ui.preselectSeries(rows),['ct','mr']);
+  assert.deepEqual(ui.preselectSeries([rows[2]]),['short']);
+  assert.deepEqual(ui.preselectSeries([rows[5]]),['pet']);
+  assert.deepEqual(ui.preselectSeries([]),[]);
+});
+
+const defaultsCatalog=[task('total'),task('nv_segment_ctmr_ct_body'),task('total_mr',{modality:'MR'}),
+  task('nv_segment_ctmr_mri_body',{modality:'MR'}),task('nv_reason_ct_report',{output:'report'})];
+test('defaults follow CT/MR mix, availability, and user edits until restored',()=>{
+  assert.deepEqual([...ui.defaultSelection(defaultsCatalog,[ct])],['total','nv_segment_ctmr_ct_body']);
+  assert.deepEqual([...ui.defaultSelection(defaultsCatalog,[mr])],['total_mr','nv_segment_ctmr_mri_body']);
+  assert.equal(ui.defaultSelection(defaultsCatalog,[ct,mr]).size,4);
+  assert.equal(ui.defaultSelection(defaultsCatalog,[pet]).size,0);
+  assert.equal(ui.defaultSelection(defaultsCatalog.map(t=>({...t,enabled:false})),[ct,mr]).size,0);
+  assert.deepEqual([...ui.defaultSelection([task('total')],[ct])],['total']);
+  const edited=new Set(['nv_reason_ct_report']);
+  assert.deepEqual(ui.defaultSelection(defaultsCatalog,[ct,mr],edited,true),edited);
+  assert.equal(ui.defaultSelection(defaultsCatalog,[ct,mr],edited,false).size,4);
+  assert.equal(ui.defaultSelection(defaultsCatalog,[mr],new Set(),true).size,0);
+});
+
+test('segmentation action restores modality defaults and removes all segmentation models',()=>{
+  const report='nv_reason_ct_report',selected=new Set([report]);
+  const both=ui.primarySelection(selected,'segment',true,defaultsCatalog,[ct,mr],[ct,mr]);
+  assert.equal(both.size,5);
+  assert.deepEqual(ui.primarySelection(both,'segment',false,defaultsCatalog,[ct,mr]),selected);
+  assert.deepEqual(ui.primarySelection(new Set([report,'disappeared_model']),'segment',false,defaultsCatalog,[ct,mr]),selected);
+  assert(!ui.primarySelection(new Set(),'report',false,defaultsCatalog,[ct,mr]).size);
+});
+
+test('per-series plan subsets models and reports, names unprocessable series and missing PET pairs',()=>{
+  const cbct={...ct,key:'cbct',cbct:true};
+  const selected=new Set(defaultsCatalog.map(t=>t.name));
+  const plan=ui.seriesPlan([ct,mr,cbct],selected,defaultsCatalog);
+  assert.deepEqual(plan.map(p=>p.models.map(t=>t.name)),[
+    ['total','nv_segment_ctmr_ct_body','nv_reason_ct_report'],
+    ['total_mr','nv_segment_ctmr_mri_body'],['total','nv_segment_ctmr_ct_body']]);
+  assert(plan.every(p=>!p.reason));
+  assert.equal(ui.seriesPlan([ct],selected,[...defaultsCatalog].reverse())[0].models.at(-1).name,'nv_reason_ct_report');
+  assert.match(ui.seriesPlan([mr],new Set(['total']),defaultsCatalog)[0].reason,/No compatible model/);
+  assert.match(ui.seriesPlan([cbct],new Set(['nv_reason_ct_report']),defaultsCatalog)[0].reason,/CBCT/);
+  const paired=task('paired',{modality:'PT',requires_ct:true});
+  assert.match(ui.seriesPlan([pet],new Set(['paired']),[paired])[0].reason,/same Study/);
+  assert.equal(ui.seriesPlan([pet],new Set(['paired']),[paired],[pet,ct])[0].reason,'');
+});
+
+test('interactive models stay visible but are disabled for more than one series',()=>{
+  const prompted=task('synthetic_prompt',{prompt:'points'});
+  assert.equal(ui.batchBlockedReason(prompted,[ct,mr],[ct,mr]),'Select a single series to use interactive models');
+  assert.equal(ui.batchBlockedReason(prompted,[ct],[ct]),'');
+  assert.match(ui.seriesPlan([ct,mr],new Set(['synthetic_prompt']),[prompted])[0].reason,/single series/);
+});
+
+test('job titles and grouping keep batch series together in series order',()=>{
+  assert.equal(ui.jobTitle({series:{description:'Synthetic CT',modality:'CT'}}),'Synthetic CT · CT');
+  assert.equal(ui.jobTitle({series:{description:'',modality:'PT'}}),'Image series · PET');
+  assert.equal(ui.jobTitle({models:['total']}),'1 model · segmentation job');
+  assert.equal(ui.jobTitle({models:['total']},'nv_reason_ct_report',true),'Segmentation results');
+  assert.equal(ui.jobTitle({models:['nv_reason_ct_report']}),'AI draft report');
+  const jobs=[{id:'old',created:1},{id:'second',batch_id:'batch',batch_index:2,created:3},
+    {id:'new',created:4},{id:'first',batch_id:'batch',batch_index:1,created:2}];
+  assert.deepEqual(ui.groupBatchJobs(jobs).map(j=>j.id),['new','first','second','old']);
+  assert.equal(jobs[1].id,'second','Grouping does not mutate input ordering');
+});

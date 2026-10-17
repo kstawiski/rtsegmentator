@@ -15,7 +15,9 @@ import threading
 import time
 import tarfile
 import zipfile
+from collections import deque
 from pathlib import Path
+from threading import Event
 
 import pydicom
 from nv_reason_ct_report import TASK as REPORT_TASK, detect_cbct
@@ -76,7 +78,11 @@ app = FastAPI(title="DICOM RT Segmentation Portal", version="1.0.0",
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-queue_lock = threading.Lock()
+queue_guard = threading.RLock()
+submission_lock = threading.RLock()
+pending_jobs = deque()
+queue_running = False
+queue_active = False
 metadata_lock = threading.Lock()
 logger = logging.getLogger(__name__)
 viewer = ViewerService(globals())
@@ -1201,7 +1207,7 @@ def postprocess_prostate_crop(job: Path):
         note_prostate_not_cropped(job, str(exc))
 
 def process_prostate_sbrt_crop(job: Path):
-    """CPU-only tool; deliberately independent of the segmentation queue lock."""
+    """CPU-only tool; deliberately independent of the segmentation FIFO dispatcher."""
     incoming = job / "rtstruct-results.zip.incoming"
     try:
         data = metadata(job)
@@ -1246,8 +1252,10 @@ def inspect_upload(input_dir: Path) -> dict:
             g = groups.setdefault(key, {"key": key, "series_uid": uid, "modality": modality,
                 "study_uid": str(getattr(ds, "StudyInstanceUID", "")),
                 "frame_uid": str(getattr(ds, "FrameOfReferenceUID", "")),
-                "description": str(getattr(ds, "SeriesDescription", "")), "study_date": str(getattr(ds, "StudyDate", "")),
+                "description": str(getattr(ds, "SeriesDescription", "")),
+                "image_type": list(map(str, getattr(ds, "ImageType", []))), "study_date": str(getattr(ds, "StudyDate", "")),
                 "files": [], "rows": int(ds.Rows), "columns": int(ds.Columns)})
+            g["image_type"] = list(dict.fromkeys(g["image_type"] + list(map(str, getattr(ds, "ImageType", [])))))
             check = detect_cbct(ds)
             g.setdefault("cbct", False)
             g.setdefault("cbct_reason", check["reason"])
@@ -1275,116 +1283,190 @@ def validate_series(input_dir: Path) -> tuple[int, str]:
     if len(modalities) != 1: raise ValueError("Upload exactly one modality (CT, MR, or PET).")
     return valid, next(iter(modalities))
 
-def process(job: Path):
-    with queue_lock:
-        jid=job.name; remote=f"{REMOTE_BASE}/{jid}"
+def series_metadata(series):
+    if series is None:
+        return None
+    return {key: series.get(key) for key in ("key", "series_uid", "modality", "description",
+        "slices", "rows", "columns", "study_date", "cbct")}
+
+
+def new_batch_id():
+    return "batch-" + time.strftime("%Y%m%d-%H%M%S-") + secrets.token_hex(8)
+
+
+def single_series_batch(series):
+    return {"batch_id": new_batch_id(), "batch_index": 1, "batch_size": 1, "series": series_metadata(series)}
+
+
+def new_job_id():
+    # Nanoseconds preserve creation order within one timestamp second on recovery.
+    return time.strftime("%Y%m%d-%H%M%S-") + f"{time.time_ns():020d}-" + secrets.token_hex(4)
+
+
+def update_queue_details():
+    """Called under queue_guard; the active job also counts as an earlier job."""
+    ahead = int(queue_active)
+    for job, _, _ in pending_jobs:
         try:
-            tasks_to_run = ordered_tasks(metadata(job)["models"])
-            if WORKER_MODE == "auto":
-                prior = metadata(job)
-                if prior.get("fallback_reason") == "gpu_oom":
-                    unsupported = [name for name in tasks_to_run if not task_uses_remote(name) and not colab_capable(name)]
-                    if unsupported:
-                        raise RuntimeError("Worker GPU previously ran out of memory, but these models are not "
-                                           f"validated for Colab: {', '.join(unsupported)}")
-                    save_metadata(job, status="transferring",
-                                  detail="Resuming Colab fallback after previously confirmed worker GPU OOM",
-                                  progress=0, execution_backend="colab")
-                    local_tasks = [name for name in tasks_to_run if not task_uses_remote(name)]
-                    if local_tasks: run_colab_job_on_nfs_worker(job, tasks=local_tasks, finalize=False)
-                    for index, task in enumerate(tasks_to_run, 1):
-                        if task_uses_remote(task): execute_job_task(job, task, index, len(tasks_to_run))
-                    finalize_results(job)
-                    return
-                save_metadata(job, status="processing", detail="Starting segmentation on worker GPU",
-                              progress=None, execution_backend="local")
+            if metadata(job).get("status") != "queued":
+                continue
+            save_metadata(job, detail=f"Queued behind {ahead} earlier jobs" if ahead else "Queued; next to run")
+            ahead += 1
+        except (OSError, ValueError, HTTPException):
+            # Retention may remove an old queued job; it must not stop the dispatcher.
+            logger.warning("Could not update queued job %s", job.name, exc_info=True)
+
+
+def drain_jobs():
+    global queue_running, queue_active
+    while True:
+        with queue_guard:
+            if not pending_jobs:
+                queue_running = False
+                return
+            job, target, args = pending_jobs.popleft()
+            queue_active = True
+            update_queue_details()
+        try:
+            if metadata(job).get("status") != "queued":
+                continue
+            save_metadata(job, detail="Preparing queued job")
+            target(*args)
+        except Exception as exc:
+            logger.exception("Queued job failed: %s", job.name)
+            try:
+                save_metadata(job, status="failed", detail="Processing failed", error=str(exc))
+            except (OSError, ValueError, HTTPException):
+                logger.warning("Could not save failed job %s", job.name, exc_info=True)
+        finally:
+            with queue_guard:
+                queue_active = False
+                update_queue_details()
+
+
+def enqueue_jobs(jobs, target=None, args=None):
+    """Reserve the entire batch before starting one FIFO dispatcher."""
+    global queue_running
+    with queue_guard:
+        for job in jobs:
+            pending_jobs.append((job, target or process, args if args is not None else (job,)))
+        update_queue_details()
+        start = not queue_running
+        queue_running = True
+    if start:
+        threading.Thread(target=drain_jobs, args=(), daemon=True).start()
+
+
+def process(job: Path):
+    # Production callers execute through enqueue_jobs; task execution is unchanged.
+    jid=job.name; remote=f"{REMOTE_BASE}/{jid}"
+    try:
+        tasks_to_run = ordered_tasks(metadata(job)["models"])
+        if WORKER_MODE == "auto":
+            prior = metadata(job)
+            if prior.get("fallback_reason") == "gpu_oom":
+                unsupported = [name for name in tasks_to_run if not task_uses_remote(name) and not colab_capable(name)]
+                if unsupported:
+                    raise RuntimeError("Worker GPU previously ran out of memory, but these models are not "
+                                       f"validated for Colab: {', '.join(unsupported)}")
+                save_metadata(job, status="transferring",
+                              detail="Resuming Colab fallback after previously confirmed worker GPU OOM",
+                              progress=0, execution_backend="colab")
+                local_tasks = [name for name in tasks_to_run if not task_uses_remote(name)]
+                if local_tasks: run_colab_job_on_nfs_worker(job, tasks=local_tasks, finalize=False)
                 for index, task in enumerate(tasks_to_run, 1):
-                    if task_uses_remote(task):
-                        execute_job_task(job, task, index, len(tasks_to_run))
-                        continue
-                    before = set((job / "output").iterdir())
-                    try:
-                        execute_job_task(job, task, index, len(tasks_to_run))
-                    except Exception as exc:
-                        for path in set((job / "output").iterdir()) - before:
-                            if path.is_file(): path.unlink(missing_ok=True)
-                            elif path.is_dir(): shutil.rmtree(path, ignore_errors=True)
-                        if not is_gpu_oom(exc):
-                            raise
-                        if GPU_RELEASE_COMMAND.strip():
-                            release_worker_gpu(job, task)
-                            try:
-                                execute_job_task(job, task, index, len(tasks_to_run))
-                                continue
-                            except Exception as retry_exc:
-                                for path in set((job / "output").iterdir()) - before:
-                                    if path.is_file(): path.unlink(missing_ok=True)
-                                    elif path.is_dir(): shutil.rmtree(path, ignore_errors=True)
-                                if not is_gpu_oom(retry_exc):
-                                    raise
-                                exc = retry_exc
-                        remaining = [name for name in tasks_to_run[index - 1:] if not task_uses_remote(name)]
-                        unsupported = [name for name in remaining if not colab_capable(name)]
-                        if unsupported:
-                            raise RuntimeError("Worker GPU ran out of memory, but these remaining models are not "
-                                               f"validated for Colab: {', '.join(unsupported)}") from exc
-                        save_metadata(job, status="transferring",
-                                      detail=f"Worker GPU out of memory during {task}; escalating remaining models to Colab",
-                                      progress=0, execution_backend="colab", fallback_reason="gpu_oom")
-                        run_colab_job_on_nfs_worker(job, tasks=remaining, finalize=False)
-                        for remote_index, remote_task in enumerate(tasks_to_run[index - 1:], index):
-                            if task_uses_remote(remote_task):
-                                execute_job_task(job, remote_task, remote_index, len(tasks_to_run))
-                        break
+                    if task_uses_remote(task): execute_job_task(job, task, index, len(tasks_to_run))
                 finalize_results(job)
                 return
-            if WORKER_MODE == "local":
-                data=metadata(job)
-                save_metadata(job,status="processing",detail="Starting local GPU segmentation",progress=None,postprocess_notes=[])
-                empty=[]
-                for i,task in enumerate(tasks_to_run,1):
-                    try:
-                        execute_job_task(job, task, i, len(tasks_to_run))
-                    except Exception as exc:
-                        if not is_empty_prediction(exc):
-                            raise
-                        empty.append(task)
-                        if task == "total" and "prostate_sbrt_crop" in data.get("postprocess", []):
-                            note_prostate_not_cropped(job, "total found no structures; no prostate ROI with contours")
-                    else:
-                        if task == "total" and "prostate_sbrt_crop" in data.get("postprocess", []):
-                            postprocess_prostate_crop(job)
-                finalize_results(job, empty)
-                return
-            if WORKER_MODE == "colab":
-                unsupported = [task for task in tasks_to_run if not colab_capable(task)]
-                if unsupported:
-                    raise RuntimeError(f"Models require the managed worker and cannot run in Colab: {', '.join(unsupported)}")
-                if COLAB_ORCHESTRATOR == "worker":
-                    run_colab_job_via_worker(job)
-                elif COLAB_ORCHESTRATOR == "nfs":
-                    run_colab_job_on_nfs_worker(job)
-                else:
-                    run_colab_job(job)
-                return
-            prepare_worker_job(job, remote, tasks_to_run)
-            save_metadata(job,status="processing",detail="GPU segmentation in progress",progress=None)
-            for i,task in enumerate(tasks_to_run,1):
-                execute_job_task(job, task, i, len(tasks_to_run), remote=remote)
-            save_metadata(job,status="retrieving",detail="Retrieving RTSTRUCT results from GPU worker",progress=None)
-            retrieve_worker_results(job, remote)
-            cleanup_worker_job(job, remote)
+            save_metadata(job, status="processing", detail="Starting segmentation on worker GPU",
+                          progress=None, execution_backend="local")
+            for index, task in enumerate(tasks_to_run, 1):
+                if task_uses_remote(task):
+                    execute_job_task(job, task, index, len(tasks_to_run))
+                    continue
+                before = set((job / "output").iterdir())
+                try:
+                    execute_job_task(job, task, index, len(tasks_to_run))
+                except Exception as exc:
+                    for path in set((job / "output").iterdir()) - before:
+                        if path.is_file(): path.unlink(missing_ok=True)
+                        elif path.is_dir(): shutil.rmtree(path, ignore_errors=True)
+                    if not is_gpu_oom(exc):
+                        raise
+                    if GPU_RELEASE_COMMAND.strip():
+                        release_worker_gpu(job, task)
+                        try:
+                            execute_job_task(job, task, index, len(tasks_to_run))
+                            continue
+                        except Exception as retry_exc:
+                            for path in set((job / "output").iterdir()) - before:
+                                if path.is_file(): path.unlink(missing_ok=True)
+                                elif path.is_dir(): shutil.rmtree(path, ignore_errors=True)
+                            if not is_gpu_oom(retry_exc):
+                                raise
+                            exc = retry_exc
+                    remaining = [name for name in tasks_to_run[index - 1:] if not task_uses_remote(name)]
+                    unsupported = [name for name in remaining if not colab_capable(name)]
+                    if unsupported:
+                        raise RuntimeError("Worker GPU ran out of memory, but these remaining models are not "
+                                           f"validated for Colab: {', '.join(unsupported)}") from exc
+                    save_metadata(job, status="transferring",
+                                  detail=f"Worker GPU out of memory during {task}; escalating remaining models to Colab",
+                                  progress=0, execution_backend="colab", fallback_reason="gpu_oom")
+                    run_colab_job_on_nfs_worker(job, tasks=remaining, finalize=False)
+                    for remote_index, remote_task in enumerate(tasks_to_run[index - 1:], index):
+                        if task_uses_remote(remote_task):
+                            execute_job_task(job, remote_task, remote_index, len(tasks_to_run))
+                    break
             finalize_results(job)
-        except Exception as exc:
-            report_job = REPORT_TASK in metadata(job).get("models", [])
-            if WORKER_MODE == "ssh" and report_job:
-                try: recover_remote_results(job, remote)
-                except Exception: pass
-            elif WORKER_MODE == "ssh" or (WORKER_MODE == "colab" and COLAB_ORCHESTRATOR == "worker"):
-                try: remove_worker_job(job, remote)
-                except Exception: save_metadata(job, remote_results_retained=True)
-            changes = {"report_status": "failed", "report_reason": "Task failed; see job error"} if report_job else {}
-            save_metadata(job,status="failed",detail="Processing failed",error=str(exc), **changes)
+            return
+        if WORKER_MODE == "local":
+            data=metadata(job)
+            save_metadata(job,status="processing",detail="Starting local GPU segmentation",progress=None,postprocess_notes=[])
+            empty=[]
+            for i,task in enumerate(tasks_to_run,1):
+                try:
+                    execute_job_task(job, task, i, len(tasks_to_run))
+                except Exception as exc:
+                    if not is_empty_prediction(exc):
+                        raise
+                    empty.append(task)
+                    if task == "total" and "prostate_sbrt_crop" in data.get("postprocess", []):
+                        note_prostate_not_cropped(job, "total found no structures; no prostate ROI with contours")
+                else:
+                    if task == "total" and "prostate_sbrt_crop" in data.get("postprocess", []):
+                        postprocess_prostate_crop(job)
+            finalize_results(job, empty)
+            return
+        if WORKER_MODE == "colab":
+            unsupported = [task for task in tasks_to_run if not colab_capable(task)]
+            if unsupported:
+                raise RuntimeError(f"Models require the managed worker and cannot run in Colab: {', '.join(unsupported)}")
+            if COLAB_ORCHESTRATOR == "worker":
+                run_colab_job_via_worker(job)
+            elif COLAB_ORCHESTRATOR == "nfs":
+                run_colab_job_on_nfs_worker(job)
+            else:
+                run_colab_job(job)
+            return
+        prepare_worker_job(job, remote, tasks_to_run)
+        save_metadata(job,status="processing",detail="GPU segmentation in progress",progress=None)
+        for i,task in enumerate(tasks_to_run,1):
+            execute_job_task(job, task, i, len(tasks_to_run), remote=remote)
+        save_metadata(job,status="retrieving",detail="Retrieving RTSTRUCT results from GPU worker",progress=None)
+        retrieve_worker_results(job, remote)
+        cleanup_worker_job(job, remote)
+        finalize_results(job)
+    except Exception as exc:
+        report_job = REPORT_TASK in metadata(job).get("models", [])
+        if WORKER_MODE == "ssh" and report_job:
+            try: recover_remote_results(job, remote)
+            except Exception: pass
+        elif WORKER_MODE == "ssh" or (WORKER_MODE == "colab" and COLAB_ORCHESTRATOR == "worker"):
+            try: remove_worker_job(job, remote)
+            except Exception: save_metadata(job, remote_results_retained=True)
+        changes = {"report_status": "failed", "report_reason": "Task failed; see job error"} if report_job else {}
+        save_metadata(job,status="failed",detail="Processing failed",error=str(exc), **changes)
 
 @app.get("/",response_class=HTMLResponse)
 def home(): return FileResponse(STATIC_DIR / "index.html", media_type="text/html")
@@ -1588,7 +1670,7 @@ def build_catalog():
 async def create_prostate_sbrt_crop(files: list[UploadFile]=File(...), margin_mm: float=Form(150.0), keep_uids: bool=Form(False)):
     if not np.isfinite(margin_mm) or margin_mm < 0:
         raise HTTPException(400, "margin_mm must be finite and non-negative")
-    jid=time.strftime("%Y%m%d-%H%M%S-")+secrets.token_hex(4); job=BASE/jid; inp=job/"input"; inp.mkdir(parents=True)
+    jid=new_job_id(); job=BASE/jid; inp=job/"input"; inp.mkdir(parents=True)
     (job / "output").mkdir()
     total=0; expanded=0
     try:
@@ -1805,31 +1887,56 @@ def assess_upload_session(session_id: str):
     return {"status":"assessing"}
 
 
-def finish_session_job(session: Path, data: dict, job: Path, crop: bool):
+def process_prepared_session(job: Path, ready: Event):
+    ready.wait()
+    if metadata(job).get("status") == "queued":
+        process(job)
+
+
+def finish_session_job(session: Path, data: dict, job: Path, crop: bool, ready: Event | None = None):
     try:
         stage_session_files(session, data, job, crop)
         if crop: process_prostate_sbrt_crop(job)
         else:
             slices, modality = validate_series(job / "input")
-            validate_job_series(metadata(job)["models"], inspect_upload(job / "input")["series"][0])
-            save_metadata(job, detail=f"{slices} {modality} DICOM slices received")
-            process(job)
+            selected = inspect_upload(job / "input")["series"][0]
+            with queue_guard:
+                save_metadata(job, series=series_metadata(selected))
+            validate_job_series(metadata(job)["models"], selected)
+            if ready is None:
+                save_metadata(job, detail=f"{slices} {modality} DICOM slices received")
+                process(job)
     except Exception as exc:
-        save_metadata(job, status="failed", detail="Cropping failed" if crop else "Upload staging failed", error=str(exc))
+        with queue_guard:
+            save_metadata(job, status="failed", detail="Cropping failed" if crop else "Upload staging failed", error=str(exc))
+    finally:
+        if ready is not None:
+            with queue_guard:
+                ready.set()
+                update_queue_details()
 
 
 def queue_session_job(session_id: str, options: dict, crop: bool):
-    with upload_session(session_id) as (session, data):
+    with submission_lock, upload_session(session_id) as (session, data):
         operation = "crop" if crop else "jobs"
         if data["status"] == "used" and data.get("operation") == operation and data.get("options") == options:
             return {"id":data["job_id"]}
         complete_session_files(session, data)
-        jid = time.strftime("%Y%m%d-%H%M%S-") + secrets.token_hex(8); job = BASE / jid
+        jid = new_job_id(); job = BASE / jid
         (job / "input").mkdir(parents=True); (job / "output").mkdir()
         (job / "job.json").write_text(json.dumps({"id":jid, "status":"queued", "created":time.time(),
-            "detail":"Prostate SBRT crop queued on CPU" if crop else "Staging uploaded files", "error":None, **options}, indent=2))
+            "detail":"Prostate SBRT crop queued on CPU" if crop else "Staging uploaded files", "error":None,
+            **({} if crop else single_series_batch(None)), **options}, indent=2))
         data.update(status="used", operation=operation, options=options, job_id=jid); save_session(session, data)
-        threading.Thread(target=finish_session_job, args=(session, data, job, crop), daemon=True).start()
+        if crop:
+            threading.Thread(target=finish_session_job, args=(session, data, job, crop), daemon=True).start()
+        else:
+            # Stage immediately, retaining inputs for restart recovery even while GPU jobs wait.
+            # Hold the reservation lock across staging-thread startup and FIFO registration.
+            with queue_guard:
+                ready = Event()
+                threading.Thread(target=finish_session_job, args=(session, data, job, crop, ready), daemon=True).start()
+                enqueue_jobs([job], target=process_prepared_session, args=(job, ready))
         return {"id":jid}
 
 
@@ -1854,7 +1961,8 @@ async def create_session_job(session_id: str, models: list[str]=Form(...), postp
     try: catalog = await asyncio.wait_for(run_in_threadpool(tasks), timeout=4)
     except asyncio.TimeoutError: raise HTTPException(503, "Model catalog is warming; retry")
     validate_job_selection(models, catalog)
-    return queue_session_job(session_id, {"models":ordered_tasks(models),"report_status":"pending" if REPORT_TASK in models else None, "postprocess":postprocessing}, False)
+    return await run_in_threadpool(queue_session_job, session_id,
+        {"models":ordered_tasks(models),"report_status":"pending" if REPORT_TASK in models else None, "postprocess":postprocessing}, False)
 
 
 @app.post("/api/uploads")
@@ -1888,15 +1996,16 @@ def model_details(name: str) -> dict:
     return EXTERNAL_TASKS.get(name) or INFORMATIONAL_MODELS.get(name, {})
 
 
-def validate_job_selection(models, catalog, *, assessed=False):
+def validate_job_selection(models, catalog, *, assessed=False, batch=False):
     """Validate every creation route against the same catalog and input contract."""
     items = {item["name"]: {**model_details(item["name"]), **item} for item in catalog["tasks"]}
     if not models:
         raise HTTPException(400, "Select at least one model")
-    if any(not re.fullmatch(r"[A-Za-z0-9_]+", name) or name not in items
-           or not items[name].get("enabled", True) for name in models):
-        raise HTTPException(400, "Invalid model selection")
-    if "total" in models and "total_mr" in models:
+    invalid = [name for name in models if not re.fullmatch(r"[A-Za-z0-9_]+", name)
+               or name not in items or not items[name].get("enabled", True)]
+    if invalid:
+        raise HTTPException(400, "Unavailable or invalid models: " + ", ".join(invalid))
+    if not batch and "total" in models and "total_mr" in models:
         raise HTTPException(400, "Select either total (CT) or total_mr (MR), not both")
     if not assessed:
         if any(items[name].get("prompt") for name in models):
@@ -1984,49 +2093,137 @@ def validate_assessed_prompt(models, items, selected, prompt_json):
     return prompt_data
 
 
+def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="", *, legacy=False):
+    # Serialize consumption and submission so requests cannot consume the same upload twice.
+    with submission_lock:
+        if not re.fullmatch(r"upload-[A-Za-z0-9-]+", uid):
+            raise HTTPException(404, "Upload not found or expired")
+        stage = BASE / uid
+        try:
+            data = json.loads((stage / "upload.json").read_text())
+        except (OSError, ValueError):
+            raise HTTPException(404, "Upload not found or expired")
+        if not series_keys:
+            raise HTTPException(400, "Select at least one series")
+        if len(set(series_keys)) != len(series_keys):
+            duplicates = sorted({key for key in series_keys if series_keys.count(key) > 1})
+            raise HTTPException(400, "Duplicate series keys: " + ", ".join(duplicates))
+        by_key = {series["key"]: series for series in data["series"]}
+        unknown = [key for key in series_keys if key not in by_key]
+        if unknown:
+            raise HTTPException(400, "Unknown series keys: " + ", ".join(unknown))
+        selected = [by_key[key] for key in series_keys]
+        items = validate_job_selection(models, tasks(), assessed=True, batch=not legacy)
+        models = list(dict.fromkeys(models))
+        prompted = [name for name in models if items[name].get("prompt")]
+        if prompted and len(selected) != 1:
+            raise HTTPException(400, "Select a single series to use interactive models: " + ", ".join(prompted))
+        plans, applied = [], set()
+        for series in selected:
+            label = f"{series.get('description') or series['key']} ({series['modality']}; {series['key']})"
+            subset = models if legacy else [name for name in models if series["modality"] in
+                (items[name].get("modalities") or [items[name].get("modality", task_modality(name))])
+                and not (name == REPORT_TASK and (series["modality"] != "CT" or series.get("cbct")))]
+            if not subset:
+                raise HTTPException(400, f"Series {label} has no compatible models to run from {', '.join(models)} (AI reports exclude CBCT)")
+            try:
+                validate_job_series(subset, series, items)
+            except ValueError as exc:
+                raise HTTPException(400, f"Series {label}: {exc}") from exc
+            try:
+                prompt_data = validate_assessed_prompt(subset, items, series, prompt_json)
+            except HTTPException as exc:
+                raise HTTPException(400, f"Series {label}: {exc.detail}") from exc
+            companion = None
+            if any(items[name].get("requires_ct") for name in subset):
+                companion = next((candidate for candidate in data["series"] if candidate["modality"] == "CT"
+                    and series.get("study_uid") and series.get("frame_uid")
+                    and candidate.get("study_uid") == series["study_uid"]
+                    and candidate.get("frame_uid") == series["frame_uid"]), None)
+                if companion is None:
+                    paired = ", ".join(name for name in subset if items[name].get("requires_ct"))
+                    raise HTTPException(400, f"Series {label}: {paired} requires a CT series in the same Study and Frame of Reference")
+            try:
+                postprocessing = validate_postprocess(postprocess, subset)
+            except HTTPException:
+                postprocessing = []
+            plans.append((series, ordered_tasks(subset), companion, prompt_data, postprocessing))
+            applied.update(subset)
+        unused = [name for name in models if name not in applied]
+        if unused:
+            raise HTTPException(400, "Models apply to no selected series: " + ", ".join(unused))
+        if postprocess and not any(plan[4] for plan in plans):
+            # Preserve the precise postprocess contract error.
+            validate_postprocess(postprocess, models)
+        # Check every source before allocating any job directories.
+        for series, _, companion, _, _ in plans:
+            for source in [series] + ([companion] if companion else []):
+                if any(not (stage / "input" / name).is_file() for name in source["files"]):
+                    raise HTTPException(400, f"Series {source['key']}: staged files are missing; upload again")
+        batch_id = new_batch_id()
+        created, moved, results = [], [], []
+        try:
+            # Copies precede every move: selected CT can also accompany several PET jobs.
+            for index, (series, subset, companion, prompt_data, postprocessing) in enumerate(plans, 1):
+                jid = new_job_id()
+                job = BASE / jid
+                created.append(job)
+                (job / "input").mkdir(parents=True)
+                (job / "output").mkdir()
+                if companion:
+                    (job / "input_ct").mkdir()
+                    for name in companion["files"]:
+                        shutil.copy2(stage / "input" / name, job / "input_ct" / name)
+                if prompt_data:
+                    (job / "prompt.json").write_text(json.dumps(prompt_data, indent=2))
+                public_series = series_metadata(series)
+                (job / "job.json").write_text(json.dumps({"id": jid, "status": "queued", "detail": "Queued; next to run",
+                    "models": subset, "report_status": "pending" if REPORT_TASK in subset else None,
+                    "created": time.time(), "error": None, "prompted": bool(prompt_data), "postprocess": postprocessing,
+                    "batch_id": batch_id, "batch_index": index, "batch_size": len(plans), "series": public_series}, indent=2))
+                results.append({"id": jid, "series_key": series["key"], "models": subset})
+            for job, (series, _, _, _, _) in zip(created, plans):
+                for name in series["files"]:
+                    source, destination = stage / "input" / name, job / "input" / name
+                    shutil.move(source, destination)
+                    moved.append((source, destination))
+        except Exception:
+            for source, destination in reversed(moved):
+                shutil.move(destination, source)
+            for job in created:
+                shutil.rmtree(job, ignore_errors=True)
+            raise
+        shutil.rmtree(stage, ignore_errors=True)
+        enqueue_jobs(created)
+        return {"batch_id": batch_id, "ids": [result["id"] for result in results], "jobs": results}
+
+
+@app.post("/api/v1/uploads/{uid}/jobs", status_code=202, tags=["automation"])
+def start_assessed_batch(uid: str, series_keys: list[str]=Form(...), models: list[str]=Form(...),
+                         prompt_json: str=Form(""), postprocess: str=Form("")):
+    return create_assessed_jobs(uid, series_keys, models, prompt_json, postprocess)
+
+
 @app.post("/api/uploads/{uid}/start")
-async def start_assessed(uid: str, series_key: str=Form(...), models: list[str]=Form(...), prompt_json: str=Form(""), postprocess: str=Form("")):
-    postprocessing = validate_postprocess(postprocess, models)
-    if not re.fullmatch(r"upload-[A-Za-z0-9-]+",uid): raise HTTPException(404)
-    stage=BASE/uid
-    try: data=json.loads((stage/"upload.json").read_text())
-    except Exception: raise HTTPException(404,"Upload not found or expired")
-    selected=next((g for g in data["series"] if g["key"]==series_key),None)
-    if not selected: raise HTTPException(400,"Selected series was not found")
-    items = validate_job_selection(models, tasks(), assessed=True)
-    try:
-        validate_job_series(models, selected, items)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    modality = selected["modality"]
-    needs_ct = any(items[name].get("requires_ct") for name in models)
-    prompt_data = validate_assessed_prompt(models, items, selected, prompt_json)
-    companion = None
-    if needs_ct:
-        companion = next((g for g in data["series"]
-            if g["modality"] == "CT"
-            and selected.get("study_uid") and selected.get("frame_uid")
-            and g.get("study_uid") == selected.get("study_uid")
-            and g.get("frame_uid") == selected.get("frame_uid")), None)
-        if companion is None:
-            raise HTTPException(400, "This PET model requires a CT series in the same Study and Frame of Reference")
-    jid=time.strftime("%Y%m%d-%H%M%S-")+secrets.token_hex(4); job=BASE/jid; inp=job/"input"; out=job/"output"; inp.mkdir(parents=True); out.mkdir()
-    for name in selected["files"]: shutil.move(stage/"input"/name,inp/name)
-    detail = f"{selected['slices']} {modality} DICOM slices selected"
-    if companion:
-        ct_dir = job / "input_ct"; ct_dir.mkdir()
-        for name in companion["files"]: shutil.move(stage/"input"/name, ct_dir/name)
-        detail += f"; paired with {companion['slices']} co-referenced CT slices"
-    if prompt_data: (job/"prompt.json").write_text(json.dumps(prompt_data,indent=2))
-    (job/"job.json").write_text(json.dumps({"id":jid,"status":"queued","detail":detail,"models":ordered_tasks(models),"report_status":"pending" if REPORT_TASK in models else None,"created":time.time(),"error":None,"prompted":bool(prompt_data),"postprocess":postprocessing},indent=2))
-    shutil.rmtree(stage,ignore_errors=True); threading.Thread(target=process,args=(job,),daemon=True).start(); return {"id":jid}
+async def start_assessed(uid: str, series_key: str=Form(...), models: list[str]=Form(...),
+                         prompt_json: str=Form(""), postprocess: str=Form("")):
+    result = await run_in_threadpool(create_assessed_jobs, uid, [series_key], models, prompt_json,
+                                     postprocess, legacy=True)
+    return {"id": result["ids"][0]}
+
+def queue_ready_job(job: Path, data: dict):
+    """Publish a fully staged direct job and reserve its position with batch creation."""
+    with submission_lock:
+        (job / "job.json").write_text(json.dumps({**data, "created": time.time()}, indent=2))
+        enqueue_jobs([job])
+
 
 @app.post("/api/jobs")
 @app.post("/api/v1/jobs", status_code=202, tags=["automation"])
 async def create_job(files: list[UploadFile]=File(...), models: list[str]=Form(...), postprocess: str=Form("")):
     postprocessing = validate_postprocess(postprocess, models)
     items = validate_job_selection(models, tasks())
-    jid=time.strftime("%Y%m%d-%H%M%S-")+secrets.token_hex(4); job=BASE/jid; inp=job/"input"; out=job/"output"; inp.mkdir(parents=True); out.mkdir()
+    jid=new_job_id(); job=BASE/jid; inp=job/"input"; out=job/"output"; inp.mkdir(parents=True); out.mkdir()
     total=0
     try:
         for upload in files:
@@ -2041,10 +2238,13 @@ async def create_job(files: list[UploadFile]=File(...), models: list[str]=Form(.
         slices, modality=validate_series(inp)
         selected = inspect_upload(inp)["series"][0]
         validate_job_series(models, selected, items)
-        (job/"job.json").write_text(json.dumps({"id":jid,"status":"queued","detail":f"{slices} {modality} DICOM slices received","models":ordered_tasks(models),"report_status":"pending" if REPORT_TASK in models else None,"created":time.time(),"error":None,"postprocess":postprocessing},indent=2))
+        await run_in_threadpool(queue_ready_job, job,
+            {"id":jid,"status":"queued","detail":f"{slices} {modality} DICOM slices received",
+             "models":ordered_tasks(models),"report_status":"pending" if REPORT_TASK in models else None,
+             "error":None,"postprocess":postprocessing, **single_series_batch(selected)})
     except Exception as exc:
         shutil.rmtree(job,ignore_errors=True); raise HTTPException(400,str(exc))
-    threading.Thread(target=process,args=(job,),daemon=True).start(); return {"id":jid}
+    return {"id":jid}
 
 @app.get("/api/jobs/{jid}")
 @app.get("/api/v1/jobs/{jid}", tags=["automation"])
@@ -2054,34 +2254,50 @@ def get_job(jid: str):
 
 @app.get("/api/jobs")
 @app.get("/api/v1/jobs", tags=["automation"])
-def list_jobs():
+def list_jobs(batch_id: str | None = None):
     found=[]
     for path in BASE.iterdir():
         if not path.is_dir() or path.name.startswith("upload-"): continue
         try:
             data=metadata(path)
+            if batch_id is not None and data.get("batch_id") != batch_id:
+                continue
             found.append({"id":data["id"],"status":data["status"],"created":data.get("created",0),
-                          "report_status":data.get("report_status"), "report_reason":data.get("report_reason", "")})
+                          "report_status":data.get("report_status"), "report_reason":data.get("report_reason", ""),
+                          **{key: data.get(key) for key in ("batch_id", "batch_index", "batch_size", "series")}})
         except Exception: pass
-    found.sort(key=lambda x:x["created"],reverse=True)
-    return {"jobs":found[:100]}
+    groups = {}
+    for data in found:
+        groups.setdefault(data.get("batch_id") or data["id"], []).append(data)
+    ordered = sorted(groups.values(), key=lambda group: max(data["created"] for data in group), reverse=True)
+    recent = []
+    for group in ordered:
+        if len(recent) >= 100:
+            break
+        recent.extend(sorted(group, key=lambda data: data.get("batch_index") or 0))
+    return {"jobs": recent}
 
 @app.post("/api/jobs/{jid}/retry", status_code=202)
 @app.post("/api/v1/jobs/{jid}/retry", status_code=202, tags=["automation"])
 @viewer.serialize_job_mutation
 def retry_job(jid: str):
-    if not re.fullmatch(r"[A-Za-z0-9-]+", jid): raise HTTPException(404)
-    job=BASE/jid; data=metadata(job)
-    if data.get("status") != "failed": raise HTTPException(409,"Only failed jobs can be retried")
-    if not (job/"input").is_dir() or not any((job/"input").iterdir()):
-        raise HTTPException(409,"The retained input series is unavailable; upload it again")
-    reset_job_output(job, data)
-    save_metadata(job,status="queued",detail="Retry queued",error=None,progress=0,model_index=0,
-                  recovery_count=int(data.get("recovery_count",0)), fallback_reason=None,
-                  execution_backend=None, gpu_release_attempted=False, postprocess_notes=[])
-    target = process_prostate_sbrt_crop if data.get("tool") else process
-    threading.Thread(target=target,args=(job,),daemon=True).start()
-    return {"id":jid,"status":"queued"}
+    with submission_lock:
+        if not re.fullmatch(r"[A-Za-z0-9-]+", jid): raise HTTPException(404)
+        job=BASE/jid; data=metadata(job)
+        if data.get("status") != "failed": raise HTTPException(409,"Only failed jobs can be retried")
+        if not (job/"input").is_dir() or not any((job/"input").iterdir()):
+            raise HTTPException(409,"The retained input series is unavailable; upload it again")
+        reset_job_output(job, data)
+        save_metadata(job,status="queued",detail="Retry queued",error=None,progress=0,model_index=0,
+                      recovery_count=int(data.get("recovery_count",0)), fallback_reason=None,
+                      execution_backend=None, gpu_release_attempted=False, postprocess_notes=[])
+        target = process_prostate_sbrt_crop if data.get("tool") else process
+        if data.get("tool"):
+            threading.Thread(target=target,args=(job,),daemon=True).start()
+        else:
+            enqueue_jobs([job])
+        return {"id":jid,"status":"queued"}
+
 
 @app.get("/api/jobs/{jid}/download")
 @app.get("/api/v1/jobs/{jid}/result", tags=["automation"])
@@ -2215,7 +2431,7 @@ def cleanup_loop():
 def recover_interrupted_jobs():
     """Requeue interrupted jobs when their retained input permits a safe rerun."""
     interrupted = []
-    for job in BASE.iterdir():
+    for job in sorted(BASE.iterdir(), key=lambda path: path.name):
         if not job.is_dir() or job.name.startswith("upload-"):
             continue
         try:
@@ -2224,6 +2440,7 @@ def recover_interrupted_jobs():
                 interrupted.append((job, data.get("status", "unknown")))
         except Exception:
             continue
+    interrupted.sort(key=lambda entry: (metadata(entry[0]).get("created", 0), entry[0].name))
     retry = []
     for job, previous_status in interrupted:
         data = metadata(job)
@@ -2270,9 +2487,12 @@ def recover_interrupted_jobs():
             save_metadata(job,status="failed",detail="Processing was interrupted by a portal service restart",
                           error=f"Could not restart automatically because {reason}.",
                           recovery_count=recovery_count,interrupted_status=previous_status)
+    segmentation_jobs = [job for job in retry if not metadata(job).get("tool")]
+    if segmentation_jobs:
+        enqueue_jobs(segmentation_jobs)
     for job in retry:
-        target = process_prostate_sbrt_crop if metadata(job).get("tool") else process
-        threading.Thread(target=target,args=(job,),daemon=True).start()
+        if metadata(job).get("tool"):
+            threading.Thread(target=process_prostate_sbrt_crop, args=(job,), daemon=True).start()
 
 @app.on_event("startup")
 def startup():

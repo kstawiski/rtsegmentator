@@ -43,7 +43,8 @@ def test_home_and_static_assets_are_served_from_any_working_directory(tmp_path, 
         assert page.headers["content-type"].startswith("text/html")
         assert page.text == (STATIC / "index.html").read_text()
         assert "Review &amp; start" in page.text
-        assert "Select all" not in page.text
+        assert "Select all CT and MR" in page.text
+        assert 'id="catalogPicker" aria-label="All compatible models"' in page.text
         parser = PageParser()
         parser.feed(page.text)
         assert set(parser.assets) == {"/static/app.js", "/static/viewer.js", "/static/app.css"}
@@ -144,11 +145,12 @@ def test_primary_actions_viewers_results_and_secondary_tools_contract():
     html = (STATIC / "index.html").read_text()
     parser = PageParser()
     parser.feed(html)
-    required = {"segmentAction", "reportAction", "catalogPicker", "chooseModels", "seriesViewer",
+    required = {"segmentAction", "reportAction", "catalogPicker", "restoreDefaults", "selectAllSeries", "clearSeries", "seriesCount", "seriesViewer", "batchSiblings",
                 "jobDetailPage", "jobViewer", "reportPanel", "structuresPanel", "downloadsPanel",
                 "reportTab", "structuresTab", "downloadsTab", "deleteDialog", "confirmDelete", "moreTools"}
     assert required <= set(parser.ids)
-    assert "What do you want?" in html
+    assert "Choose models" in html
+    assert "Choose other models" not in html
     assert "Segment structures" in html and "NV-Reason-CT" in html
     assert 'id="reportAction" aria-describedby="reportDescription reportReason"' in html
     assert re.search(r'<details id="moreTools"[^>]*>.*?href="#tools"', html)
