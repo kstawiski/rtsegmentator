@@ -379,3 +379,7 @@ th{background:var(--paper);color:var(--teal-deep);font-size:.78rem}
 }
 @media(prefers-reduced-motion:reduce){*,::before,::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
 h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus{outline:none}
+
+/* Slice and contour loading never covers the displayed image. */
+.viewer-loading{position:absolute;right:.65rem;bottom:.65rem;max-width:calc(100% - 1.3rem);padding:.3rem .55rem;border-radius:.3rem;background:rgba(0,0,0,.78);color:#fff;font-size:.8rem;pointer-events:none;z-index:2}
+.viewer-loading[hidden]{display:none}

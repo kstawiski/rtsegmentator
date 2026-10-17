@@ -622,10 +622,12 @@ if (typeof document !== 'undefined') {
     const base=`/api/v1/jobs/${encodeURIComponent(job.id)}`;
     $('reportContent').textContent='Loading report…';$('structuresContent').textContent='Loading structures…';$('reportDownloads').hidden=true;showError($('downloadError'),'');
     $('resultDownload').href=base+'/result';$('jsonDownload').href=base+'/report';$('htmlDownload').href=base+'/report/html';
-    jobViewer?.destroy();jobViewer=new DicomUI.Viewer($('jobViewer'),{overlays:true});
+    jobViewer?.destroy();jobViewer=new DicomUI.Viewer($('jobViewer'),{overlays:true,onMetadata:info=>{
+      if(token!==detailToken)return;detailInfo=info;renderStructures();
+    }});
     const [metadata,report]=await Promise.allSettled([jobViewer.load(base+'/viewer'),request(base+'/report')]);
     if(token!==detailToken)return;
-    detailInfo=metadata.status==='fulfilled'?metadata.value:null;
+    detailInfo=metadata.status==='fulfilled'?(jobViewer.info||metadata.value):null;
     if(report.status==='fulfilled'){
       detailReport=report.value;$('reportDownloads').hidden=false;
       $('reportContent').innerHTML=`<p class="report-link"><a href="/jobs/${encodeURIComponent(job.id)}/report" target="_blank" rel="noopener">Open full report ↗</a></p>`+reportMarkup(detailReport);
@@ -637,6 +639,8 @@ if (typeof document !== 'undefined') {
   }
   function renderStructures(){
     if(!detailInfo){$('structuresContent').textContent='Structure metadata is unavailable. Use Refresh to retry. Downloads remain available.';return;}
+    if(detailInfo.contours_state==='failed'){$('structuresContent').textContent=`Contours unavailable: ${detailInfo.contours_error}`;return;}
+    if(detailInfo.contours_ready===false){$('structuresContent').textContent='Contours loading…';return;}
     const rows=detailInfo.structure_sets.flatMap(set=>set.rois.map(roi=>({model:set.model,roi})));
     if(!rows.length){$('structuresContent').textContent='No RTSTRUCT structures are available for this job.';return;}
     $('structuresContent').innerHTML=`<div class="table-scroll"><table><thead><tr><th>Model</th><th>ROI</th><th>Slice range (index)</th><th>Approx. mL</th></tr></thead><tbody>${rows.map(({model,roi})=>{

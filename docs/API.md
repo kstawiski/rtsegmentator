@@ -134,3 +134,39 @@ Inspection adds `cbct` and `cbct_reason` to each series. MR, PET and detected CB
 JSON includes revision/hashes, package versions, geometry/HU checks, coverage mode and volumes, region decisions, raw output, filtered statements, unchecked headings, flags, crop QC/thumbnails, timings and peak model VRAM. DICOM demographic/identifier fields are excluded. ROI names and approximate contour volumes remain medical data.
 
 When remote tasks are configured, health adds `remote_gpu_tasks`, `remote_worker` and `remote_worker_reachable`; failed reachability makes overall health `degraded` without changing local worker reachability. Routed catalog entries expose `execution_backend: "ssh"`. Unreachable remote preflight disables those tasks with `remote_worker_unreachable_or_preflight_failed`; missing task results use `remote_preflight_missing`. Catalog caching and refresh rules remain the same.
+
+## Viewer loading and contour batches
+
+Job viewer metadata returns series geometry without waiting for the overlay index.
+`contours_ready` is a boolean; `contours_state` is `building`, `ready` or `failed`.
+While building, `structure_sets` can be empty. Poll the metadata route to obtain
+ROI names, colours and available slice indices after the build finishes. A failed
+index leaves the image viewer available and supplies `contours_error`; contour
+requests then return the geometry/metadata error (422).
+
+Both `GET /api/v1/jobs/{jid}/viewer/contours/{index}` and
+`GET /api/v1/jobs/{jid}/viewer/contours?start=K&count=N` return HTTP 202 with
+`Retry-After: 1` and `{"contours_ready":false,"contours_state":"building"}`
+while the single-flight index build is pending (including a busy build queue).
+Retry these responses; they are not empty contour sets. A completed range returns
+`{"start":K,"slices":{"K":[ROIS],"K+1":[]}}`, with one entry for every requested
+zero-based index, including empty planes. `start` is required and nonnegative;
+`count` is required and between 1 and 32 (422 otherwise). The entire requested
+range must exist (404 otherwise). Range and single-slice entries are identical.
+All these responses retain `Cache-Control: no-store`.
+
+The browser retains decoded images in a per-viewer memory LRU (96 MiB estimated
+RGBA plus PNG transfer bytes, at most 256 entries), and contour payloads in a
+separate LRU (16 MiB estimated JavaScript payload size, at most 256 entries).
+Loading another series or destroying the viewer clears both. There is no patient
+image disk cache. Cache hits display immediately; other slice requests wait for a
+60 ms scrolling pause. Up to four image/contour/metadata requests run at once,
+with prefetch covering up to 16 slices in the scroll direction and six behind.
+Contour prefetch uses range requests. Requests outside the new window are aborted.
+The displayed image and contours always share an index; the label retains that
+index and identifies a pending slice. Contours can arrive after the image, with a
+small loading status. Window changes also retain the displayed window readout
+until the replacement image arrives. Background builds and their caches remain
+process-local and are invalidated by output/source file versions and job deletion;
+restart or eviction can require rebuilding. This implementation does not persist
+an overlay index to disk.

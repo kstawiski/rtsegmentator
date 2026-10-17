@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import time
+import threading
 from urllib.parse import quote
 import zipfile
 
@@ -42,6 +43,17 @@ GEOMETRIES = [
     pytest.param([0, 1, 0, 0, 0, -1], [1, 1], True, False, "sagittal", id="sagittal-negative-normal"),
     pytest.param([0, 1, 0, 0, 0, -1], [1.7, .6], True, True, "sagittal", id="sagittal-negative-normal-gaps-anisotropic"),
 ]
+
+
+def ready(client, url):
+    """Wait only in tests that need a finished asynchronous overlay index."""
+    deadline = time.monotonic() + 20
+    while True:
+        response = client.get(url)
+        if response.status_code != 202 and (response.status_code != 200 or response.json().get("contours_state") != "building"):
+            return response
+        assert time.monotonic() < deadline, "Contour build did not finish"
+        time.sleep(.005)
 
 
 def make_series(template, root, iop=(1, 0, 0, 0, 1, 0), spacing=(1, 1), reverse=False,
@@ -174,7 +186,7 @@ def test_orientation_exact_mask_pixels(portal, synthetic_ct, tmp_path, iop, spac
     print("PRODUCTION_CONVERTER " + json.dumps(validation))
     client = TestClient(portal.app)
     base = f"/api/v1/jobs/{job.name}/viewer"
-    response = client.get(base)
+    response = ready(client, base)
     assert response.status_code == 200, response.text
     info = response.json()
     assert info["series"]["orientation"] == orientation
@@ -248,7 +260,7 @@ def test_uid_priority_distance_fallback_gaps_and_per_slice_origin(portal, synthe
     rt.save_as(output, enforce_file_format=True)
     client = TestClient(portal.app)
     base = f"/api/v1/jobs/{job.name}/viewer"
-    assert client.get(base).json()["structure_sets"][0]["rois"][0]["slices"] == [1, 3, 4]
+    assert ready(client, base).json()["structure_sets"][0]["rois"][0]["slices"] == [1, 3, 4]
     assert len(client.get(base + "/contours/1").json()["rois"][0]["paths"]) == 1
     assert client.get(base + "/contours/2").json()["rois"] == []
     # Move one source slice within its plane and move its referenced contour with it.
@@ -262,7 +274,7 @@ def test_uid_priority_distance_fallback_gaps_and_per_slice_origin(portal, synthe
     contour = rt.ROIContourSequence[0].ContourSequence[1]
     contour.ContourData = (np.asarray(contour.ContourData).reshape(-1, 3) + shift).ravel().tolist()
     rt.save_as(output, enforce_file_format=True)
-    paths = client.get(base + "/contours/3").json()["rois"][0]["paths"]
+    paths = ready(client, base + "/contours/3").json()["rois"][0]["paths"]
     assert np.array_equal(rasterize(paths, (32, 48)), make_mask()[:, :, 3])
 
 
@@ -335,10 +347,13 @@ def test_invalid_contours_and_foreign_frame(portal, synthetic_ct, tmp_path, muta
     else:
         rt.StructureSetROISequence[0].ReferencedFrameOfReferenceUID = generate_uid()
     rt.save_as(output, enforce_file_format=True)
-    response = TestClient(portal.app).get(f"/api/v1/jobs/{job.name}/viewer")
+    client = TestClient(portal.app)
+    base = f"/api/v1/jobs/{job.name}/viewer"
+    assert client.get(base).status_code == 200  # Invalid overlays do not block images.
+    response = ready(client, base + "/contours/1")
     assert response.status_code == expected, response.text
     if mutation == "foreign-frame":
-        assert response.json()["structure_sets"][0]["rois"][0]["slices"] == []
+        assert ready(client, base).json()["structure_sets"][0]["rois"][0]["slices"] == []
 
 
 def test_multiple_structures_cache_invalidation_and_report(portal, synthetic_ct, tmp_path, monkeypatch):
@@ -362,7 +377,7 @@ def test_multiple_structures_cache_invalidation_and_report(portal, synthetic_ct,
     monkeypatch.setattr(viewer.pydicom, "dcmread", counted)
     client = TestClient(portal.app)
     base = f"/api/v1/jobs/{job.name}/viewer"
-    info = client.get(base).json()
+    info = ready(client, base).json()
     assert len(info["structure_sets"]) == 2
     rois = [s["rois"][0] for s in info["structure_sets"]]
     assert len({r["key"] for r in rois}) == 2
@@ -374,7 +389,7 @@ def test_multiple_structures_cache_invalidation_and_report(portal, synthetic_ct,
     assert len(calls) == 8  # Six headers once and each RTSTRUCT once.
     rt.StructureSetROISequence[0].ROIName = "Changed ROI"
     rt.save_as(other, enforce_file_format=True)
-    changed = client.get(base).json()
+    changed = ready(client, base).json()
     assert any(s["rois"][0]["name"] == "Changed ROI" for s in changed["structure_sets"])
     assert calls.count(output) == 1 and calls.count(other) == 2
     report = job / "output/report"
@@ -485,7 +500,8 @@ def test_512_performance(portal, synthetic_ct, tmp_path):
     start = time.perf_counter()
     assert client.get(base).status_code == 200
     timings = {"cold_metadata_seconds": time.perf_counter() - start}
-    for name, endpoint in (("png", "/slices/3.png"), ("contours", "/contours/3")):
+    ready(client, base + "/contours/3")
+    for name, endpoint in (("png", "/slices/3.png"), ("contours", "/contours/3"), ("range32", "/contours?start=0&count=32")):
         samples = []
         for _ in range(10):
             start = time.perf_counter()
@@ -495,3 +511,156 @@ def test_512_performance(portal, synthetic_ct, tmp_path):
         timings[name + "_max_seconds"] = max(samples)
         assert np.median(samples) < 1
     print("VIEWER_PERFORMANCE " + json.dumps(timings, sort_keys=True))
+
+
+def test_background_single_flight_range_and_replacement(portal, synthetic_ct, tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    make_series(synthetic_ct, source)
+    job = make_job(portal, source)
+    output = job / "output/model_RTSTRUCT.dcm"
+    make_rtstruct(source, output)
+    entered, release = threading.Event(), threading.Event()
+    calls, read = [], viewer.read_structure
+
+    def slow(path):
+        calls.append(path)
+        entered.set()
+        assert release.wait(10)
+        return read(path)
+
+    monkeypatch.setattr(viewer, "read_structure", slow)
+    client = TestClient(portal.app)
+    base = f"/api/v1/jobs/{job.name}/viewer"
+    try:
+        start = time.perf_counter()
+        first = client.get(base)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 1
+        assert first.status_code == 200 and first.json()["contours_ready"] is False
+        assert entered.wait(2)
+        for _ in range(4):
+            assert client.get(base).json()["contours_state"] == "building"
+            for endpoint in ("/contours/1", "/contours?start=0&count=6"):
+                pending = client.get(base + endpoint)
+                assert pending.status_code == 202
+                assert pending.headers["Retry-After"] == "1"
+                assert pending.headers["Cache-Control"] == "no-store"
+                assert pending.json()["contours_state"] == "building"
+        assert client.get(base + "/slices/1.png").status_code == 200
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(4) as pool:
+            assert all(r.json()["contours_state"] == "building" for r in pool.map(lambda _: client.get(base), range(8)))
+        assert len(calls) == 1
+        print("BACKGROUND_START " + json.dumps({"metadata_seconds_with_parser_stalled": elapsed, "parallel_metadata_requests": 8, "parser_calls": len(calls)}))
+    finally:
+        release.set()
+    info = ready(client, base).json()
+    assert info["contours_ready"] is True
+    batch = client.get(base + "/contours?start=0&count=6")
+    assert batch.status_code == 200 and batch.headers["Cache-Control"] == "no-store"
+    assert batch.json()["start"] == 0
+    for k in range(6):
+        assert batch.json()["slices"][str(k)] == client.get(base + f"/contours/{k}").json()["rois"]
+    for query, status in (("start=-1&count=2", 422), ("start=0&count=0", 422), ("start=0&count=33", 422),
+                          ("start=5&count=2", 404), ("start=6&count=1", 404), ("start=0", 422)):
+        assert client.get(base + "/contours?" + query).status_code == status
+    rt = pydicom.dcmread(output)
+    rt.StructureSetROISequence[0].ROIName = "Replaced"
+    rt.save_as(output, enforce_file_format=True)
+    assert ready(client, base).json()["structure_sets"][0]["rois"][0]["name"] == "Replaced"
+    assert len(calls) == 2
+
+
+def test_deletion_during_background_build_does_not_repopulate(portal, synthetic_ct, tmp_path, monkeypatch):
+    job = make_job(portal, synthetic_ct)
+    make_rtstruct(job / "input", job / "output/model_RTSTRUCT.dcm", np.ones((32, 32, 12), dtype=bool))
+    entered, release = threading.Event(), threading.Event()
+    read = viewer.read_structure
+
+    def slow(path):
+        result = read(path)
+        entered.set()
+        assert release.wait(10)
+        return result
+
+    monkeypatch.setattr(viewer, "read_structure", slow)
+    client = TestClient(portal.app)
+    base = f"/api/v1/jobs/{job.name}"
+    client.get(base + "/viewer")
+    assert entered.wait(3)
+    from concurrent.futures import ThreadPoolExecutor
+    try:
+        with ThreadPoolExecutor(1) as pool:
+            deleted = pool.submit(client.delete, base)
+            deadline = time.monotonic() + 3
+            while job.exists() and time.monotonic() < deadline:
+                time.sleep(.01)
+            assert not job.exists()
+            release.set()
+            assert deleted.result(3).status_code == 200
+    finally:
+        release.set()
+    assert not portal.viewer.overlay_cache.items
+    assert not portal.viewer.rt_cache.items
+    assert not portal.viewer.series_cache.items
+    assert client.get(base + "/viewer").status_code == 404
+
+
+@pytest.mark.parametrize("implicit", [False, True])
+def test_raw_contour_coordinates_equal_pydicom(synthetic_ct, tmp_path, implicit):
+    output = tmp_path / "structure.dcm"
+    make_rtstruct(synthetic_ct, output, np.ones((32, 32, 12), dtype=bool))
+    ds = pydicom.dcmread(output)
+    strings = ["1.25E+1", "-2.5e-2", "0", "+3.0000", "-.125", "2E+1", "1", "2", "3.25"]
+    contour = ds.ROIContourSequence[0].ContourSequence[0]
+    contour.ContourData = strings
+    contour.NumberOfContourPoints = 3
+    if implicit:
+        ds.file_meta.TransferSyntaxUID = pydicom.uid.ImplicitVRLittleEndian
+    ds.save_as(output, enforce_file_format=True)
+    reference = np.asarray(pydicom.dcmread(output).ROIContourSequence[0].ContourSequence[0].ContourData).reshape(-1, 3)
+    raw_ds = pydicom.dcmread(output)
+    raw_contour = raw_ds.ROIContourSequence[0].ContourSequence[0]
+    element = raw_contour.get_item(0x30060050)
+    assert isinstance(element, pydicom.dataelem.RawDataElement)
+    assert element.value.endswith(b" ")  # Even-length DICOM DS space padding.
+    assert np.array_equal(viewer.contour_points(raw_contour), reference)
+    assert isinstance(raw_contour.get_item(0x30060050), pydicom.dataelem.RawDataElement)
+    # Also support a dataset whose element was already converted by a caller.
+    converted = pydicom.dcmread(output).ROIContourSequence[0].ContourSequence[0]
+    _ = converted.ContourData
+    assert np.array_equal(viewer.contour_points(converted), reference)
+
+
+@pytest.mark.parametrize("raw", [b"1\\2\\3garbage", b"1\\\\3", b"NaN\\2\\3", b"1\\2", b"1\\2\\3\\"])
+def test_raw_contour_rejects_malformed_values(raw):
+    from pydicom.dataelem import RawDataElement
+    ds = Dataset()
+    ds._dict[0x30060050] = RawDataElement(0x30060050, "DS", len(raw), raw, 0, False, True)
+    with pytest.raises(ValueError):
+        viewer.contour_points(ds)
+
+
+def test_float32_window_pixels_equal_original_float64():
+    rng = np.random.default_rng(765)
+    source = np.arange(-32768, 32768, dtype=np.int16).reshape(256, 256)
+    windows = [(p["center"], p["width"]) for p in viewer.CT_WINDOWS]
+    windows += [(300, 1201), (0, 1), (40, 1.001), (1e12, 1e8)]
+    windows += list(zip(rng.uniform(-1000, 1000, 24), rng.uniform(1, 3000, 24)))
+    for slope, intercept in ((1, 0), (2, -100), (.7139, -1024.7), (-1.2345, 3.14)):
+        exact = source.astype(np.float64) * slope + intercept
+        for center, width in windows:
+            expected = (np.where(exact > center - .5, 255, 0) if width == 1 else
+                        np.clip(((exact - (center - .5)) / (width - 1) + .5) * 255, 0, 255)).astype(np.uint8)
+            assert np.array_equal(viewer.window_pixels(source, center, width, slope, intercept), expected), (center, width, slope, intercept)
+
+
+@pytest.mark.parametrize("dtype", ["<i2", ">i2", "<u2", ">u2", "i1", "u1"])
+def test_window_lookup_signed_unsigned_and_endian(dtype):
+    kind = np.dtype(dtype)
+    limits = np.iinfo(kind)
+    source = np.resize(np.array([limits.min, 0, 1, 30, 127, limits.max], dtype=kind), (512, 512)).astype(kind)
+    assert source.dtype == kind
+    exact = source.astype(np.float64) * .7139 - 1000.7
+    expected = np.clip(((exact - (-1000.5)) / 399 + .5) * 255, 0, 255).astype(np.uint8)
+    assert np.array_equal(viewer.window_pixels(source, -1000, 400, .7139, -1000.7), expected)
