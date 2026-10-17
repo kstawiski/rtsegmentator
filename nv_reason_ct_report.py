@@ -66,40 +66,127 @@ def detect_cbct(ds) -> dict:
     return {'is_cbct': False, 'reason': 'No CBCT header indicator detected; this does not establish image quality'}
 
 
-def hu_check(data, *, dicom_headers=()) -> dict:
+# Scanners fill the area outside the circular reconstruction field with a constant far below air (for example
+# -2000, -3024 or, for unsigned storage with intercept -8192, -8192 HU). The model input is clipped to
+# [-1000, 1000] HU, so that fill reaches the model as air, but it distorts the intensity gate. Only voxels that
+# (1) are below PADDING_BELOW_HU and, when the DICOM header identifies padding values, equal one of them, and
+# (2) on their slice form the complete exterior of a circle centred on the image are excluded. Anything else that
+# is low (interior corruption, even when connected to the border) stays in the distribution and fails the rule.
+# A slice or volume that is mostly padding is refused.
+PADDING_BELOW_HU = -1500
+MAX_PADDING_FRACTION = 0.5
+EXTERIOR_RING_COVERAGE = 0.98
+
+
+def padding_values_hu(ds) -> list[float] | None:
+    """Header-identified padding in HU: PixelPaddingValue(/RangeLimit), else stored 0 for unsigned storage (the
+    fill used when the rescale intercept is far below air). None when the header does not identify padding; an
+    empty list when it does but no identified value is below PADDING_BELOW_HU (nothing may be excluded)."""
+    try:
+        slope, intercept = float(getattr(ds, 'RescaleSlope', 1) or 1), float(getattr(ds, 'RescaleIntercept', 0) or 0)
+        if getattr(ds, 'PixelPaddingValue', None) is not None:
+            stored = [int(ds.PixelPaddingValue)]
+            if getattr(ds, 'PixelPaddingRangeLimit', None) is not None:
+                stored.append(int(ds.PixelPaddingRangeLimit))
+        elif int(getattr(ds, 'PixelRepresentation', 1)) == 0:
+            stored = [0]
+        else:
+            return None
+        values = sorted(s * slope + intercept for s in stored)
+        return values if values[0] < PADDING_BELOW_HU else []
+    except (TypeError, ValueError):
+        return None
+
+
+def circle_exterior(exterior, yy, xx):
+    """True when a border-connected mask is exactly the outside of one large, roughly centred circle: its inner
+    boundary fits a circle (RMS <= 1.5 px), everything 2 px beyond that circle is in the mask, and nothing of the
+    mask reaches 2 px inside it. Reconstruction fields can sit a few pixels off the image centre."""
+    from scipy import ndimage
+    rows, cols = exterior.shape
+    edge = exterior & ~ndimage.binary_erosion(exterior, border_value=1)  # image edges are not boundaries
+    ey, ex = np.nonzero(edge)
+    if ey.size < 20:
+        return False
+    a = np.c_[2 * ex, 2 * ey, np.ones(ex.size)]
+    cx, cy, c = np.linalg.lstsq(a, ex.astype(float) ** 2 + ey.astype(float) ** 2, rcond=None)[0]
+    radius = np.sqrt(max(c + cx ** 2 + cy ** 2, 0.0))
+    size = min(rows, cols)
+    if (radius < 0.3 * size or np.hypot(cx - (cols - 1) / 2, cy - (rows - 1) / 2) > 0.1 * size
+            or np.sqrt(np.mean((np.hypot(ex - cx, ey - cy) - radius) ** 2)) > 1.5):
+        return False
+    distance = np.hypot(xx - cx, yy - cy)
+    beyond = distance >= radius + 2
+    if beyond.any() and exterior[beyond].mean() < EXTERIOR_RING_COVERAGE:
+        return False
+    return not exterior[distance < radius - 2].any()
+
+
+def exterior_padding(candidates, slice_axis=2):
+    """Per slice, candidate voxels that form the exterior of a reconstruction circle, the fraction of each slice
+    they cover, and the fraction of each slice that is a candidate at all. Other candidates are not padding."""
+    from scipy import ndimage
+    padding = np.zeros(candidates.shape, dtype=bool)
+    slices, out = np.moveaxis(candidates, slice_axis, 0), np.moveaxis(padding, slice_axis, 0)
+    yy, xx = np.mgrid[:slices.shape[1], :slices.shape[2]]
+    per_slice, low_per_slice = np.zeros(slices.shape[0]), slices.mean(axis=(1, 2))
+    previous, previous_ok, previous_exterior = None, False, None
+    for k in range(slices.shape[0]):
+        if not slices[k].any():
+            continue
+        if previous is not None and np.array_equal(slices[k], previous):
+            ok, exterior = previous_ok, previous_exterior  # identical consecutive masks are the common case
+        else:
+            labels, _ = ndimage.label(slices[k])
+            border = np.unique(np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]]))
+            border = border[border > 0]
+            exterior = np.isin(labels, border) if border.size else None
+            ok = exterior is not None and circle_exterior(exterior, yy, xx)
+            previous, previous_ok, previous_exterior = slices[k], ok, exterior
+        if ok:
+            out[k] = exterior
+            per_slice[k] = exterior.mean()
+    return padding, per_slice, low_per_slice
+
+
+def hu_check(data, slice_axis=2, padding_values=None) -> dict:
     data = np.asarray(data)
-    rule = ('After excluding values below -1500 HU and DICOM PixelPaddingValue/'
-            'PixelPaddingRangeLimit converted with RescaleSlope and RescaleIntercept: '
-            '0.1 percentile between -1100 and -900 HU and maximum >300 HU')
-    result = {'looks_like_hu': False, 'padding_fraction': 0.0, 'rule': rule}
     if data.size == 0 or not np.isfinite(data).all():
-        return dict(result, reason='Empty or nonfinite intensities')
-    padding = data < -1500
-    ranges = set()
-    for ds in dicom_headers:
-        if not hasattr(ds, 'PixelPaddingValue'):
-            continue
-        try:
-            slope = float(getattr(ds, 'RescaleSlope', 1))
-            intercept = float(getattr(ds, 'RescaleIntercept', 0))
-            endpoints = np.array([float(ds.PixelPaddingValue),
-                                  float(getattr(ds, 'PixelPaddingRangeLimit', ds.PixelPaddingValue))])
-            endpoints = endpoints * slope + intercept
-            if np.isfinite(endpoints).all():
-                ranges.add((float(endpoints.min()), float(endpoints.max())))
-        except (TypeError, ValueError):
-            continue
-    for low, high in ranges:
-        padding |= (data >= low) & (data <= high)
-    result['padding_fraction'] = round(float(np.count_nonzero(padding) / data.size), 6)
-    values = data[~padding]
-    if not values.size:
-        return dict(result, reason='All intensities are padding')
-    p = np.percentile(values, [0.1, 1, 50, 99, 99.9])
+        return {'looks_like_hu': False, 'reason': 'Empty or nonfinite intensities'}
+    rule = '0.1 percentile between -1100 and -900 HU and maximum >300 HU'
+    raw_min, values, fraction = float(data.min()), data, 0.0
+    details = {'raw_hu_min': raw_min,
+               'padding_values_hu': None if padding_values is None else [float(v) for v in padding_values],
+               'padding_rule': f'voxels below {PADDING_BELOW_HU} HU (header padding values when known) that fill '
+                               'the exterior of an image-centred circle on their slice; refused when padding '
+                               f'exceeds {MAX_PADDING_FRACTION:.0%} of any slice or of the volume'}
+    if raw_min < PADDING_BELOW_HU and data.ndim == 3 and padding_values != []:
+        candidates = data < PADDING_BELOW_HU
+        if padding_values:
+            # Compare in the image's own numeric type (e.g. a float32 volume and a header value of -2047.9).
+            known = np.asarray(padding_values, dtype=data.dtype if data.dtype.kind == 'f' else np.float64)
+            candidates &= np.isin(data, known) if known.size == 1 else (data >= known.min()) & (data <= known.max())
+        padding, per_slice, low_per_slice = exterior_padding(candidates, slice_axis)
+        del candidates
+        fraction = float(padding.mean())
+        details['padding_fraction'] = round(fraction, 6)
+        worst_low = int(low_per_slice.argmax())
+        if low_per_slice[worst_low] > MAX_PADDING_FRACTION:
+            return {'looks_like_hu': False, 'reason': f'Padding values cover most of slice {worst_low}',
+                    'rule': rule, **details}
+        worst = int(per_slice.argmax())
+        if per_slice[worst] > MAX_PADDING_FRACTION or fraction > MAX_PADDING_FRACTION:
+            return {'looks_like_hu': False, 'reason': f'Padding covers most of slice {worst}', 'rule': rule, **details}
+        if fraction > 0:
+            values = data[~padding]  # private copy: percentile may reorder it in place
+        del padding
+    details.setdefault('padding_fraction', 0.0)
+    vmin, vmax = float(values.min()), float(values.max())
+    p = np.percentile(values, [0.1, 1, 50, 99, 99.9], overwrite_input=values is not data)
     # Reuse the reference input-QC rule; air and high-density tissue must be visible.
-    return {**result, 'looks_like_hu': bool(-1100 <= p[0] <= -900 and values.max() > 300),
+    return {'looks_like_hu': bool(-1100 <= p[0] <= -900 and vmax > 300),
             'hu_percentiles': [round(float(x), 2) for x in p],
-            'hu_min': float(values.min()), 'hu_max': float(values.max())}
+            'hu_min': vmin, 'hu_max': vmax, 'rule': rule + ', after excluding exterior padding', **details}
 
 
 def mask_stats(mask, voxel_mm3, slice_axis=2) -> dict:

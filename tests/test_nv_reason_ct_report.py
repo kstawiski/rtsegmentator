@@ -14,7 +14,7 @@ from pydicom.uid import ExplicitVRLittleEndian, RTStructureSetStorage, generate_
 import pytest
 from fastapi.testclient import TestClient
 
-from nv_reason_ct_report import (TASK, REVISION, LUNGS, detect_cbct, hu_check, mask_stats,
+from nv_reason_ct_report import (TASK, REVISION, LUNGS, detect_cbct, hu_check, mask_stats, padding_values_hu,
     covered_regions, parse_sections, check_consistency, polygon_area, rtstruct_summary,
     render_html, thumbnail, write_report)
 from test_api import load_app, make_slice
@@ -38,6 +38,147 @@ def test_hu_contract():
     assert hu_check(np.array([-1000] * 20 + [0, 500]))['looks_like_hu']
     assert not hu_check(np.arange(2000))['looks_like_hu']
     assert not hu_check(np.array([-1000, np.nan]))['looks_like_hu']
+
+
+def padded_ct(pad=-8192.0, slices=8, size=64):
+    """Axial slices (slice axis 2): air inside the reconstruction circle, a soft-tissue body with bone, and
+    padding outside the circle."""
+    y, x = np.mgrid[:size, :size] - (size - 1) / 2
+    r = np.hypot(x, y)
+    plane = np.full((size, size), -1000.0)
+    plane[r < size * 0.35] = 40.0
+    plane[r < size * 0.08] = 900.0
+    plane[r > size / 2 - 0.5] = pad
+    return np.repeat(plane[:, :, None], slices, axis=2)
+
+
+def test_hu_check_excludes_exterior_reconstruction_circle_padding():
+    for pad in (-8192, -3024, -2048, -2000):
+        volume = padded_ct(pad)
+        check = hu_check(volume)
+        assert check['looks_like_hu'], pad
+        assert check['padding_fraction'] == round(float((volume == pad).mean()), 6) and 0 < check['padding_fraction'] < 0.5
+        assert check['raw_hu_min'] == pad and check['hu_min'] == -1000 and check['hu_percentiles'][0] == -1000
+        assert hu_check(np.moveaxis(volume, 2, 0), slice_axis=0)['looks_like_hu']
+    # The input array is not modified.
+    volume = padded_ct(); copy = volume.copy(); hu_check(volume); assert np.array_equal(volume, copy)
+
+
+def test_hu_check_still_refuses_unexplained_low_values_and_mostly_padding():
+    # Low values inside the image are not padding (review counter-example): the original rule refuses them.
+    a = np.full((32, 32, 32), -1000, dtype=np.float32)
+    a[4:28, 4:28, 4:28] = 40
+    a[8:12, 8:12, 8:12] = 900
+    a[12:20, 12:20, 12:20] = -8192
+    check = hu_check(a)
+    assert not check['looks_like_hu'] and check['padding_fraction'] == 0 and check['hu_percentiles'][0] == -8192
+    a[12:20, 12:20, 12:20] = np.linspace(-8192, -1501, 512).reshape(8, 8, 8)
+    assert not hu_check(a)['looks_like_hu']
+    # A volume that is nearly all exterior padding is refused even if the remainder looks like HU.
+    b = np.full((40, 40, 4), -8192.0)
+    b[18:22, 18:22, :] = -1000
+    b[19:21, 19:21, :] = 500
+    check = hu_check(b)
+    assert not check['looks_like_hu'] and check['reason'] == 'Padding values cover most of slice 0'
+    assert not hu_check(np.full((8, 8, 3), -8192.0))['looks_like_hu']
+    # Exterior padding does not rescue intensities that are not HU.
+    c = padded_ct()
+    c[c > -8192] = np.random.default_rng(0).uniform(0, 4000, int((c > -8192).sum()))
+    assert not hu_check(c)['looks_like_hu']
+
+
+def test_hu_check_refuses_border_connected_interior_and_lost_slices():
+    # Review round 2: a thin path to the border must not turn interior corruption into padding.
+    a = np.full((32, 32, 32), -1000, dtype=np.float32)
+    a[4:28, 4:28, 4:28] = 40
+    a[8:12, 8:12, 8:12] = 900
+    a[12:20, 12:20, 12:20] = -8192
+    a[:12, 12, 12:20] = -8192
+    check = hu_check(a)
+    assert not check['looks_like_hu'] and check['padding_fraction'] == 0 and check['hu_percentiles'][0] == -8192
+    a[12:20, 12:20, 12:20] = np.linspace(-8192, -1501, 512).reshape(8, 8, 8)
+    assert not hu_check(a)['looks_like_hu']
+    # Review round 2: a completely lost acquired slice is refused, not silently dropped.
+    b = padded_ct()
+    b[:, :, 4] = -8192
+    check = hu_check(b)
+    assert not check['looks_like_hu'] and check['reason'] == 'Padding values cover most of slice 4'
+
+
+def test_padding_values_from_dicom_header():
+    from types import SimpleNamespace as H
+    # Unsigned storage with intercept -8192 (stored 0 fills the exterior), as on the production CT.
+    assert padding_values_hu(H(PixelRepresentation=0, RescaleSlope=1, RescaleIntercept=-8192)) == [-8192]
+    assert padding_values_hu(H(PixelRepresentation=0, RescaleSlope=1, RescaleIntercept=-1024)) == []
+    assert padding_values_hu(H(PixelRepresentation=1, RescaleSlope=1, RescaleIntercept=0)) is None
+    assert padding_values_hu(H(PixelRepresentation=1, PixelPaddingValue=-2000, RescaleSlope=1, RescaleIntercept=0)) == [-2000]
+    assert padding_values_hu(H(PixelRepresentation=1, PixelPaddingValue=-3024, PixelPaddingRangeLimit=-2000,
+                               RescaleSlope=1, RescaleIntercept=0)) == [-3024, -2000]
+    # Header-identified padding is excluded; other low values are not, even in the exterior.
+    assert hu_check(padded_ct(-8192), padding_values=[-8192])['looks_like_hu']
+    assert not hu_check(padded_ct(-3024), padding_values=[-8192])['looks_like_hu']
+    assert hu_check(padded_ct(-3024), padding_values=[-3024, -2000])['looks_like_hu']
+
+
+def test_hu_check_review_round3_regressions():
+    from types import SimpleNamespace as H
+    # A partly lost slice in a long scan is refused before geometry can discard its padding values.
+    a = padded_ct(slices=1079).astype(np.float32)
+    a[24:, :, 539] = -8192
+    check = hu_check(a, padding_values=[-8192])
+    assert not check['looks_like_hu'] and check['reason'] == 'Padding values cover most of slice 539'
+    # Header padding that is not below the cutoff authorises no exclusion (it is not "unknown").
+    header = H(PixelRepresentation=1, BitsStored=16, PixelPaddingValue=0, RescaleSlope=1, RescaleIntercept=-1024)
+    assert padding_values_hu(header) == []
+    check = hu_check(padded_ct(-8192).astype(np.float32), padding_values=[])
+    assert not check['looks_like_hu'] and check['padding_fraction'] == 0
+    # A fractional rescale is compared in the image's float32 representation.
+    header = H(PixelRepresentation=0, BitsStored=16, PixelPaddingValue=1, RescaleSlope=0.1, RescaleIntercept=-2048)
+    values = padding_values_hu(header)
+    assert values == [1 * 0.1 - 2048]
+    check = hu_check(padded_ct(values[0]).astype(np.float32), padding_values=values)
+    assert check['looks_like_hu'] and check['padding_fraction'] > 0.2
+    assert not hu_check(padded_ct(-3024).astype(np.float32), padding_values=values)['looks_like_hu']
+
+
+def field_volume(outside, size=128, slices=3):
+    """Air/tissue/bone image with -8192 wherever outside(y, x) is true."""
+    y, x = np.mgrid[:size, :size].astype(float)
+    plane = np.full((size, size), -1000.0, dtype=np.float32)
+    r = np.hypot(y - (size - 1) / 2, x - (size - 1) / 2)
+    plane[r < size * 0.3] = 40
+    plane[r < size * 0.06] = 900
+    plane[outside(y, x)] = -8192
+    return np.repeat(plane[:, :, None], slices, axis=2)
+
+
+def test_hu_check_reconstruction_field_geometry():
+    c = 63.5
+    accepted = {
+        # Production-like: a large field clipped by the image edges (corners only), centre ~2 px off.
+        'clipped, off-centre': lambda y, x: np.hypot(y - (c - 1.7 * 128 / 512), x - c) > 280.4 * 128 / 512,
+        'centred circle': lambda y, x: np.hypot(y - c, x - c) > 63.5,
+        'shifted 4 px': lambda y, x: np.hypot(y - c - 4, x - c) > 58,
+    }
+    for name, outside in accepted.items():
+        check = hu_check(field_volume(outside), padding_values=[-8192])
+        assert check['looks_like_hu'] and check['padding_fraction'] > 0, name
+    refused = {
+        'ellipse': lambda y, x: np.hypot((y - c) / 60, (x - c) / 40) > 1,
+        'rectangular frame': lambda y, x: (y < 8) | (y > 119) | (x < 8) | (x > 119),
+        'upper rows only': lambda y, x: y < 16,
+    }
+    for name, outside in refused.items():
+        check = hu_check(field_volume(outside), padding_values=[-8192])
+        assert not check['looks_like_hu'] and check['padding_fraction'] == 0, name
+
+
+def test_hu_check_without_padding_is_unchanged():
+    # Air reconstructed slightly below -1000 HU stays part of the distribution; no padding is reported.
+    volume = padded_ct(pad=-1024.0)
+    check = hu_check(volume)
+    assert check['looks_like_hu'] and check['padding_fraction'] == 0 and check['raw_hu_min'] == -1024
+    assert check['hu_percentiles'] == [round(float(x), 2) for x in np.percentile(volume, [0.1, 1, 50, 99, 99.9])]
 
 
 def entry(volume, first=False, last=False):
