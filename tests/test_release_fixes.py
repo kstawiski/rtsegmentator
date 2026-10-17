@@ -410,3 +410,50 @@ def test_pre_manifest_jobs_keep_retry_with_their_complete_retained_series(portal
     portal.save_metadata(job, status='failed', series={'slices': 99})
     with pytest.raises(portal.HTTPException):
         portal.retry_job(job.name)
+
+
+def test_failed_resumable_staging_never_passes_the_pre_manifest_fallback(portal, synthetic_ct, monkeypatch):
+    # Review round 2: an ordinary move error after six of twelve slices must not make the job retryable.
+    client = TestClient(portal.app)
+    monkeypatch.setattr(portal, 'tasks', lambda: {'tasks': [{'name': 'total', 'enabled': True, 'modality': 'CT'}]})
+    sid = client.post('/api/v1/upload-sessions').json()['session_id']
+    for i, p in enumerate(sorted(synthetic_ct.iterdir())):
+        payload = p.read_bytes()
+        assert client.put(f'/api/v1/upload-sessions/{sid}/files/{i}',
+                          params={'name': p.name, 'offset': 0, 'size': len(payload)}, content=payload).status_code == 200
+    starts = pause_dispatcher(portal, monkeypatch)
+    moves, real_move = [], portal.shutil.move
+    def failing_move(src, dst, *args, **kwargs):
+        if len(moves) == 6:
+            raise OSError('Synthetic move failure')
+        moves.append(src)
+        return real_move(src, dst, *args, **kwargs)
+    monkeypatch.setattr(portal.shutil, 'move', failing_move)
+    result = portal.queue_session_job(sid, {'models': ['total']}, False)
+    job = portal.BASE / result['id']
+    assert 'input_manifest' in json.loads((job / 'job.json').read_text())
+    for start in list(starts):
+        start.target(*start.args)
+    data = portal.metadata(job)
+    assert data['status'] == 'failed' and len(list((job / 'input').iterdir())) == 6
+    assert data['input_manifest'] is None and not portal.legacy_input_complete(job, data)
+    with pytest.raises(portal.HTTPException) as error:
+        portal.retry_job(job.name)
+    assert error.value.status_code == 409
+
+
+def test_retention_keeps_a_job_whose_stop_is_unconfirmed(portal, monkeypatch):
+    # Review round 2: deleting a barrier job would leave the dispatcher blocked with nothing to reconcile.
+    old = make_job(portal, 'expired-orphan', 1, 'processing')
+    later = make_job(portal, 'later', time.time())
+    starts = pause_dispatcher(portal, monkeypatch)
+    monkeypatch.setattr(portal, 'stop_recorded_task_tree', lambda data: (_ for _ in ()).throw(RuntimeError('stop')))
+    with pytest.raises(RuntimeError):
+        portal.recover_interrupted_jobs()
+    portal.enqueue_jobs([later])
+    assert old in portal.recovery_barriers and not starts
+    portal.cleanup_once()
+    assert old.is_dir()
+    monkeypatch.setattr(portal, 'stop_recorded_task_tree', lambda data: None)
+    portal.recover_interrupted_jobs()
+    assert not portal.recovery_barriers and len(starts) == 1

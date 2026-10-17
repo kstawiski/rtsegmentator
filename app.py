@@ -2278,7 +2278,10 @@ def queue_session_job(session_id: str, options: dict, crop: bool):
         complete_session_files(session, data)
         jid = new_job_id(); job = BASE / jid
         (job / "input").mkdir(parents=True); (job / "output").mkdir()
+        # input_manifest stays null until staging completes, which marks this as a manifest-era job:
+        # a failed or interrupted staging can never pass the pre-manifest fallback.
         (job / "job.json").write_text(json.dumps({"id":jid, "status":"staging", "created":time.time(),
+            "input_manifest": None,
             "detail":"Prostate SBRT crop queued on CPU" if crop else "Staging uploaded files", "error":None,
             **({} if crop else single_series_batch(None)), **options}, indent=2))
         data.update(status="used", operation=operation, options=options, job_id=jid); save_session(session, data)
@@ -2786,6 +2789,9 @@ def cleanup_once():
         fd = None
         try:
             if not job.is_dir() or job.is_symlink(): continue
+            # A job whose task stop is not yet confirmed keeps its record (and process identity) until the
+            # watchdog reconciles it; deleting it would leave the dispatcher barrier unreachable.
+            if job in recovery_barriers: continue
             is_session = job.name.startswith("session-")
             if is_session:
                 fd = os.open(job, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)

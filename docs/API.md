@@ -191,9 +191,11 @@ file names and sizes in `input_manifest`, including PET CT companions. Only comp
 inputs become `queued`; interrupted assessed batches are restored to their upload when
 safe, and their job records fail with an explicit preparation error. Incomplete retained
 input cannot be retried; submit the upload again.
-Older queued or interrupted jobs without an input manifest also fail preparation:
-their current files cannot establish whether the original upload was complete.
-Submit those jobs again from a complete upload.
+Jobs created by this version always carry an `input_manifest` key (null until staging completes), so a failed
+or interrupted staging can never be retried or recovered from a partial input. Jobs created before input manifests
+existed (no `input_manifest` key and no staging marker) were recorded only after their series was in place; they
+keep the earlier rule: retry and recovery accept a nonempty input that holds one image series (and the recorded
+slice count, when present).
 
 ## Job activity and task logs
 
