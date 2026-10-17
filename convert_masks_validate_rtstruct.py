@@ -11,7 +11,8 @@ import pydicom
 from pydicom.uid import RTStructureSetStorage
 from rtstruct_geometry import add_roi, create_rtstruct, mask_bounds, report_omissions, dicom_grid, unique_roi_names
 from orientation_contract import exact_orientation, restore_image, write_export_record
-from rtstruct_roundtrip import validate_roi_roundtrip
+from rtstruct_roundtrip import CroppedMask, data_box, validate_roi_roundtrip
+from task_progress import Progress
 
 
 def deterministic_color(name: str) -> list[int]:
@@ -40,28 +41,40 @@ def main() -> None:
     inverse["masks"] = {}
     rtstruct = create_rtstruct(args.dicom, source_input)
     expected_bounds: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-    expected_masks: dict[str, tuple[nib.Nifti1Image, np.ndarray]] = {}
+    expected_sources = {}
+    progress = Progress()
+    progress.emit("rtstruct_contours", 0, len(mappings))
     omitted = []
-    for name, filename in zip(unique_roi_names(mappings), mappings.values()):
+    for done, (name, filename) in enumerate(zip(unique_roi_names(mappings), mappings.values()), 1):
         mask_image = nib.load(filename)
         exact_orientation(mask_image.shape, mask_image.affine, model_input.shape, model_input.affine)
         mask_image, mask_inverse = restore_image(mask_image, shape, affine)
         inverse["masks"][str(name)] = mask_inverse
-        mask = np.asanyarray(mask_image.dataobj) > args.threshold
+        mask_data = np.asanyarray(mask_image.dataobj)
+        box = data_box(mask_data, threshold=args.threshold)
+        offset = tuple(s.start for s in box)
+        mask = mask_data[box] > args.threshold
+        del mask_data
         if not np.any(mask):
+            del mask, mask_image
             continue
-        if not add_roi(rtstruct, mask, str(name), deterministic_color(str(name))):
+        if not add_roi(rtstruct, mask, str(name), deterministic_color(str(name)), offset=offset):
             omitted.append({"name": str(name), "voxels": int(mask.sum()),
                             "reason": "no contour returned for nonempty mask"})
+            del mask, mask_image
             continue
-        expected_bounds[str(name)] = mask_bounds(mask, rtstruct.series_data)
-        expected_masks[str(name)] = (mask_image, mask)
+        expected_bounds[str(name)] = mask_bounds(mask, rtstruct.series_data, offset=offset)
+        expected_sources[str(name)] = (filename, box)
+        del mask, mask_image
+        progress.emit("rtstruct_contours", done, len(mappings))
 
     report_omissions(args.output, omitted)
     if not expected_bounds:
         raise SystemExit("no contourable structures: no RTSTRUCT created" if omitted else
                          "all supplied masks are empty: no RTSTRUCT created")
+    progress.emit("rtstruct_writing")
     rtstruct.save(args.output)
+    progress.emit("rtstruct_validation", 0, len(expected_bounds))
 
     ds = pydicom.dcmread(args.output, stop_before_pixels=True)
     if ds.SOPClassUID != RTStructureSetStorage or ds.Modality != "RTSTRUCT":
@@ -91,7 +104,7 @@ def main() -> None:
     tolerance = max(2.1, float(spacing.max()) * 2.1)
     max_delta = 0.0
     roundtrip = {}
-    for roi in contours:
+    for done, roi in enumerate(contours, 1):
         name = roi_names[int(roi.ReferencedROINumber)]
         pieces = [np.asarray(c.ContourData, dtype=float).reshape(-1, 3)
                   for c in getattr(roi, "ContourSequence", [])
@@ -106,9 +119,16 @@ def main() -> None:
         if delta > tolerance:
             raise SystemExit(f"RTSTRUCT geometry mismatch for {name}: "
                              f"{delta:.3f} mm > {tolerance:.3f} mm")
-        image, mask = expected_masks[name]
+        filename, box = expected_sources[name]
+        image, _ = restore_image(nib.load(filename), shape, affine)
+        # One independent mask is loaded at a time; retain only its voxel box.
+        mask = CroppedMask(np.asanyarray(image.dataobj)[box] > args.threshold,
+                           tuple(s.start for s in box), tuple(shape))
         roundtrip[name] = validate_roi_roundtrip(roi, image, mask, source_slices=rtstruct.series_data)
+        del mask, image
+        progress.emit("rtstruct_validation", done, len(contours))
 
+    progress.emit("export")
     write_export_record(args.output, args.model_input, inverse)
     print(json.dumps({"valid": True, "rois": len(rois),
                       "referenced_images": len(refs),

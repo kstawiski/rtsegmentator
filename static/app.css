@@ -379,3 +379,15 @@ th{background:var(--paper);color:var(--teal-deep);font-size:.78rem}
 }
 @media(prefers-reduced-motion:reduce){*,::before,::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
 h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus{outline:none}
+
+/* Progress uses the existing neutral panels and coral warning accent. */
+.job-stage:empty{display:none}
+.model-checklist{list-style:none;padding:0;margin:.8rem 0;font-size:.875rem}
+.model-checklist li{padding:.18rem 0;overflow-wrap:anywhere}
+.model-checklist [data-status="done"]{color:var(--green,#2d6751)}
+.model-checklist [data-status="running"]{font-weight:600}
+.model-checklist [data-status="waiting"]{color:var(--muted)}
+.stall-warning{border-left:3px solid var(--coral);background:#fff7e8;padding:.7rem .9rem;color:#74470a}
+.live-log{margin:.8rem 0}
+.live-log summary{cursor:pointer;font-size:.875rem;font-weight:600}
+.live-log pre{max-height:22rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--paper,#f5f7f7);padding:.8rem;font-size:.75rem}

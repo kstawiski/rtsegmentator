@@ -117,15 +117,17 @@ def unique_roi_names(names):
     return normalised
 
 
-def add_roi(rt, mask, name, color):
-    """Add a [column,row,slice] mask; return False only if no contour exists."""
+def add_roi(rt, mask, name, color, *, offset=(0, 0, 0)):
+    """Add a [column,row,slice] box at its source offset; False if no contour exists."""
     contours = []
-    for k, ds in enumerate(rt.series_data):
+    ox, oy, oz = offset
+    for k in range(mask.shape[2]):
+        ds = rt.series_data[k + oz]
         polygons, _ = cv2.findContours(mask[:, :, k].T.astype(np.uint8),
                                       cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         origin, column, row = slice_geometry(ds)
         for polygon in polygons:
-            xy = polygon[:, 0, :]
+            xy = polygon[:, 0, :] + np.array([ox, oy])
             # Match rt-utils' complete pixel-centre contour set, including
             # single points and zero-area lines. Removing these pieces loses
             # source voxels and can shrink an ROI's physical bounds.
@@ -155,13 +157,16 @@ def add_roi(rt, mask, name, color):
     return True
 
 
-def mask_bounds(mask, slices):
-    """Physical bounds of source voxels using their acquired plane geometry."""
+def mask_bounds(mask, slices, *, offset=(0, 0, 0)):
+    """Physical bounds of a voxel box using its source offset and acquired planes."""
     lower, upper = np.full(3, np.inf), np.full(3, -np.inf)
-    for k, ds in enumerate(slices):
+    ox, oy, oz = offset
+    for k in range(mask.shape[2]):
+        ds = slices[k + oz]
         xy = np.argwhere(mask[:, :, k])
         if not len(xy):
             continue
+        xy += np.array([ox, oy])
         origin, column, row = slice_geometry(ds)
         points = origin + xy[:, :1] * column + xy[:, 1:] * row
         lower = np.minimum(lower, points.min(0))

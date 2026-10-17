@@ -16,7 +16,7 @@ const fixtureReport={status:'generated',regions:[{region:'chest',sections:{techn
   {heading:'ABDOMEN',text:'',organ_status:'unmapped'},
   {heading:'Liver',text:'Not in scanned volume — statement withheld',organ_status:'absent'}],impression:['Synthetic text for UI tests.'],labels:[]},unchecked_headings:['CHEST','Medical devices','ABDOMEN']}],coverage:{heart:{volume_ml:12.345,slice_range:[1,4]}}};
 const failed={status:'failed',created:1700000000,updated:1700000060,models:['total',reportName],report_status:'failed',report_reason:'Task failed; see job error',error:'Synthetic test failure',detail:'Processing failed',model_total:2};
-const fixtureJobs=[{...failed,id:'qa-earlier',model_index:1,completed_models:[]},
+const fixtureJobs=[{id:'qa-active',status:'processing',created:Date.now()/1000-300,updated:Date.now()/1000,models:['total','nv_segment_ct_auto',reportName],current_task:'nv_segment_ct_auto',stage:'Validating RTSTRUCT geometry',stage_key:'rtstruct_validation',stage_done:43,stage_total:117,stage_started:Date.now()/1000-60,last_activity:Date.now()/1000-5,last_cpu_activity:Date.now()/1000-2,stall_threshold:1200,completed_models:['total'],task_timings:{total:{status:'done',duration:120},nv_segment_ct_auto:{status:'running',started:Date.now()/1000-180}}},{...failed,id:'qa-earlier',model_index:1,completed_models:[]},
   {...failed,id:'qa-report',model_index:2,completed_models:['total']},
   {...failed,id:'qa-complete',status:'complete',report_status:'generated',report_reason:'',error:null,model_index:2,completed_models:['total',reportName]}];
 const originalFetch=window.fetch.bind(window);
@@ -29,6 +29,7 @@ window.fetch=async (input,options={})=>{
   else if(path.includes('health'))body={worker_mode:'local',worker_reachable:false};
   else if(path==='/api/v1/jobs')body={jobs:fixtureJobs};
   else if(/^\/api\/v1\/jobs\/[^/]+$/.test(path))body=fixtureJobs.find(j=>j.id===path.split('/').at(-1))||{};
+  else if(path.endsWith('/log'))body={task:url.searchParams.get('task'),lines:['RTSEG_PROGRESS {\"stage\":\"rtstruct_validation\",\"done\":43,\"total\":117}','Synthetic task log: <no markup>']};
   else if(path.endsWith('/report'))body=fixtureReport;
   else if(path.endsWith('/viewer')){body={detail:'Synthetic UI fixture: no image pixels supplied.'};status=404;}
   else if(path==='/api/v1/upload-sessions')body={session_id:'ui-fixture',max_request_bytes:1048576};

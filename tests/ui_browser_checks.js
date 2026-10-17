@@ -54,6 +54,15 @@ async function runUiBrowserChecks(frame) {
   const earlier=doc.querySelector('[data-job="qa-earlier"] [data-field=report]');
   assert(earlier.textContent==='AI report: not run (an earlier step failed)','Jobs list distinguishes report not run');
   assert(doc.querySelector('[data-job="qa-report"] [data-field=report]').textContent.startsWith('AI report: Failed'),'Jobs list preserves actual report failure');
+  assert(doc.querySelector('[data-job="qa-active"] [data-field=stage]').textContent.includes('43/117 structures'),'Jobs list shows current task stage and counts');
+  win.location.hash='jobs/qa-active';await waitFor(()=>$('jobDetailProgress').textContent.includes('43/117 structures'));
+  assert($('jobDetailProgress').textContent.includes('last activity'),'Status panel shows activity age');
+  assert(Math.abs($('jobDetailBar').value-100*43/117)<.01,'Stage progress bar is determinate');
+  assert($('jobDetailModels').textContent.includes('✓ total · done · 2m 0s'),'Completed model shows duration');
+  assert($('jobDetailModels').textContent.includes('nv_segment_ct_auto · running'),'Checklist identifies running model');
+  assert($('jobDetailModels').textContent.includes('nv_reason_ct_report · waiting'),'Checklist identifies waiting model');
+  $('jobDetailLiveLog').open=true;await waitFor(()=>$('jobDetailLog').textContent.includes('Synthetic task log'));
+  assert($('jobDetailLog').textContent.includes('<no markup>')&&!$('jobDetailLog').children.length,'Live log is shown as plain text');
   win.location.hash='jobs/qa-earlier';await waitFor(()=>$('jobDetailReportStatus').textContent.includes('not run'));
   assert($('jobDetailReportStatus').textContent===earlier.textContent,'Job detail and list use the same not-run wording');
   win.location.hash='jobs/qa-complete';await waitFor(()=>$('reportContent').querySelector('.report-section-heading'));

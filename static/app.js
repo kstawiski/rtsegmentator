@@ -194,6 +194,36 @@ function structureInfo(task, meta) {
 function modalityName(m) { return m === 'PT' ? 'PET' : m; }
 function esc(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function formatBytes(n) { if (!Number.isFinite(n)) return '—'; const units = ['B','KiB','MiB','GiB']; let i=0; while(n>=1024 && i<3){n/=1024;i++;} return `${n.toFixed(i?1:0)} ${units[i]}`; }
+function jobProgress(job, now = Date.now()/1000) {
+  const active=!TERMINAL.has(job.status),end=active?now:(job.finished||job.completed||job.updated||job.created||now);
+  const task=job.current_task||'',stage=job.stage||'';
+  const timing=(job.task_timings||{})[task];
+  const runningStage=active&&job.status==='processing'&&Boolean(task)&&(!timing||timing.status==='running');
+  const known=runningStage&&Number.isFinite(job.stage_done)&&Number.isFinite(job.stage_total)&&job.stage_total>0;
+  const counts=known?` · ${job.stage_done}/${job.stage_total}${['rtstruct_contours','rtstruct_validation'].includes(job.stage_key)?' structures':''}`:'';
+  const activity=job.task_remote?job.last_activity:Math.max(job.last_activity||0,job.last_cpu_activity||0);
+  const age=activity?Math.max(0,Math.floor(end-activity)):null;
+  const text=runningStage?[task,stage].filter(Boolean).join(': ')+counts:(job.detail||stage);
+  const elapsed=`${active?'Elapsed':'Duration'} ${duration(end-(job.created||end))}`;
+  const stageTime=runningStage&&job.stage_started?`stage ${duration(end-job.stage_started)}`:'';
+  const last=runningStage&&age!==null?`last activity ${age} s ago`:'';
+  const warning=runningStage&&(job.stall_warning||(age!==null&&age>=(job.stall_threshold||1200)))?
+    `No ${job.task_remote?'worker log':'log or CPU'} activity for ${duration(age||0)}. Automatic recovery is pending.`:'';
+  return {text,elapsed,stageTime,last,warning,activeStage:runningStage,
+    percent:known?Math.max(0,Math.min(100,100*job.stage_done/job.stage_total)):
+      (Number.isFinite(job.progress)?Math.max(0,Math.min(100,job.progress)):null)};
+}
+function modelChecklist(job, now = Date.now()/1000) {
+  return (job.models||[]).map(name=>{
+    const timing=(job.task_timings||{})[name]||{},done=(job.completed_models||[]).includes(name)||(job.no_structures_found||[]).includes(name)||timing.status==='done';
+    const running=job.status==='processing'&&job.current_task===name;
+    const failed=timing.status==='failed'||(job.status==='failed'&&job.current_task===name);
+    const status=done?'done':running?'running':failed?'failed':'waiting';
+    const seconds=done?timing.duration:running&&timing.started?now-timing.started:null;
+    return {name,status,text:`${done?'✓ ':''}${name} · ${status}${Number.isFinite(seconds)?' · '+duration(seconds):''}`};
+  });
+}
+
 function duration(seconds) { const n=Math.max(0,Math.floor(seconds)); return n<60?`${n}s`:n<3600?`${Math.floor(n/60)}m ${n%60}s`:`${Math.floor(n/3600)}h ${Math.floor(n%3600/60)}m`; }
 function studyDate(value) { return /^\d{8}$/.test(value || '') ? `${value.slice(0,4)}-${value.slice(4,6)}-${value.slice(6,8)}` : value || 'Date not supplied'; }
 function safeReference(value) { try { const u=new URL(value); return ['https:','http:'].includes(u.protocol) ? u.href : ''; } catch (_) { return ''; } }
@@ -241,7 +271,7 @@ if (typeof document !== 'undefined') {
       detailId=id; ++detailToken; detailLoaded=false; detailLoading=false; detailInfo=null; detailReport=null;
       jobViewer?.destroy();jobViewer=null;$('jobResults').hidden=true;showError($('jobDetailError'),'');
       $('deleteJob').disabled=true;$('jobDetailTitle').textContent='Job details';$('jobDetailMeta').textContent=id||'';
-      $('jobDetailStatus').textContent='Loading…';$('jobDetailProgress').textContent='';$('jobDetailReportStatus').textContent='';$('jobDetailErrors').hidden=true;$('retryDetail').hidden=true;$('jobDetailBar').removeAttribute('value');
+      $('jobDetailModels').replaceChildren();$('jobDetailLog').textContent='';$('jobDetailStall').hidden=true;$('jobDetailLiveLog').hidden=true;$('jobDetailStatus').textContent='Loading…';$('jobDetailProgress').textContent='';$('jobDetailReportStatus').textContent='';$('jobDetailErrors').hidden=true;$('retryDetail').hidden=true;$('jobDetailBar').removeAttribute('value');
       selectResultTab('report');
     }
     $('newPage').hidden=area!=='new';$('jobsPage').hidden=area!=='jobs';$('toolsPage').hidden=area!=='tools';$('jobDetailPage').hidden=area!=='detail';
@@ -544,17 +574,18 @@ if (typeof document !== 'undefined') {
   function updateText(el,text){if(el.textContent!==text)el.textContent=text;}
   function updateJob(j){
     let row=jobRows.get(j.id);if(!row){row=$('jobTemplate').content.firstElementChild.cloneNode(true);row.dataset.job=j.id;jobRows.set(j.id,row);row.querySelector('[data-field=retry]').onclick=()=>retryJob(j.id,row);}
-    const field=name=>row.querySelector(`[data-field="${name}"]`),busy=!TERMINAL.has(j.status),models=j.models||[],total=j.model_total||models.length,pct=Number.isFinite(j.progress)?Math.max(0,Math.min(100,j.progress)):null;
+    const field=name=>row.querySelector(`[data-field="${name}"]`),busy=!TERMINAL.has(j.status),models=j.models||[],total=j.model_total||models.length,pct=jobProgress(j).percent;
     updateText(field('title'),j.tool?'Prostate SBRT crop':models.length===1&&models[0]===reportTask()?'AI draft report':models.includes(reportTask())?'Segmentation and AI draft report':`${counted(models.length,'model')} · segmentation job`);
     field('title').href=field('open').href='#jobs/'+encodeURIComponent(j.id);
     const elapsed=(busy?Date.now()/1000:(j.finished||j.completed||j.updated||j.created))-j.created;
     updateText(field('meta'),`${new Date(j.created*1000).toLocaleString()} · ${busy?'Elapsed':'Duration'} ${duration(elapsed)} · ${j.id}`);
     updateText(field('status'),humanize(j.status));field('status').className='pill '+(TERMINAL.has(j.status)||['processing','transferring','retrieving','queued'].includes(j.status)?j.status:'');
+    const stage=jobProgress(j),hasStage=stage.activeStage;updateText(field('stage'),hasStage?[stage.text,stage.stageTime,stage.warning||stage.last].filter(Boolean).join(' · '):'');field('stage').classList.toggle('stall-warning',Boolean(stage.warning));field('detail').hidden=hasStage;
     updateText(field('models'),models.map(name=>meta(state.catalog.find(t=>t.name===name)||{name}).title).join(' · '));updateText(field('detail'),j.detail||'');
     field('progressWrap').hidden=!busy&&pct===null;if(pct===null)field('progress').removeAttribute('value');else field('progress').value=pct;
     const progress=[];if(j.model_index&&total)progress.push(`Model ${j.model_index} of ${total}`);else if(busy&&total)progress.push(`${counted(total,'model')} queued`);
     if(j.total_bytes&&(j.status==='transferring'||j.status==='retrieving'))progress.push(`${formatBytes(j.transferred_bytes||0)} / ${formatBytes(j.total_bytes)}`);
-    if(pct!==null)progress.push(`${pct}%`);updateText(field('progressText'),progress.join(' · '));
+    if(pct!==null)progress.push(`${Math.round(pct)}%`);updateText(field('progressText'),progress.join(' · '));
     field('report').hidden=!j.report_status;updateText(field('report'),reportStatusText(j,reportTask()));
     field('errors').hidden=!j.error;updateText(field('error'),j.error||'');
     field('download').hidden=j.status!=='complete';field('download').href=`/api/v1/jobs/${encodeURIComponent(j.id)}/result`;
@@ -604,9 +635,17 @@ if (typeof document !== 'undefined') {
       $('jobDetailTitle').textContent=job.tool?'Prostate SBRT crop':reportOnly?'AI draft report':models.includes(reportTask())?'Segmentation and AI draft report':'Segmentation results';
       $('jobDetailMeta').textContent=`${id} · ${new Date(job.created*1000).toLocaleString()} · ${models.map(name=>meta(state.catalog.find(t=>t.name===name)||{name}).title).join(' · ')}`;
       $('jobDetailStatus').textContent=humanize(job.status);$('jobDetailStatus').className='pill '+(TERMINAL.has(job.status)||['queued','processing','retrieving','transferring'].includes(job.status)?job.status:'');
-      $('jobDetailProgress').textContent=[job.detail,job.model_index?`Model ${job.model_index} of ${job.model_total||models.length}`:'',Number.isFinite(job.progress)?`${job.progress}%`:'',job.total_bytes?`${formatBytes(job.transferred_bytes||0)} / ${formatBytes(job.total_bytes)}`:''].filter(Boolean).join(' · ');
-      if(Number.isFinite(job.progress))$('jobDetailBar').value=Math.max(0,Math.min(100,job.progress));else $('jobDetailBar').removeAttribute('value');
+      const progress=jobProgress(job);
+      $('jobDetailProgress').textContent=[progress.text,progress.elapsed,progress.stageTime,progress.last,
+        job.total_bytes?`${formatBytes(job.transferred_bytes||0)} / ${formatBytes(job.total_bytes)}`:''].filter(Boolean).join(' · ');
+      if(progress.percent!==null)$('jobDetailBar').value=progress.percent;else $('jobDetailBar').removeAttribute('value');
       $('jobDetailBar').hidden=TERMINAL.has(job.status);
+      $('jobDetailStall').hidden=!progress.warning;$('jobDetailStall').textContent=progress.warning;
+      $('jobDetailModels').replaceChildren(...modelChecklist(job).map(item=>{
+        const li=document.createElement('li');li.textContent=item.text;li.dataset.status=item.status;return li;
+      }));
+      $('jobDetailLiveLog').hidden=!job.current_task;
+      if($('jobDetailLiveLog').open)refreshLiveLog(job,token);
       $('jobDetailReportStatus').textContent=reportStatusText(job,reportTask());
       $('jobDetailErrors').hidden=!job.error;$('jobDetailFailure').textContent=job.error||'';
       $('retryDetail').hidden=job.status!=='failed';$('deleteJob').disabled=deleting||!canDeleteJob(job);
@@ -617,6 +656,17 @@ if (typeof document !== 'undefined') {
       if(job.status!=='complete'&&detailLoaded){detailLoaded=false;jobViewer?.destroy();jobViewer=null;}
     }catch(error){if(token===detailToken&&serial===detailRequest){showError($('jobDetailError'),`Could not load this job: ${error.message}`);$('deleteJob').disabled=true;}}
   }
+  let logRequest=0;
+  async function refreshLiveLog(job,token){
+    const serial=++logRequest;
+    if(!job.current_task)return;
+    try{
+      const result=await request(`/api/v1/jobs/${encodeURIComponent(job.id)}/log?task=${encodeURIComponent(job.current_task)}&lines=40`);
+      if(token!==detailToken||serial!==logRequest)return;
+      $('jobDetailLog').textContent=result.lines.join('\n')||'Waiting for task log…';
+    }catch(error){if(token===detailToken&&serial===logRequest)$('jobDetailLog').textContent='Log unavailable: '+error.message;}
+  }
+  $('jobDetailLiveLog').ontoggle=()=>{const job=jobData.get(detailId);if($('jobDetailLiveLog').open&&job)refreshLiveLog(job,detailToken);};
   async function loadResults(job,token){
     detailLoading=true;detailReport=null;detailInfo=null;
     const base=`/api/v1/jobs/${encodeURIComponent(job.id)}`;
@@ -694,4 +744,4 @@ if (typeof document !== 'undefined') {
   }
   initialize();setInterval(pollJobs,4000);setInterval(refreshHealth,30000);
 }
-if(typeof module!=='undefined'&&module.exports)module.exports={presentation,executesRemotely,supports,pairedCT,blockedReason,cropSupported,validatePrompt,structureInfo,humanize,safeReference,primarySelection,canDeleteJob,reportMarkdown,reportMarkup,licenceBadges,counted,reportStatusText,isReportSection,GROUPS};
+if(typeof module!=='undefined'&&module.exports)module.exports={jobProgress,modelChecklist,presentation,executesRemotely,supports,pairedCT,blockedReason,cropSupported,validatePrompt,structureInfo,humanize,safeReference,primarySelection,canDeleteJob,reportMarkdown,reportMarkup,licenceBadges,counted,reportStatusText,isReportSection,GROUPS};

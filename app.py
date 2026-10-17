@@ -24,6 +24,8 @@ from PIL import Image
 import asyncio
 import fcntl
 from contextlib import contextmanager
+from functools import wraps
+from job_progress import TaskActivity, tail_log, stage_phrase, task_detail
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response, JSONResponse
 from starlette.concurrency import run_in_threadpool
@@ -68,6 +70,9 @@ ENABLED_MODELS_FILE = Path(os.environ.get("ENABLED_MODELS_FILE", str(BASE / "ena
 CATALOG_TTL_SECONDS = int(os.environ.get("CATALOG_TTL_SECONDS", "600"))
 PREFLIGHT_TIMEOUT_SECONDS = int(os.environ.get("PREFLIGHT_TIMEOUT_SECONDS", "900"))
 TASK_TIME_LIMIT_SECONDS = int(os.environ.get("TASK_TIME_LIMIT_SECONDS", str(12 * 3600)))
+RTSEG_STALL_SECONDS = max(1, int(os.environ.get("RTSEG_STALL_SECONDS", "1200")))
+RTSEG_STALL_RETRIES = max(0, int(os.environ.get("RTSEG_STALL_RETRIES", "1")))
+TASK_MONITOR_SECONDS = 5
 TASK_STOP_GRACE_SECONDS = int(os.environ.get("TASK_STOP_GRACE_SECONDS", "45"))
 BASE.mkdir(parents=True, exist_ok=True)
 
@@ -78,6 +83,25 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 queue_lock = threading.Lock()
 metadata_lock = threading.Lock()
+job_workers = {}
+job_workers_lock = threading.Lock()
+watchdog_stop = threading.Event()
+
+
+def tracked_job_worker(function):
+    """Register workers, including threads waiting for the existing queue lock."""
+    @wraps(function)
+    def tracked(job, *args, **kwargs):
+        with job_workers_lock:
+            job_workers[job.name] = threading.current_thread()
+        try:
+            return function(job, *args, **kwargs)
+        finally:
+            with job_workers_lock:
+                if job_workers.get(job.name) is threading.current_thread():
+                    job_workers.pop(job.name, None)
+    return tracked
+
 logger = logging.getLogger(__name__)
 viewer = ViewerService(globals())
 app.include_router(viewer.router)
@@ -848,9 +872,8 @@ def run_remote_gpu_task(job, task, index, total):
 
 def execute_job_task(job, task, index, total, remote=None):
     data = metadata(job)
-    report_job = REPORT_TASK in data["models"]
-    if (report_job and task != REPORT_TASK and task in data.get("completed_models", [])
-            and (job / "output" / f"{task}_RTSTRUCT.dcm").is_file()):
+    result = job / "output" / ("report/nv_reason_ct_report.json" if task == REPORT_TASK else f"{task}_RTSTRUCT.dcm")
+    if task in data.get("completed_models", []) and result.is_file():
         return
     if task == REPORT_TASK: save_metadata(job, report_status="running", report_reason="")
     if remote is not None:
@@ -859,55 +882,154 @@ def execute_job_task(job, task, index, total, remote=None):
         run_remote_gpu_task(job, task, index, total)
     else:
         run_local_task(job, task, index, total)
-    if report_job:
-        done = metadata(job).get("completed_models", [])
-        save_metadata(job, completed_models=list(dict.fromkeys([*done, task])))
+    done = metadata(job).get("completed_models", [])
+    save_metadata(job, completed_models=list(dict.fromkeys([*done, task])))
+
+
+def process_cpu_times(root):
+    """CPU ticks by (PID, start-time); child exit and PID reuse cannot hide activity."""
+    samples = {}
+    for pid, started in process_tree(root).items():
+        try:
+            fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+            if fields[19] == started:
+                # Include waited-for children, which may start and exit between polls.
+                samples[(pid, started)] = sum(int(fields[i]) for i in (11, 12, 13, 14))
+        except (OSError, ValueError, IndexError):
+            pass
+    return samples
+
+
+def reset_task_output(job, task, remote=None):
+    """Discard only this task's partial results and work; keep completed models."""
+    if not re.fullmatch(r"[A-Za-z0-9_]+", task): raise ValueError("Invalid task")
+    relative = [f"external/{task}", "output/report" if task == REPORT_TASK else f"output/{task}"]
+    relative.extend(p.relative_to(job).as_posix() for p in (job / "output").glob(f"{task}_RTSTRUCT.dcm*"))
+    for name in relative:
+        path = job / name
+        if path.is_dir(): shutil.rmtree(path)
+        else: path.unlink(missing_ok=True)
+    if remote is not None:
+        # Shell expansion is restricted to a validated task identifier.
+        prefix = shlex.quote(f"{remote}/output/{task}_RTSTRUCT.dcm") + "*"
+        paths = [f"{remote}/external/{task}", f"{remote}/output/{'report' if task == REPORT_TASK else task}"]
+        command = "rm -rf -- " + " ".join(shlex.quote(path) for path in paths) + " " + prefix
+        subprocess.run(["ssh", WORKER, command], check=True, timeout=30)
+
+
+def run_monitored_task(job, task, index, total, command, *, environment=None, remote=None):
+    log = job / f"{task}.log"
+    data = metadata(job)
+    retries = sum(event.get('task') == task and event.get('action') == 'retry'
+                  for event in data.get('stall_events', []))
+    while True:
+        now = time.time()
+        activity = TaskActivity(now)
+        started = time.monotonic()
+        timings = metadata(job).get('task_timings', {})
+        prior = timings.get(task, {})
+        timings[task] = {**prior, 'started': prior.get('started', now), 'attempt_started': now,
+                         'attempts': prior.get('attempts', 0) + 1, 'status': 'running'}
+        save_metadata(job, status='processing', current_task=task, task_started=now, task_remote=remote is not None,
+                      model_index=index, model_total=total, progress=None,
+                      task_timings=timings, stage=activity.stage['stage'], stage_key='staging',
+                      stage_started=now, stage_done=None, stage_total=None,
+                      last_activity=now, last_cpu_activity=now, stall_warning=False,
+                      stall_threshold=RTSEG_STALL_SECONDS,
+                      detail=f"{task} ({index}/{total}): preparing model input")
+        warned = False
+        stalled = False
+        # Append on a stall retry so the failed attempt remains inspectable.
+        with log.open('a' if retries else 'w') as output:
+            if retries:
+                output.write(f"\nAutomatic stall retry {retries} for {task}\n")
+                output.flush()
+            activity.position = log.stat().st_size
+            attempt_log_start = activity.position
+            process = subprocess.Popen(command, env=environment, stdout=output,
+                                       stderr=subprocess.STDOUT, text=True)
+            pid = getattr(process, 'pid', None)
+            stat = proc_stat(pid) if pid else None
+            save_metadata(job, task_pid=pid, task_pid_started=stat[2] if stat else None)
+            stopped = False
+            try:
+                while process.poll() is None:
+                    now = time.time()
+                    fields = activity.sample(log, now, None if remote else process_cpu_times(process.pid))
+                    idle = activity.stalled(now, RTSEG_STALL_SECONDS, remote=remote is not None)
+                    save_metadata(job, **fields, stall_warning=idle,
+                                  detail=task_detail(task, index, total, fields))
+                    if time.monotonic() - started > TASK_TIME_LIMIT_SECONDS:
+                        if remote: stop_remote_task(remote, task)
+                        stop_process_tree(process)
+                        stopped = True
+                        finish_task_timing(job, task, 'failed')
+                        raise subprocess.TimeoutExpired(command, TASK_TIME_LIMIT_SECONDS)
+                    if idle and warned:
+                        stalled = True
+                        if remote: stop_remote_task(remote, task)
+                        stop_process_tree(process)
+                        stopped = True
+                        break
+                    warned = idle  # Publish a warning for one monitor interval before stopping.
+                    time.sleep(TASK_MONITOR_SECONDS)
+                fields = activity.sample(log, time.time(), None if remote or not pid else process_cpu_times(pid))
+                save_metadata(job, **fields, detail=task_detail(task, index, total, fields))
+            finally:
+                # Never leave a running inference child if monitoring itself fails.
+                if not stopped and process.poll() is None:
+                    if remote: stop_remote_task(remote, task)
+                    stop_process_tree(process)
+                save_metadata(job, task_pid=None, task_pid_started=None)
+        if stalled:
+            data = metadata(job)
+            retry = retries < RTSEG_STALL_RETRIES
+            event = {'task': task, 'stage': activity.stage['stage'], 'time': time.time(),
+                     'action': 'retry' if retry else 'failed'}
+            save_metadata(job, stall_events=[*data.get('stall_events', []), event])
+            if retry:
+                reset_task_output(job, task, remote)
+                retries += 1
+                continue
+            duration = f"{RTSEG_STALL_SECONDS / 60:g} min"
+            suffix = '; retried once' if retries == 1 else (f'; retried {retries} times' if retries else '')
+            message = f"{task} stalled during {stage_phrase(activity.stage['stage'])} for {duration}{suffix}"
+            finish_task_timing(job, task, 'failed')
+            raise RuntimeError(message)
+        if process.returncode:
+            finish_task_timing(job, task, 'failed')
+            with log.open('rb') as source:
+                source.seek(max(attempt_log_start, source.seek(0, 2) - 24000))
+                error = source.read(24000).decode('utf-8', errors='replace')[-6000:]
+            raise RuntimeError(error or f"{task} exited with status {process.returncode}")
+        finish_task_timing(job, task, 'done')
+        save_metadata(job, stall_warning=False)
+        return
+
+
+def finish_task_timing(job, task, status):
+    timings = metadata(job).get('task_timings', {})
+    timing = timings.get(task, {})
+    now = time.time()
+    timings[task] = {**timing, 'finished': now, 'duration': max(0, now - timing.get('started', now)),
+                     'status': status}
+    save_metadata(job, task_timings=timings)
 
 
 def run_worker_task(job: Path, remote: str, task: str, index: int, total: int):
-    """Run inference while keeping the portal heartbeat visibly current."""
-    detail = f"Running {task} ({index}/{total})"
-    log = job / f"{task}.log"
-    started = time.monotonic()
-    with log.open("w") as output:
-        process = subprocess.Popen(remote_command(*remote_environment(), REMOTE_PYTHON, REMOTE_RUNNER, remote, task),
-                                   stdout=output, stderr=subprocess.STDOUT, text=True)
-        while process.poll() is None:
-            if time.monotonic() - started > TASK_TIME_LIMIT_SECONDS:
-                stop_remote_task(remote, task)
-                stop_process_tree(process)
-                raise subprocess.TimeoutExpired(process.args, TASK_TIME_LIMIT_SECONDS)
-            save_metadata(job, status="processing", detail=detail, progress=None,
-                          model_index=index, model_total=total)
-            time.sleep(5)
-    if process.returncode:
-        error = log.read_text(errors="replace")[-6000:]
-        raise RuntimeError(error or f"{task} exited with status {process.returncode}")
+    command = remote_command(*remote_environment(), REMOTE_PYTHON, REMOTE_RUNNER, remote, task)
+    run_monitored_task(job, task, index, total, command, remote=remote)
+
 
 def run_local_task(job: Path, task: str, index: int, total: int):
-    detail = f"Running {task} locally ({index}/{total})"
-    log = job / f"{task}.log"
-    started = time.monotonic()
-    with log.open("w") as output:
-        environment = os.environ.copy()
-        worker_local = WORKER_MODE == "auto"
-        runner = REMOTE_RUNNER if worker_local else LOCAL_RUNNER
-        python = REMOTE_PYTHON if worker_local else LOCAL_PYTHON
-        environment.setdefault("RTSEG_APP_ROOT", REMOTE_APP_ROOT if worker_local else str(Path(runner).parent))
-        environment.setdefault("RTSEG_MODEL_ROOT", REMOTE_MODEL_ROOT if worker_local else "/models")
-        environment.setdefault("RTSEG_RUNTIME_ROOT", REMOTE_RUNTIME_ROOT if worker_local else environment["RTSEG_MODEL_ROOT"])
-        process = subprocess.Popen([python, runner, str(job), task], env=environment,
-                                   stdout=output, stderr=subprocess.STDOUT, text=True)
-        while process.poll() is None:
-            if time.monotonic() - started > TASK_TIME_LIMIT_SECONDS:
-                stop_process_tree(process)
-                raise subprocess.TimeoutExpired(process.args, TASK_TIME_LIMIT_SECONDS)
-            save_metadata(job,status="processing",detail=detail,progress=None,
-                          model_index=index,model_total=total)
-            time.sleep(5)
-    if process.returncode:
-        raise RuntimeError(log.read_text(errors="replace")[-6000:] or
-                           f"{task} exited with status {process.returncode}")
+    environment = os.environ.copy()
+    worker_local = WORKER_MODE == "auto"
+    runner = REMOTE_RUNNER if worker_local else LOCAL_RUNNER
+    python = REMOTE_PYTHON if worker_local else LOCAL_PYTHON
+    environment.setdefault("RTSEG_APP_ROOT", REMOTE_APP_ROOT if worker_local else str(Path(runner).parent))
+    environment.setdefault("RTSEG_MODEL_ROOT", REMOTE_MODEL_ROOT if worker_local else "/models")
+    environment.setdefault("RTSEG_RUNTIME_ROOT", REMOTE_RUNTIME_ROOT if worker_local else environment["RTSEG_MODEL_ROOT"])
+    run_monitored_task(job, task, index, total, [python, runner, str(job), task], environment=environment)
 
 def is_gpu_oom(exc: Exception) -> bool:
     """Recognize GPU allocation failures without hiding unrelated model errors."""
@@ -1145,6 +1267,9 @@ def finalize_results(job: Path, empty=()):
     if not results and not empty and report is None:
         raise RuntimeError("Worker completed without producing an RTSTRUCT file")
     omissions = conversion_notes(job)
+    save_metadata(job, status="retrieving", detail="Preparing results for download", progress=None,
+                  stage="Exporting results", stage_key="export", stage_started=time.time(),
+                  stage_done=None, stage_total=None, stall_warning=False)
     with zipfile.ZipFile(job/"rtstruct-results.zip","w",zipfile.ZIP_DEFLATED) as z:
         nested = sorted(path for path in (job / "output").rglob("*")
                         if path.is_file() and path.parent != job / "output")
@@ -1200,6 +1325,7 @@ def postprocess_prostate_crop(job: Path):
     except NoSelectedROIError as exc:
         note_prostate_not_cropped(job, str(exc))
 
+@tracked_job_worker
 def process_prostate_sbrt_crop(job: Path):
     """CPU-only tool; deliberately independent of the segmentation queue lock."""
     incoming = job / "rtstruct-results.zip.incoming"
@@ -1275,6 +1401,7 @@ def validate_series(input_dir: Path) -> tuple[int, str]:
     if len(modalities) != 1: raise ValueError("Upload exactly one modality (CT, MR, or PET).")
     return valid, next(iter(modalities))
 
+@tracked_job_worker
 def process(job: Path):
     with queue_lock:
         jid=job.name; remote=f"{REMOTE_BASE}/{jid}"
@@ -2052,6 +2179,24 @@ def get_job(jid: str):
     if not re.fullmatch(r"[A-Za-z0-9-]+",jid): raise HTTPException(404)
     return metadata(BASE/jid)
 
+@app.get("/api/v1/jobs/{jid}/log", tags=["automation"])
+def get_job_log(jid: str, task: str | None = None, lines: int = 40):
+    if not re.fullmatch(r"[A-Za-z0-9-]+", jid): raise HTTPException(404)
+    job = BASE / jid
+    data = metadata(job)
+    task = task or data.get('current_task')
+    if (not isinstance(task, str) or not re.fullmatch(r"[A-Za-z0-9_]+", task)
+            or task not in data.get('models', [])):
+        raise HTTPException(404, "Unknown job task")
+    path = job / f"{task}.log"
+    if path.is_symlink(): raise HTTPException(404, "Task log unavailable")
+    try:
+        content = tail_log(path, lines)
+    except FileNotFoundError:
+        content = []
+    return JSONResponse({'task': task, 'lines': content}, headers={'Cache-Control': 'no-store'})
+
+
 @app.get("/api/jobs")
 @app.get("/api/v1/jobs", tags=["automation"])
 def list_jobs():
@@ -2212,10 +2357,10 @@ def cleanup_loop():
         cleanup_once()
         time.sleep(3600)
 
-def recover_interrupted_jobs():
+def recover_interrupted_jobs(candidates=None, *, orphaned=False):
     """Requeue interrupted jobs when their retained input permits a safe rerun."""
     interrupted = []
-    for job in BASE.iterdir():
+    for job in (BASE.iterdir() if candidates is None else candidates):
         if not job.is_dir() or job.name.startswith("upload-"):
             continue
         try:
@@ -2260,22 +2405,66 @@ def recover_interrupted_jobs():
         data = metadata(job); recovery_count = int(data.get("recovery_count",0)) + 1
         has_input = (job/"input").is_dir() and any((job/"input").iterdir())
         if has_input and recovery_count <= 3:
-            reset_job_output(job, data)
-            save_metadata(job,status="queued",detail=f"Restarting after service interruption ({recovery_count}/3)",
+            completed = data.get("completed_models", [])
+            if not completed or (REPORT_TASK in data.get("models", []) and REPORT_TASK not in completed):
+                reset_job_output(job, data)
+            elif data.get("current_task") in data.get("models", []) and data["current_task"] not in completed:
+                reset_task_output(job, data["current_task"])
+            reason = "worker stopped unexpectedly" if orphaned else "service interruption"
+            save_metadata(job,status="queued",detail=f"Restarting after {reason} ({recovery_count}/3)",
                           error=None,progress=0,model_index=0,recovery_count=recovery_count,
                           interrupted_status=previous_status)
             retry.append(job)
         else:
             reason = "retained input is unavailable" if not has_input else "automatic recovery limit was reached"
-            save_metadata(job,status="failed",detail="Processing was interrupted by a portal service restart",
+            detail = "Job worker stopped unexpectedly" if orphaned else "Processing was interrupted by a portal service restart"
+            save_metadata(job,status="failed",detail=detail,
                           error=f"Could not restart automatically because {reason}.",
                           recovery_count=recovery_count,interrupted_status=previous_status)
     for job in retry:
         target = process_prostate_sbrt_crop if metadata(job).get("tool") else process
         threading.Thread(target=target,args=(job,),daemon=True).start()
 
+def watchdog_once(now=None):
+    """Recover stale active jobs whose worker thread and task process are gone."""
+    now = time.time() if now is None else now
+    for job in BASE.iterdir():
+        if not job.is_dir() or job.name.startswith('upload-'): continue
+        try:
+            data = metadata(job)
+            if data.get('status') not in {'queued', 'transferring', 'processing', 'retrieving'}: continue
+            if now - data.get('updated', data.get('created', now)) < RTSEG_STALL_SECONDS: continue
+            with job_workers_lock:
+                worker = job_workers.get(job.name)
+                if worker and worker.is_alive(): continue
+            pid = data.get('task_pid')
+            stat = proc_stat(pid) if pid else None
+            if stat and stat[0] != 'Z' and stat[2] == data.get('task_pid_started'): continue
+            events = data.get('stall_events', [])
+            save_metadata(job, stall_events=[*events, {'task': data.get('current_task'),
+                          'stage': data.get('stage'), 'time': now, 'action': 'orphan_recovery'}])
+            recover_interrupted_jobs([job], orphaned=True)
+        except Exception:
+            logger.exception('Orphaned-job watchdog could not recover %s', job.name)
+
+
+def watchdog_loop():
+    while not watchdog_stop.wait(min(30, RTSEG_STALL_SECONDS)):
+        try:
+            watchdog_once()
+        except OSError:
+            logger.exception("Orphaned-job watchdog could not scan jobs")
+
+
 @app.on_event("startup")
 def startup():
     refresh_catalog_in_background()  # Warm the catalog; log and expose any initial failure.
     recover_interrupted_jobs()
     threading.Thread(target=cleanup_loop,daemon=True).start()
+    watchdog_stop.clear()
+    threading.Thread(target=watchdog_loop,daemon=True).start()
+
+
+@app.on_event("shutdown")
+def stop_watchdog():
+    watchdog_stop.set()
