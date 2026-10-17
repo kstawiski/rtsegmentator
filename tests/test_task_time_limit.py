@@ -50,5 +50,7 @@ def test_local_timeout_calls_tree_stop(portal, tmp_path, monkeypatch):
     monkeypatch.setattr(portal, "LOCAL_RUNNER", str(runner))
     monkeypatch.setattr(portal, "TASK_TIME_LIMIT_SECONDS", -1)
     monkeypatch.setattr(portal, "TASK_STOP_GRACE_SECONDS", .05)
+    # The monitored runner records progress in the job's metadata, so the job needs one.
+    (tmp_path / "job.json").write_text('{"id": "synthetic-job", "status": "processing", "models": ["synthetic"]}')
     with pytest.raises(subprocess.TimeoutExpired):
         portal.run_local_task(tmp_path, "synthetic", 1, 1)
