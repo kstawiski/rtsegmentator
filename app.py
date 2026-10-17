@@ -2643,7 +2643,7 @@ def get_job_log(jid: str, task: str | None = None, lines: int = 40):
 def list_jobs(batch_id: str | None = None):
     found=[]
     for path in BASE.iterdir():
-        if not path.is_dir() or path.name.startswith("upload-"): continue
+        if not path.is_dir() or path.name.startswith(("upload-", ".")): continue
         try:
             data=metadata(path)
             if batch_id is not None and data.get("batch_id") != batch_id:
@@ -2782,16 +2782,22 @@ def retry_remote_cleanup(additions=()):
     else: queue.unlink(missing_ok=True)
 
 
+# Statuses that dispatch, recovery and the watchdog act on. Retention removes only other (finished) jobs, so it
+# never races those paths; a stuck active job is first recovered or failed by the watchdog.
+ACTIVE_JOB_STATUSES = {'staging', 'queued', 'transferring', 'processing', 'retrieving'}
+EXPIRED_DIR = '.expired'
+
+
 def cleanup_once():
     cutoff=time.time()-RETENTION_HOURS*3600
     expired_remote = []
+    expired = BASE / EXPIRED_DIR
+    if expired.is_dir():  # leftovers from an interrupted earlier pass
+        for leftover in expired.iterdir(): shutil.rmtree(leftover, ignore_errors=True)
     for job in BASE.iterdir():
         fd = None
         try:
-            if not job.is_dir() or job.is_symlink(): continue
-            # A job whose task stop is not yet confirmed keeps its record (and process identity) until the
-            # watchdog reconciles it; deleting it would leave the dispatcher barrier unreachable.
-            if job in recovery_barriers: continue
+            if not job.is_dir() or job.is_symlink() or job.name.startswith("."): continue
             is_session = job.name.startswith("session-")
             if is_session:
                 fd = os.open(job, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -2802,6 +2808,17 @@ def cleanup_once():
             try: created = float(data["created"])
             except Exception: created = job.stat().st_mtime
             if created < cutoff:
+                if not is_session and not job.name.startswith("upload-"):
+                    # Decide and detach under the locks used by recovery, dispatch and retry; delete outside them.
+                    with submission_lock, queue_guard:
+                        if job in recovery_barriers: continue
+                        try: data = json.loads(meta.read_text())
+                        except Exception: data = {}
+                        if data.get("status") in ACTIVE_JOB_STATUSES: continue
+                        expired.mkdir(exist_ok=True)
+                        target = expired / job.name
+                        job.rename(target)
+                    job = target
                 if data.get("remote_cleanup_pending") or data.get("remote_results_retained"):
                     expired_remote.append(f"{REMOTE_BASE}/{job.name}")
                 shutil.rmtree(job)
@@ -2824,7 +2841,7 @@ def recover_interrupted_jobs(candidates=None, *, orphaned=False):
     with submission_lock, queue_guard:
         interrupted = []
         for job in (BASE.iterdir() if candidates is None else candidates):
-            if not job.is_dir() or job.name.startswith("upload-"):
+            if not job.is_dir() or job.name.startswith(("upload-", ".")):
                 continue
             try:
                 data = metadata(job)
@@ -2948,7 +2965,7 @@ def watchdog_once(now=None):
     with submission_lock, queue_guard:
         orphaned = []
         for job in BASE.iterdir():
-            if not job.is_dir() or job.name.startswith('upload-'): continue
+            if not job.is_dir() or job.name.startswith(('upload-', '.')): continue
             try:
                 data = metadata(job)
                 if data.get('status') not in {'staging', 'queued', 'transferring', 'processing', 'retrieving'}: continue

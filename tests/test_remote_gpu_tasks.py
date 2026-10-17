@@ -290,7 +290,8 @@ def test_cleanup_uses_the_longer_post_retrieval_timeout(portal, monkeypatch):
 
 def test_retention_removes_pending_worker_copies_and_requeues_failures(portal, monkeypatch):
     job = job_at(portal, [TASK])
-    portal.save_metadata(job, created=0, remote_cleanup_pending=True)
+    # Retention removes only finished jobs; active ones are left to recovery and the watchdog.
+    portal.save_metadata(job, created=0, status='complete', remote_cleanup_pending=True)
     attempts = []
     def run(command, **kw):
         attempts.append(command)

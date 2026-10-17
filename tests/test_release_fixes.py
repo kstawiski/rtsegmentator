@@ -457,3 +457,26 @@ def test_retention_keeps_a_job_whose_stop_is_unconfirmed(portal, monkeypatch):
     monkeypatch.setattr(portal, 'stop_recorded_task_tree', lambda data: None)
     portal.recover_interrupted_jobs()
     assert not portal.recovery_barriers and len(starts) == 1
+
+
+def test_retention_removes_only_finished_jobs_and_waits_for_recovery_locks(portal, monkeypatch):
+    # Review round 3: retention must not race recovery. Active jobs are left to the watchdog and recovery;
+    # finished ones are detached under the same locks and deleted outside them.
+    import threading
+    monkeypatch.setattr(portal, 'RETENTION_HOURS', 1)
+    active = make_job(portal, 'expired-active', 1, 'processing')
+    finished = make_job(portal, 'expired-finished', 1, 'failed')
+    racing = make_job(portal, 'expired-racing', 1, 'failed')
+    leftover = portal.BASE / portal.EXPIRED_DIR / 'old-leftover'
+    leftover.mkdir(parents=True)
+    # Recovery holds its locks and turns a failed job into a queued one (as a retry would) while retention runs.
+    portal.submission_lock.acquire()
+    cleaner = threading.Thread(target=portal.cleanup_once)
+    cleaner.start()
+    time.sleep(0.3)
+    assert racing.is_dir()  # retention is waiting for the locks
+    portal.save_metadata(racing, status='queued')
+    portal.submission_lock.release()
+    cleaner.join(10)
+    assert active.is_dir() and racing.is_dir() and not finished.exists() and not leftover.exists()
+    assert {j['id'] for j in portal.list_jobs()['jobs']} >= {'expired-active', 'expired-racing'}
