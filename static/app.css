@@ -410,3 +410,6 @@ h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus{outline:none}
 .live-log{margin:.8rem 0}
 .live-log summary{cursor:pointer;font-size:.875rem;font-weight:600}
 .live-log pre{max-height:22rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--paper,#f5f7f7);padding:.8rem;font-size:.75rem}
+/* Slice and contour loading never covers the displayed image. */
+.viewer-loading{position:absolute;right:.65rem;bottom:.65rem;max-width:calc(100% - 1.3rem);padding:.3rem .55rem;border-radius:.3rem;background:rgba(0,0,0,.78);color:#fff;font-size:.8rem;pointer-events:none;z-index:2}
+.viewer-loading[hidden]{display:none}

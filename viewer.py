@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import wraps
 import hashlib
@@ -15,7 +16,7 @@ import subprocess
 import threading
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 import numpy as np
 from PIL import Image
@@ -31,6 +32,7 @@ CT_WINDOWS = [
 ]
 PALETTE = ("#e6194b", "#3cb44b", "#ffe119", "#4363d8", "#f58231", "#42d4f4", "#f032e6")
 PRIVATE_HEADERS = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
+OVERLAY_WORKERS = ThreadPoolExecutor(max_workers=2, thread_name_prefix="viewer-index")
 
 
 class Cache:
@@ -55,6 +57,50 @@ class Cache:
             for key in list(self.items):
                 if Path(key[0]).is_relative_to(root):
                     del self.items[key]
+
+
+class BackgroundCache(Cache):
+    """Single-flight builds; readers never wait on the build lock or a future.
+
+    Pending entries are not evicted (which would start duplicate builds). The
+    capacity also bounds queued work; callers retry if all slots are building.
+    """
+
+    def get(self, key, build):
+        with self.lock:
+            if key in self.items:
+                self.items.move_to_end(key)
+                return self.items[key]
+            if len(self.items) >= self.capacity:
+                completed = next((k for k, f in self.items.items() if f.done()), None)
+                if completed is None:
+                    return None
+                del self.items[completed]
+            future = Future()
+            self.items[key] = future
+
+            def run():
+                try:
+                    if future.cancelled():
+                        return
+                    result, error = build(future.cancelled), None
+                except Exception as exc:
+                    result, error = None, exc
+                with self.lock:
+                    if not future.cancelled():
+                        if error is None:
+                            future.set_result(result)
+                        else:
+                            future.set_exception(error)
+
+            OVERLAY_WORKERS.submit(run)
+            return future
+
+    def discard(self, root):
+        with self.lock:
+            for key in list(self.items):
+                if Path(key[0]).is_relative_to(root):
+                    self.items.pop(key).cancel()
 
 
 def contained(root: Path, path: Path) -> Path:
@@ -187,18 +233,68 @@ def index_series(paths):
         raise HTTPException(422, str(exc)) from exc
 
 
-def decoded_pixels(path):
+def source_pixels(path):
     try:
         ds = pydicom.dcmread(path)
-        pixels = ds.pixel_array.astype(np.float64)
-        pixels = pixels * float(getattr(ds, "RescaleSlope", 1)) + float(getattr(ds, "RescaleIntercept", 0))
-        if pixels.ndim != 2 or not np.isfinite(pixels).all():
+        pixels = ds.pixel_array
+        slope, intercept = float(getattr(ds, "RescaleSlope", 1)), float(getattr(ds, "RescaleIntercept", 0))
+        if pixels.ndim != 2 or not np.isfinite(pixels).all() or not all(map(math.isfinite, (slope, intercept))):
             raise ValueError()
-        return pixels, str(ds.PhotometricInterpretation)
+        return pixels, str(ds.PhotometricInterpretation), slope, intercept
     except FileNotFoundError as exc:
         raise HTTPException(404, "Series not found or expired") from exc
     except Exception as exc:
         raise HTTPException(422, "DICOM pixel decoding failed; check the transfer syntax and installed pixel decoder") from exc
+
+
+def decoded_pixels(path):
+    pixels, photometric, slope, intercept = source_pixels(path)
+    pixels = pixels.astype(np.float64) * slope + intercept
+    if not np.isfinite(pixels).all():
+        raise HTTPException(422, "Invalid rescaled DICOM pixels")
+    return pixels, photometric
+
+
+def window_pixels(source, center, width, slope=1, intercept=0):
+    # Most CT/MR frames contain many repeated 8/16-bit intensities. Window each
+    # possible value once, then index the table instead of allocating several
+    # float arrays over the complete frame. Include only the actual input range.
+    if source.dtype.kind in "iu" and source.dtype.itemsize <= 2 and source.size >= 65536:
+        low, high = int(source.min()), int(source.max())
+        domain = np.arange(low, high + 1, dtype=np.int32)
+        table = window_values(domain, center, width, slope, intercept)
+        return table[np.subtract(source, low, dtype=np.int32)]
+    return window_values(source, center, width, slope, intercept)
+
+
+def window_values(source, center, width, slope=1, intercept=0):
+    """Float32 bulk windowing, with float64 correction at quantization edges.
+
+    Straight float32 changes some integer output boundaries by one grey level.
+    Re-evaluate only values close enough to a boundary for roundoff to matter,
+    preserving the previous float64/truncation result (including rescaling).
+    """
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        scaled = source.astype(np.float32) * np.float32(slope)
+        pixels = scaled + np.float32(intercept)
+        bound = 16 * np.finfo(np.float32).eps * (
+            np.abs(scaled) + abs(intercept) + abs(center) + width + 1)
+        if width == 1:
+            result = np.where(pixels > center - .5, 255, 0).astype(np.uint8)
+            uncertain = (np.abs(pixels - (center - .5)) <= bound) | ~np.isfinite(pixels)
+        else:
+            values = ((pixels - np.float32(center - .5)) / np.float32(width - 1) + np.float32(.5)) * np.float32(255)
+            bound *= 255 / (width - 1)
+            uncertain = ((values >= -bound) & (values <= 255 + bound)
+                         & (np.abs(values - np.rint(values)) <= bound)) | ~np.isfinite(values)
+            result = np.clip(values, 0, 255).astype(np.uint8)
+        if np.any(uncertain):
+            exact = source[uncertain].astype(np.float64) * slope + intercept
+            if not np.isfinite(exact).all():
+                raise HTTPException(422, "Invalid rescaled DICOM pixels")
+            result[uncertain] = (np.where(exact > center - .5, 255, 0) if width == 1 else
+                                np.clip(((exact - (center - .5)) / (width - 1) + .5) * 255, 0, 255)).astype(np.uint8)
+    return result
 
 
 def render_slice(series, index, window=None, center=None, width=None):
@@ -213,19 +309,33 @@ def render_slice(series, index, window=None, center=None, width=None):
         center, width = preset["center"], preset["width"]
     if not math.isfinite(center) or not math.isfinite(width) or width < 1:
         raise HTTPException(422, "Window center must be finite and width must be finite and at least 1")
-    pixels, photometric = decoded_pixels(series.slices[index].path)
-    # DICOM LINEAR window: pixel centres, including the width=1 threshold case.
-    if width == 1:
-        rendered = np.where(pixels > center - 0.5, 255, 0).astype(np.uint8)
-    else:
-        rendered = np.clip(((pixels - (center - 0.5)) / (width - 1) + 0.5) * 255, 0, 255).astype(np.uint8)
+    pixels, photometric, slope, intercept = source_pixels(series.slices[index].path)
+    rendered = window_pixels(pixels, center, width, slope, intercept)
     if photometric == "MONOCHROME1":
         rendered = 255 - rendered
     payload = io.BytesIO()
-    Image.fromarray(rendered).save(payload, format="PNG")
+    Image.fromarray(rendered).save(payload, format="PNG", compress_level=1)
     return Response(payload.getvalue(), media_type="image/png", headers={**PRIVATE_HEADERS,
                     "X-Slice-Index": str(index), "X-Slice-Count": str(len(series.slices)),
                     "X-Columns": str(series.info["columns"]), "X-Rows": str(series.info["rows"])})
+
+
+def contour_points(contour):
+    # get_item leaves this DS element raw, avoiding one Python DSfloat per value.
+    # Sequence decoding remains pydicom's; no process-global config is changed.
+    element = contour.get_item(0x30060050)
+    if element is None:
+        raise ValueError("Missing ContourData")
+    if isinstance(element, pydicom.dataelem.RawDataElement) and isinstance(element.value, bytes):
+        raw = element.value
+        # NumPy must consume every DS value; it otherwise accepts a valid prefix
+        # of malformed input. The grammar check is done in C by the regex engine.
+        if not re.fullmatch(rb"\s*[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?\s*(?:\\\s*[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?\s*)*", raw):
+            raise ValueError("Invalid ContourData decimal string")
+        points = np.fromstring(raw.replace(b"\\", b" "), dtype=np.float64, sep=" ")
+    else:
+        points = np.asarray(element.value, dtype=np.float64)
+    return points.reshape(-1, 3)
 
 
 def read_structure(path):
@@ -254,7 +364,7 @@ def read_structure(path):
             kind = str(getattr(contour, "ContourGeometricType", ""))
             if kind not in {"CLOSED_PLANAR", "CLOSEDPLANAR_XOR"}:
                 raise HTTPException(422, "Viewer supports only CLOSED_PLANAR or CLOSEDPLANAR_XOR contours")
-            points = np.asarray(contour.ContourData, dtype=float).reshape(-1, 3)
+            points = contour_points(contour)
             # rt-utils keeps single-pixel and line components as degenerate
             # closed contours. Preserve them in the independent pixel mapping.
             if not len(points) or not np.isfinite(points).all():
@@ -319,7 +429,7 @@ class ViewerService:
 
     def __init__(self, portal):
         self.portal = portal
-        self.series_cache, self.rt_cache, self.overlay_cache = Cache(16), Cache(128), Cache(16)
+        self.series_cache, self.rt_cache, self.overlay_cache = Cache(16), Cache(128), BackgroundCache(16)
         self.mutation_lock = threading.RLock()
         self.router = APIRouter(tags=["viewer"])
         self.add_routes()
@@ -375,9 +485,11 @@ class ViewerService:
         try:
             files = sorted(contained(root, path) for path in output.rglob("*") if path.is_file())
             versions = tuple(signature(path) for path in files)
-            def build():
+            def build(cancelled):
                 structures, slices = [], {}
                 for path, version in zip(files, versions):
+                    if cancelled():
+                        return [], {}
                     raw = self.rt_cache.get(version, lambda: read_structure(path))
                     if raw is None:
                         continue
@@ -391,6 +503,25 @@ class ViewerService:
             raise HTTPException(404, "Job output not found or expired") from exc
         except (AttributeError, TypeError, ValueError) as exc:
             raise HTTPException(422, "Invalid RTSTRUCT geometry or metadata") from exc
+
+    @staticmethod
+    def overlay_result(future):
+        if future is None or not future.done():
+            return None
+        try:
+            return future.result()
+        except HTTPException:
+            raise
+        except FileNotFoundError as exc:
+            raise HTTPException(404, "Job output not found or expired") from exc
+        except Exception as exc:
+            raise HTTPException(422, "Invalid RTSTRUCT geometry or metadata") from exc
+
+    @staticmethod
+    def building(response):
+        response.status_code = 202
+        response.headers.update({**PRIVATE_HEADERS, "Retry-After": "1"})
+        return {"contours_ready": False, "contours_state": "building"}
 
     def preview(self, uid, series_key, index=0):
         series = self.upload_series(uid, series_key)
@@ -415,7 +546,9 @@ class ViewerService:
                 shutil.rmtree(root)
             except FileNotFoundError as exc:
                 raise HTTPException(404, "Job not found or expired") from exc
-            for cache in (self.series_cache, self.rt_cache, self.overlay_cache):
+            # Cancel entries before clearing the raw caches. A finishing build
+            # cannot publish itself again after deletion.
+            for cache in (self.overlay_cache, self.rt_cache, self.series_cache):
                 cache.discard(root)
             return {"id": jid, "deleted": True}
 
@@ -423,10 +556,18 @@ class ViewerService:
         @self.router.get("/api/v1/jobs/{jid}/viewer")
         def job_viewer(jid: str, response: Response):
             root, data, key, series = self.job_series(jid)
-            structures, _ = self.overlays(root, key, series)
+            future = self.overlays(root, key, series)
+            state, error, result = "building", None, None
+            try:
+                result = self.overlay_result(future)
+                if result is not None:
+                    state = "ready"
+            except HTTPException as exc:
+                state, error = "failed", exc.detail
             response.headers.update(PRIVATE_HEADERS)
             report = contained(root, root / "output/report" / (self.portal["REPORT_TASK"] + ".json"))
-            return {"series": series.info, "structure_sets": structures,
+            return {"series": series.info, "structure_sets": result[0] if result is not None else [],
+                    "contours_ready": state == "ready", "contours_state": state, "contours_error": error,
                     "report": data.get("status") == "complete" and report.is_file()}
 
         @self.router.get("/api/v1/jobs/{jid}/viewer/slices/{index}.png")
@@ -437,9 +578,23 @@ class ViewerService:
         def job_contours(jid: str, index: int, response: Response):
             root, _, key, series = self.job_series(jid)
             series.check_index(index)
-            _, slices = self.overlays(root, key, series)
+            result = self.overlay_result(self.overlays(root, key, series))
+            if result is None:
+                return self.building(response)
+            _, slices = result
             response.headers.update(PRIVATE_HEADERS)
             return {"index": index, "rois": slices.get(index, [])}
+
+        @self.router.get("/api/v1/jobs/{jid}/viewer/contours")
+        def job_contour_range(jid: str, response: Response, start: int = Query(ge=0), count: int = Query(ge=1, le=32)):
+            root, _, key, series = self.job_series(jid)
+            series.check_index(start)
+            series.check_index(start + count - 1)
+            result = self.overlay_result(self.overlays(root, key, series))
+            if result is None:
+                return self.building(response)
+            response.headers.update(PRIVATE_HEADERS)
+            return {"start": start, "slices": {index: result[1].get(index, []) for index in range(start, start + count)}}
 
         @self.router.get("/api/v1/uploads/{uid}/series/{series_key}/viewer")
         def upload_viewer(uid: str, series_key: str, response: Response):

@@ -81,17 +81,49 @@ const DicomUI = (() => {
     if (!response.ok) throw Error(typeof data.detail === 'string' ? data.detail : `HTTP ${response.status}`);
     return data;
   }
+  class LRU {
+    constructor(budget, limit = 256) { this.budget = budget; this.limit = limit; this.bytes = 0; this.items = new Map(); }
+    has(key) { return this.items.has(key); }
+    get(key) {
+      const entry = this.items.get(key); if (!entry) return undefined;
+      this.items.delete(key); this.items.set(key, entry); return entry.value;
+    }
+    set(key, value, bytes) {
+      const previous = this.items.get(key); if (previous) { this.bytes -= previous.bytes; this.items.delete(key); }
+      if (bytes > this.budget) return;
+      this.items.set(key, {value, bytes}); this.bytes += bytes;
+      while (this.bytes > this.budget || this.items.size > this.limit) {
+        const oldest = this.items.keys().next().value;
+        this.bytes -= this.items.get(oldest).bytes; this.items.delete(oldest);
+      }
+    }
+    clear() { this.items.clear(); this.bytes = 0; }
+  }
+  function prefetchIndices(index, count, direction = 1) {
+    const result = [index];
+    for (let distance = 1; distance <= 16; distance++) {
+      for (const offset of distance <= 6 ? [distance * direction, -distance * direction] : [distance * direction]) {
+        const next = index + offset; if (next >= 0 && next < count) result.push(next);
+      }
+    }
+    return result;
+  }
   class Viewer {
-    constructor(host, {overlays = false} = {}) {
+    constructor(host, {overlays = false, onMetadata = null} = {}) {
       this.host = host; this.overlays = overlays; this.view = {zoom:1, x:0, y:0};
+      this.onMetadata = onMetadata;
       this.standard = true;
       this.visible = new Set(); this.image = null; this.paths = []; this.token = 0;
+      // Decoded RGBA estimate plus compressed transfer bytes; nothing is persisted.
+      this.images = new LRU(96 * 1024 * 1024); this.contours = new LRU(16 * 1024 * 1024);
+      this.active = new Map(); this.retryAt = new Map(); this.prefetched = new Set(); this.direction = 1; this.rois = [];
       host.innerHTML = `<div class="dicom-viewer">
         <div class="viewer-toolbar"><label>Window<select data-v="window" disabled></select></label>
         <label class="viewer-orientation-option"><input type="checkbox" data-v="standard" checked> Standard orientation</label>
         <div class="button-row"><button type="button" data-v="out" aria-label="Zoom out">−</button><button type="button" data-v="in" aria-label="Zoom in">+</button><button type="button" data-v="reset">Reset view</button></div></div>
         <div class="viewer-stage" data-v="stage" tabindex="0" role="group" aria-label="DICOM image. Arrow keys or wheel: slices. Shift and arrow keys or drag: pan. Plus or minus: zoom. Zero: reset. One: soft tissue, two: lung, three: bone, four: brain.">
           <canvas data-v="canvas" role="img" aria-label="DICOM slice"></canvas><span class="viewer-message" data-v="message" role="status">Choose a series to preview.</span>
+          <span class="viewer-loading" data-v="loading" role="status" hidden></span>
           <span class="orientation-marker" data-v="top" hidden></span><span class="orientation-marker" data-v="bottom" hidden></span>
           <span class="orientation-marker" data-v="left" hidden></span><span class="orientation-marker" data-v="right" hidden></span>
         </div>
@@ -160,9 +192,16 @@ const DicomUI = (() => {
       this.resize = new ResizeObserver(() => this.draw()); this.resize.observe(stage);
     }
     error(message) { this.el('error').textContent = message; this.el('error').hidden = !message; this.el('retry').hidden = !message; }
+    clearRequests() {
+      clearTimeout(this.timer); clearTimeout(this.retryTimer); this.controller?.abort();
+      for (const task of this.active.values()) task.controller.abort();
+      this.active.clear(); this.retryAt.clear(); this.prefetched.clear(); this.images.clear(); this.contours.clear(); this.settled = false;
+    }
     async load(base) {
-      this.controller?.abort(); clearTimeout(this.timer); const token = ++this.token;
+      this.clearRequests(); const token = ++this.token;
       this.controller = new AbortController(); this.base = base; this.info = null; this.image = null; this.paths = [];
+      this.displayed = null; this.shownContourKey = null; this.contourState = 'ready'; this.rois = []; this.visible.clear(); this.direction = 1; this.metadataRetry = 0;
+      this.el('loading').hidden = true;
       this.view = {zoom:1,x:0,y:0}; this.error(''); this.el('message').hidden = false; this.el('message').textContent = 'Loading series…';
       this.el('overlays').hidden = true; this.el('readout').textContent = ''; this.el('index').textContent = '—';
       ['slice','window','previous','next'].forEach(key => { this.el(key).disabled = true; }); this.draw();
@@ -172,44 +211,158 @@ const DicomUI = (() => {
         this.el('window').innerHTML = info.series.window_presets.map(p => `<option value="${escape(p.id)}">${escape(p.label)}</option>`).join('');
         this.el('window').value = this.window; this.el('window').disabled = false;
         this.el('slice').max = info.series.slices - 1; this.el('slice').disabled = false;
-        this.rois = info.structure_sets.flatMap(s => s.rois.map(r => ({...r, model:s.model})));
-        this.visible = visibility(this.rois.map(r => r.key)); this.renderROIs();
+        this.updateMetadata(info);
         this.setSlice(this.index);
         return info;
       } catch (e) { if (token === this.token && e.name !== 'AbortError') { this.el('message').textContent = 'Viewer unavailable'; this.error(e.message); } }
     }
     setSlice(index) {
       if (!this.info) return;
+      if (index !== this.index) this.direction = index > this.index ? 1 : -1;
       this.index = Math.max(0, Math.min(this.info.series.slices - 1, index));
-      this.el('slice').value = this.index; this.el('index').textContent = `${this.index + 1} / ${this.info.series.slices} (index ${this.index})`;
+      this.el('slice').value = this.index;
       this.el('previous').disabled = this.index === 0; this.el('next').disabled = this.index === this.info.series.slices - 1;
       this.schedule();
     }
     schedule() {
-      clearTimeout(this.timer); this.controller?.abort(); ++this.token;
-      // Never display old contours over a new slice or leave a stale image labelled as current.
-      this.image = null; this.paths = []; this.draw(); this.error('');
-      this.el('message').textContent = 'Loading slice…'; this.el('message').hidden = false;
-      this.timer = setTimeout(() => this.fetchSlice(), 35);
+      if (!this.info) return;
+      clearTimeout(this.timer); clearTimeout(this.retryTimer); this.settled = false; this.error('');
+      this.wanted = prefetchIndices(this.index, this.info.series.slices, this.direction);
+      const wanted = new Set(this.wanted);
+      for (const task of this.active.values()) {
+        if ((task.type === 'image' && task.window !== this.window) || task.indices?.some(i => !wanted.has(i))) task.controller.abort();
+      }
+      const keys = new Set(this.wanted.flatMap(i => [this.imageKey(i), this.contourKey(i)]));
+      for (const key of this.retryAt.keys()) if (!keys.has(key) || this.retryAt.get(key) === Infinity) this.retryAt.delete(key);
+      for (const key of this.prefetched) if (!keys.has(key)) this.prefetched.delete(key);
+      const cached = this.images.get(this.imageKey(this.index));
+      if (cached) this.showImage(cached, this.index, this.window);
+      this.updateStatus();
+      this.timer = setTimeout(() => { this.settled = true; this.fetchSlice(); }, 60);
     }
-    async fetchSlice() {
-      const token = this.token, index = this.index, controller = this.controller = new AbortController();
-      const base = this.base, window = this.window;
-      const imageTask = (async () => {
-        const response = await fetch(`${base}/slices/${index}.png?window=${encodeURIComponent(window)}`, {signal:controller.signal});
+    imageKey(index, window = this.window) { return JSON.stringify([this.base, window, index]); }
+    contourKey(index) { return JSON.stringify([this.base, index]); }
+    needsContours() { return this.overlays && this.info?.contours_state !== 'failed' && (this.info?.contours_ready === false || this.rois.length > 0); }
+    updateMetadata(info) {
+      const previous = new Set(this.rois.map(r => r.key)); this.info = info;
+      this.rois = info.structure_sets.flatMap(s => s.rois.map(r => ({...r, model:s.model})));
+      this.visible = new Set(this.rois.filter(r => !previous.has(r.key) || this.visible.has(r.key)).map(r => r.key));
+      this.renderROIs();
+      if (info.contours_state === 'failed') { this.contourState = 'failed'; this.error(`Contours: ${info.contours_error}`); }
+      this.onMetadata?.(info);
+    }
+    showImage(image, index, window) {
+      this.image = image; this.displayed = {index, window};
+      const key = this.contourKey(index), cached = this.contours.get(key);
+      this.paths = cached || (this.shownContourKey === key ? this.paths : []);
+      this.shownContourKey = (cached || this.shownContourKey === key) ? key : null;
+      this.contourState = this.info.contours_state === 'failed' ? 'failed' :
+        this.needsContours() && (this.shownContourKey !== key || this.info.contours_ready === false) ? 'loading' : 'ready';
+      this.updateStatus(); this.draw();
+    }
+    updateStatus() {
+      if (!this.info) return;
+      const pending = !this.displayed || this.displayed.index !== this.index || this.displayed.window !== this.window;
+      const failed = this.retryAt.get(this.imageKey(this.index)) === Infinity;
+      this.el('index').textContent = this.displayed ? `${this.displayed.index + 1} / ${this.info.series.slices} (index ${this.displayed.index})${pending ? ` · ${failed ? 'unavailable' : 'loading'} ${this.index + 1}…` : ''}` : `— / ${this.info.series.slices} · loading ${this.index + 1}…`;
+      this.el('message').hidden = !!this.image;
+      if (!this.image) this.el('message').textContent = failed ? 'Image unavailable' : 'Loading slice…';
+      const status = [this.image && pending ? `${failed ? 'Slice unavailable' : 'Loading slice'} ${this.index + 1}…` : '',
+        this.image && this.contourState === 'loading' ? 'Contours loading…' : this.image && this.contourState === 'failed' ? 'Contours unavailable' : ''].filter(Boolean).join(' · ');
+      this.el('loading').textContent = status; this.el('loading').hidden = !status;
+    }
+    showContours() {
+      if (!this.displayed) return;
+      const key = this.contourKey(this.displayed.index), paths = this.contours.get(key);
+      if (this.info.contours_state === 'failed') { this.paths = []; this.shownContourKey = null; this.contourState = 'failed'; }
+      else if (paths) { this.paths = paths; this.shownContourKey = key; this.contourState = this.info.contours_ready === false ? 'loading' : 'ready'; }
+      else if (this.shownContourKey === key) this.contourState = this.info.contours_ready === false ? 'loading' : 'ready';
+      else if (!this.needsContours()) { this.paths = []; this.contourState = this.info.contours_state === 'failed' ? 'failed' : 'ready'; }
+      this.updateStatus(); this.draw();
+    }
+    nextTask() {
+      const now = Date.now(), available = key => !this.active.has(key) && (this.retryAt.get(key) || 0) <= now;
+      const image = index => { const key = this.imageKey(index);
+        if (this.displayed?.index === index && this.displayed.window === this.window) return null;
+        return !this.images.has(key) && (!this.prefetched.has(key) || index === this.index) && available(key) ? {key,type:'image',index,indices:[index],window:this.window} : null; };
+      const covered = new Set([...this.active.values()].filter(t => t.type === 'contours').flatMap(t => t.indices));
+      const missing = index => { const key = this.contourKey(index); return !this.contours.has(key) && !covered.has(index)
+        && (!this.prefetched.has(key) || index === this.index && this.shownContourKey !== key) && (this.retryAt.get(key) || 0) <= now; };
+      const current = image(this.index); if (current) return current;
+      if (this.needsContours() && missing(this.index)) return {key:`contour:${this.index}`,type:'contours',indices:[this.index],single:true};
+      if (this.overlays && this.info.contours_ready === false && this.metadataRetry <= now && !this.active.has('metadata')) return {key:'metadata',type:'metadata'};
+      if (this.needsContours()) {
+        const missingIndices = this.wanted.filter(missing).sort((a,b) => a-b);
+        if (missingIndices.length) {
+          const indices = [missingIndices[0]];
+          for (const i of missingIndices.slice(1)) { if (i !== indices.at(-1) + 1 || indices.length === 32) break; indices.push(i); }
+          return {key:`range:${indices[0]}:${indices.length}`,type:'contours',indices};
+        }
+      }
+      for (const i of this.wanted) { const task = image(i); if (task) return task; }
+      return null;
+    }
+    fetchSlice() {
+      if (!this.info || !this.settled) return;
+      const priority = this.nextTask();
+      if (this.active.size === 4 && ((priority?.type === 'image' && priority.index === this.index) || priority?.single)) {
+        const background = [...this.active.values()].find(t => t.indices && !t.indices.includes(this.index) && !t.controller.signal.aborted);
+        background?.controller.abort();
+      }
+      while (this.active.size < 4) {
+        const task = this.nextTask(); if (!task) break;
+        task.controller = new AbortController(); this.active.set(task.key, task); this.runTask(task);
+      }
+      clearTimeout(this.retryTimer);
+      const dates = [...this.retryAt.values(), this.overlays && this.info.contours_ready === false ? this.metadataRetry : Infinity].filter(t => Number.isFinite(t) && t > Date.now());
+      if (dates.length) this.retryTimer = setTimeout(() => this.fetchSlice(), Math.max(10, Math.min(...dates) - Date.now()));
+    }
+    async runTask(task) {
+      const token = this.token, base = this.base, signal = task.controller.signal;
+      const keys = task.type === 'image' ? [task.key] : (task.indices || []).map(i => this.contourKey(i));
+      try {
+        const url = task.type === 'image' ? `${base}/slices/${task.index}.png?window=${encodeURIComponent(task.window)}` : task.type === 'metadata' ? base :
+          task.single ? `${base}/contours/${task.indices[0]}` : `${base}/contours?start=${task.indices[0]}&count=${task.indices.length}`;
+        const response = await fetch(url, {signal});
+        if (response.status === 202) {
+          if (token !== this.token || signal.aborted) return;
+          const delay = Math.max(250, Math.min(10000, (Number(response.headers.get('Retry-After')) || 1) * 1000));
+          keys.forEach(key => this.retryAt.set(key, Date.now() + delay)); return;
+        }
         if (!response.ok) { const data = await response.json(); throw Error(data.detail || `HTTP ${response.status}`); }
-        const url = URL.createObjectURL(await response.blob());
-        try { const img = new Image(); img.src = url; await img.decode(); return img; } finally { URL.revokeObjectURL(url); }
-      })();
-      const contourTask = this.overlays && this.rois.length ? json(`${base}/contours/${index}`, controller.signal) : Promise.resolve({index,rois:[]});
-      const [pixels, contours] = await Promise.allSettled([imageTask, contourTask]);
-      if (token !== this.token) return;
-      const errors = [];
-      if (pixels.status === 'fulfilled') { this.image = pixels.value; this.el('message').hidden = true; }
-      else { errors.push(`Image: ${pixels.reason.message}`); this.el('message').textContent = 'Image unavailable'; }
-      if (contours.status === 'fulfilled' && contours.value.index === index) this.paths = contours.value.rois;
-      else errors.push(`Contours unavailable: ${contours.reason?.message || 'slice mismatch'}`);
-      this.error(errors.join(' · ')); this.draw();
+        if (task.type === 'image') {
+          const blob = await response.blob(), url = URL.createObjectURL(blob);
+          let img;
+          try { img = new Image(); img.src = url; await img.decode(); } finally { URL.revokeObjectURL(url); }
+          if (token !== this.token || signal.aborted) return;
+          this.images.set(task.key, img, img.naturalWidth * img.naturalHeight * 4 + blob.size);
+          this.prefetched.add(task.key);
+          if (task.index === this.index && task.window === this.window) this.showImage(img, task.index, task.window);
+        } else {
+          const data = await response.json(); if (token !== this.token || signal.aborted) return;
+          if (task.type === 'metadata') { this.metadataRetry = Date.now() + 1000; this.updateMetadata(data); }
+          else {
+            if ((task.single && data.index !== task.indices[0]) || (!task.single && data.start !== task.indices[0])) throw Error('Contour slice mismatch');
+            for (const index of task.indices) {
+              const rois = task.single ? data.rois : data.slices?.[index];
+              if (!Array.isArray(rois)) throw Error('Missing contour slice');
+              const key = this.contourKey(index);
+              this.contours.set(key, rois, JSON.stringify(rois).length * 8); this.prefetched.add(key);
+              if (this.displayed?.index === index) { this.paths = rois; this.shownContourKey = key; }
+            }
+          }
+          this.showContours();
+        }
+      } catch (e) {
+        if (token !== this.token || signal.aborted || e.name === 'AbortError') return;
+        keys.forEach(key => this.retryAt.set(key, Infinity));
+        if (task.type === 'metadata') this.metadataRetry = Date.now() + 2000;
+        if (task.type === 'metadata' || task.indices?.includes(this.index)) this.error(`${task.type === 'image' ? 'Image' : 'Contours'}: ${e.message}`);
+        if (task.type === 'contours' && task.indices.includes(this.displayed?.index)) this.contourState = 'failed';
+        this.updateStatus();
+      } finally {
+        if (token === this.token && this.active.get(task.key) === task) { this.active.delete(task.key); this.fetchSlice(); }
+      }
     }
     geometry() { const r = this.el('stage').getBoundingClientRect(); return {...this.info?.series, width:r.width, height:r.height,
       display:displayOrientation(this.info?.series,this.standard)}; }
@@ -222,7 +375,8 @@ const DicomUI = (() => {
       const ratio = window.devicePixelRatio || 1; canvas.width = Math.round(g.width * ratio); canvas.height = Math.round(g.height * ratio);
       for (const edge of ['top','bottom','left','right']) this.el(edge).hidden = !this.info;
       if (!this.info) return;
-      const p = this.info.series.window_presets.find(p => p.id === this.window);
+      const displayedWindow = this.displayed?.window || this.window;
+      const p = this.info.series.window_presets.find(p => p.id === displayedWindow);
       this.el('readout').textContent = `${this.info.series.modality} · ${this.info.series.orientation} · ${g.columns} × ${g.rows} · ${p?.label || this.window} · C ${p?.center ?? '—'} / W ${p?.width ?? '—'} · Zoom ${Math.round(this.view.zoom * 100)}%`;
       const t = imageTransform(g.columns, g.rows, g.width, g.height, this.view, g.display), ctx = this.ctx;
       const markers = orientationMarkers(this.info.series,g.display);
@@ -250,11 +404,13 @@ const DicomUI = (() => {
         if (this.el('mode').value === 'filled') ctx.fill('evenodd');
         ctx.stroke();
       }
-      canvas.setAttribute('aria-label', `DICOM ${this.info.series.modality}, slice ${this.index + 1} of ${g.slices}, ${p?.label || this.window} window`);
+      const displayedIndex = this.displayed?.index ?? this.index;
+      canvas.setAttribute('data-slice-index', String(displayedIndex));
+      canvas.setAttribute('aria-label', `DICOM ${this.info.series.modality}, slice ${displayedIndex + 1} of ${g.slices}, ${p?.label || displayedWindow} window`);
     }
     renderROIs() {
       this.el('overlays').hidden = !this.overlays;
-      this.el('empty').textContent = this.rois.length ? '' : 'No RTSTRUCT structures are available for this job.';
+      this.el('empty').textContent = this.info.contours_ready === false ? 'Contours loading…' : this.rois.length ? '' : 'No RTSTRUCT structures are available for this job.';
       this.el('groups').innerHTML = this.info.structure_sets.map(s => `<details open><summary>${escape(s.model)} <span class="muted">· ${escape(s.label)} · ${s.rois.length} ROI${s.rois.length === 1 ? '' : 's'}</span></summary>${s.rois.map(r => `<div class="roi-row" data-search="${escape((s.model+' '+r.name).toLowerCase())}"><label><input type="checkbox" data-roi="${escape(r.key)}" checked><span class="swatch" style="background:${color(r.color)}" aria-hidden="true"></span><span>${escape(r.name)}</span></label><button type="button" data-jump="${escape(r.key)}" aria-label="Jump to middle slice of ${escape(r.name)}" ${middleSlice(r) === null ? 'disabled title="No matching source slices"' : ''}>Jump to</button></div>`).join('')}</details>`).join('');
       this.syncROIs(); this.filterROIs();
     }
@@ -269,8 +425,8 @@ const DicomUI = (() => {
         group.hidden = rows.every(row => row.hidden); if (query) group.open = true;
       });
     }
-    destroy() { ++this.token; clearTimeout(this.timer); this.controller?.abort(); this.resize.disconnect(); this.host.replaceChildren(); }
+    destroy() { ++this.token; this.clearRequests(); this.info = null; this.image = null; this.displayed = null; this.paths = []; this.rois = []; this.resize.disconnect(); this.host.replaceChildren(); }
   }
-  return {Viewer, displayOrientation, directionLabel, orientationMarkers, imageTransform, pixelToScreen, screenToPixel, zoomAt, visibility, setVisible, middleSlice};
+  return {Viewer, LRU, prefetchIndices, displayOrientation, directionLabel, orientationMarkers, imageTransform, pixelToScreen, screenToPixel, zoomAt, visibility, setVisible, middleSlice};
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = DicomUI;
