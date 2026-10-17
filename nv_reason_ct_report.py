@@ -283,12 +283,14 @@ def render_html(report) -> str:
             [[r['name'], r['approx_volume_ml'], r['slice_range'], r['slice_range_mm']] for r in result['rois']])
     content += '<p>Model: nvidia/NV-Reason-CT · Revision: ' + REVISION + '</p>'
     return ('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
-            '<title>NV-Reason-CT research draft</title><style>body{font:16px system-ui;margin:2rem;max-width:1100px;line-height:1.5}'
-            '.banner,.warning{background:#fff1c2;border:3px solid #8b3500;padding:1rem;font-weight:bold}'
-            'pre{white-space:pre-wrap;overflow-wrap:anywhere}img{max-width:100%}figure{margin:1rem 0}'
-            'details{border:1px solid #bbb;padding:1rem;margin:.5rem 0}summary{cursor:pointer}'
-            'table{border-collapse:collapse;width:100%;font-size:.9rem}th,td{border:1px solid #ccc;padding:.4rem;text-align:left}'
-            'th{background:#eee}section{border-bottom:2px solid #ddd;padding-bottom:1rem}</style>'
+            '<title>NV-Reason-CT research draft</title><style>body{font:16px/1.6 "Open Sans",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;'
+            'color:#142226;margin:0 auto;padding:2rem 1.5rem;max-width:1100px}h1,h2,h3{color:#00525c;letter-spacing:-.03em;line-height:1.2;font-weight:650}'
+            '.banner,.warning{background:#fff2f2;border:2px solid #a3323d;border-left-width:6px;border-radius:.65rem;padding:1rem 1.25rem;font-weight:bold}'
+            'pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f5f9f9;border:1px solid #d5e4e4;border-radius:.65rem;padding:1rem}'
+            'img{max-width:100%;border-radius:.65rem}figure{margin:1rem 0}figcaption{font-size:.85rem}'
+            'details{border:1px solid #d5e4e4;border-radius:.8rem;padding:.75rem 1rem;margin:.5rem 0}summary{cursor:pointer;color:#00525c;font-weight:bold}'
+            'table{border-collapse:collapse;width:100%;font-size:.9rem}th,td{border:1px solid #d5e4e4;padding:.5rem;text-align:left}'
+            'th{background:#f5f9f9;color:#00525c}section{border-bottom:1px solid #d5e4e4;padding-bottom:1rem}</style>'
             '<body><div class="banner">' + esc(BANNER) + '</div>' + content + '</body></html>')
 
 

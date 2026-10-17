@@ -50,14 +50,14 @@ WORKER_MODE=local .venv/bin/uvicorn app:app --host 127.0.0.1 --port 8080
 
 `Licence key required` identifies TotalSegmentator tasks that require a key (`licensed`). `Non-commercial weights` uses the separate catalog field `noncommercial`. Full licence notes remain in model details; research-draft wording alone does not set either badge.
 
-Run the browser UI regression checks with `python3 tests/ui_browser_server.py`, open `http://127.0.0.1:18743/__qa`, and choose **Run checks**. The harness serves synthetic API responses and checks the real UI at 1024, 1280 and 1440 pixels. It does not run models.
+Run the browser UI regression checks with `python3 tests/ui_browser_server.py`, open `http://127.0.0.1:18743/__qa`, and choose **Run checks**. The harness serves synthetic API responses and checks the real UI at 1024, 1280 and 1440 pixels. It does not run models. Run it in a foreground tab or a headless browser: background tabs pause the ResizeObserver that reserves space for the selection tray, so the tray checks fail there.
 
 CPU tests use synthetic images. Inference needs the separate model/runtime bundle and compatible GPU software. Colab and automatic fallback code are retained for compatibility; the documented deployment examples use local or SSH workers.
 
 ## Source and documentation
 
 - `app.py`: API, static-page serving, upload sessions, cached catalog and job lifecycle.
-- `static/`: offline HTML/CSS/JavaScript UI with upload, interactive series preview, segmentation / AI report actions and review. Jobs opens images, contour overlays, reports and downloads; More tools contains the CPU crop tool.
+- `static/`: offline HTML/CSS/JavaScript UI (bundled Open Sans webfont, SIL Open Font License in `static/fonts/OFL.txt`) with upload, interactive series preview, segmentation / AI report actions and review. Jobs opens images, contour overlays, reports and downloads; More tools contains the CPU crop tool.
 - `run_task.py`, `run_*.py`: dispatch and model-specific inference wrappers.
 - `convert_validate_rtstruct.py`, `convert_masks_validate_rtstruct.py`, `rtstruct_roundtrip.py`: direct conversion and geometry checks, including overlapping masks.
 - `crop_prostate_sbrt.py`: standalone CPU crop tool.

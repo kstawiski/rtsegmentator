@@ -1,5 +1,6 @@
 """Scan tracked files and pending public additions; never scan Git's object store here."""
 from pathlib import Path
+import hashlib
 import re
 import subprocess
 
@@ -34,6 +35,13 @@ NV_SACRAL_LABEL = '"127": "vertebrae S' + '1"'
 NV_CURAND_PIN = "nvidia-curand==" + ".".join(("10", "4", "0", "35"))
 
 
+# The bundled interface font (SIL Open Font License, static/fonts/OFL.txt) is the only binary source, pinned by content.
+APPROVED_BINARIES = {
+    "static/fonts/open-sans-latin-wght-normal.woff2": "d8e4fe0452aa2076429a9bb5d8757d00a994dd95986cf950e9a1a371b9a072a0",
+    "static/fonts/open-sans-latin-ext-wght-normal.woff2": "d5bab8e28732fe3d10dcef4f77b9c248605bbb2a87d289a2539251ceafab536a",
+}
+
+
 def site_matches(name, line):
     if name in {"labels/nv_segment_ct_auto.json", "labels/nv_segment_ctmr_ct_body.json"} and line.strip() == NV_SACRAL_LABEL:
         return []
@@ -59,7 +67,8 @@ def test_public_files_contain_no_site_data_or_secrets():
         try:
             text = data.decode("utf-8")
         except UnicodeDecodeError:
-            failures.append(f"unexpected binary source file: {name}")
+            if hashlib.sha256(data).hexdigest() != APPROVED_BINARIES.get(name):
+                failures.append(f"unexpected binary source file: {name}")
             continue
         for number, line in enumerate(text.splitlines(), 1):
             if site_matches(name, line) or SECRET.search(line):
@@ -81,3 +90,10 @@ def test_nv_sacral_label_exception_is_limited_to_exact_label_files():
     assert not site_matches("labels/nv_segment_ctmr_ct_body.json", NV_SACRAL_LABEL)
     assert site_matches("docs/OPERATIONS.md", NV_SACRAL_LABEL)
     assert site_matches("labels/nv_segment_ct_auto.json", NV_SACRAL_LABEL + ' host')
+
+
+def test_binary_exception_is_limited_to_the_pinned_font_files():
+    assert set(APPROVED_BINARIES) <= set(public_files())
+    for name, digest in APPROVED_BINARIES.items():
+        assert name.startswith("static/fonts/") and name.endswith(".woff2")
+        assert hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == digest

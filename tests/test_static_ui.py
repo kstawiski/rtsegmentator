@@ -59,9 +59,22 @@ def test_home_and_static_assets_are_served_from_any_working_directory(tmp_path, 
 
 def test_static_files_have_no_external_resources():
     for path in STATIC.rglob("*"):
-        if path.is_file():
+        if path.is_file() and path.suffix in {".html", ".js", ".css", ".json"}:
             text = path.read_text()
             assert not re.search(r"https?://|(?:src|href)\s*=\s*['\"]//|@import", text), path.name
+
+
+def test_interface_font_is_bundled_with_its_licence(tmp_path):
+    css = (STATIC / "app.css").read_text()
+    fonts = re.findall(r"url\(([^)]+)\)", css)
+    assert fonts == ["fonts/open-sans-latin-ext-wght-normal.woff2", "fonts/open-sans-latin-wght-normal.woff2"]
+    assert "SIL Open Font License" in (STATIC / "fonts" / "OFL.txt").read_text()
+    with TestClient(load_app(tmp_path)) as client:
+        for name in fonts:
+            response = client.get("/static/" + name)
+            assert response.status_code == 200
+            assert response.content == (STATIC / name).read_bytes()
+            assert response.content[:4] == b"wOF2"
 
 
 def test_every_script_dom_id_exists_and_ids_are_unique():
