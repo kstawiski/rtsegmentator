@@ -5,9 +5,9 @@ import nibabel as nib
 import numpy as np
 import pydicom
 from pydicom.uid import RTStructureSetStorage
-from rtstruct_geometry import add_roi, create_rtstruct, mask_bounds, report_omissions, dicom_grid, unique_roi_names
+from rtstruct_geometry import add_roi, slice_geometry, create_rtstruct, report_omissions, dicom_grid, unique_roi_names
 from orientation_contract import exact_orientation, restore_image, write_export_record
-from rtstruct_roundtrip import CroppedMask, data_box, validate_roi_roundtrip
+from rtstruct_roundtrip import CroppedMask, has_coordinates, label_boxes, read_rtstruct, source_plane_geometry, validate_roi_roundtrip
 from task_progress import Progress
 
 
@@ -27,13 +27,19 @@ def main():
     data=np.rint(np.asanyarray(pred.dataobj)).astype(np.int16)
     raw=json.loads(Path(a.labels).read_text())
     items=[(int(k),v) for k,v in raw.items() if int(k)>0]
-    labels=dict(zip((k for k,_ in items),unique_roi_names(v for _,v in items))); present=set(np.unique(data))-set([0])
+    labels=dict(zip((k for k,_ in items),unique_roi_names(v for _,v in items)))
+    boxes = label_boxes(data)
+    # Preserve NumPy scalar formatting in the original unmapped-label error.
+    present = {data.dtype.type(label) for label in boxes}
+    if data.min() < 0:
+        present.update(np.unique(data[data < 0]))
     unknown=present-set(labels)
     if unknown: raise SystemExit(f"unmapped prediction labels: {sorted(unknown)}")
     if not present: raise SystemExit("empty prediction: no RTSTRUCT created")
     # Restore [DICOM column, DICOM row, acquired slice] array indices. The
     # shared writer transposes each plane for OpenCV without reversing rows.
     rtstruct = create_rtstruct(a.dicom, inp)
+    plane_geometry = [slice_geometry(ds) for ds in rtstruct.series_data]
     expected_bounds = {}
     expected_boxes = {}
     progress = Progress()
@@ -43,15 +49,17 @@ def main():
     for class_idx, class_name in labels.items():
         if class_idx not in present:
             continue
-        box = data_box(data, label=class_idx)
+        box = boxes[class_idx]
         offset = tuple(s.start for s in box)
         binary = data[box] == class_idx
-        if not add_roi(rtstruct, binary, class_name, deterministic_color(class_name), offset=offset):
+        bounds = []
+        if not add_roi(rtstruct, binary, class_name, deterministic_color(class_name), offset=offset, bounds_out=bounds,
+                       plane_geometry=plane_geometry):
             omitted.append({"name": class_name, "voxels": int(binary.sum()),
                             "reason": "no contour returned for nonempty mask"})
             del binary
             continue
-        expected_bounds[class_name] = mask_bounds(binary, rtstruct.series_data, offset=offset)
+        expected_bounds[class_name] = bounds
         expected_boxes[class_name] = (class_idx, box)
         del binary
         done += 1
@@ -62,7 +70,7 @@ def main():
     progress.emit("rtstruct_writing")
     rtstruct.save(str(a.output))
     progress.emit("rtstruct_validation", 0, len(expected_boxes))
-    ds=pydicom.dcmread(a.output,stop_before_pixels=True)
+    ds=read_rtstruct(a.output)
     if ds.SOPClassUID != RTStructureSetStorage or ds.Modality != "RTSTRUCT": raise SystemExit("output is not DICOM RT Structure Set Storage")
     rois=getattr(ds,"StructureSetROISequence",[]); contours=getattr(ds,"ROIContourSequence",[])
     if not rois or not contours: raise SystemExit("RTSTRUCT contains no ROIs/contours")
@@ -81,11 +89,12 @@ def main():
     # remain inside a broad patient-space envelope.
     spacing=np.asarray(inp.header.get_zooms()[:3],dtype=float)
     tolerance=max(2.1,float(spacing.max())*2.1)
+    source_geometry = source_plane_geometry(rtstruct.series_data)
     max_delta=0.0; roundtrip={}
     for done, roi in enumerate(contours, 1):
         name=roi_names[int(roi.ReferencedROINumber)]
         pieces=[np.asarray(c.ContourData,dtype=float).reshape(-1,3)
-                for c in getattr(roi,"ContourSequence",[]) if getattr(c,"ContourData",None)]
+                for c in getattr(roi,"ContourSequence",[]) if has_coordinates(getattr(c,"ContourData",None))]
         if not pieces or name not in expected_bounds: raise SystemExit(f"missing contour geometry for {name}")
         points=np.concatenate(pieces); expected_min,expected_max=expected_bounds[name]
         delta=float(np.max(np.maximum(np.abs(points.min(0)-expected_min),
@@ -97,7 +106,7 @@ def main():
             class_idx, box = expected_boxes[name]
             expected = CroppedMask(data[box] == class_idx, tuple(s.start for s in box), data.shape)
             roundtrip[name]=validate_roi_roundtrip(roi,pred,expected,
-                                                  source_slices=rtstruct.series_data)
+                                                  source_geometry=source_geometry)
         except ValueError as exc:
             raise SystemExit(f"RTSTRUCT physical round-trip mismatch for {name}: {exc}") from exc
         del expected

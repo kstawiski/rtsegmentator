@@ -144,6 +144,7 @@ def headers_and_summary(job, report):
     if report['cbct_check']['is_cbct']: raise Refusal('CBCT: diagnostic CT is required')
     if any(str(getattr(x, 'RescaleType', 'HU')).upper() not in ('HU', '') for x in headers):
         raise Refusal('Non-HU DICOM rescale units')
+    return headers
 
 
 def coverage_segmentation(source, masks, work, worker_python, mode='fast'):
@@ -207,14 +208,14 @@ def main():
             report['package_versions'][package] = importlib.metadata.version(package)
         for name in ('model.safetensors', 'model.py', 'processor.py'):
             with (args.model_dir / name).open('rb') as f: report['sha256'][name] = hashlib.file_digest(f, 'sha256').hexdigest()
-        headers_and_summary(job, report)
+        headers = headers_and_summary(job, report)
         nifti = work / 'input.nii.gz'; masks = work / 'coverage'
         step = time.perf_counter()
         subprocess.run([str(args.worker_python), str(Path(__file__).parent / 'dicom_series_to_nifti.py'),
                         str(job / 'input'), str(nifti)], check=True)
         img = nib.load(str(nifti)); data = np.asarray(img.dataobj, dtype=np.float32)
         report['inputs'].update(shape=list(img.shape), spacing_mm=list(map(float, img.header.get_zooms()[:3])),
-                                hu_check=hu_check(data))
+                                hu_check=hu_check(data, dicom_headers=headers))
         del data
         report['timings']['convert_s'] = round(time.perf_counter() - step, 3)
         if not report['inputs']['hu_check']['looks_like_hu']: raise Refusal('Non-HU or unsupported intensity distribution')
