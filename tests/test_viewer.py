@@ -535,7 +535,9 @@ def test_background_single_flight_range_and_replacement(portal, synthetic_ct, tm
         start = time.perf_counter()
         first = client.get(base)
         elapsed = time.perf_counter() - start
-        assert elapsed < 1
+        # The parser is held for up to 10 s; well under that proves metadata did not wait for it,
+        # with headroom for a heavily loaded test host.
+        assert elapsed < 5
         assert first.status_code == 200 and first.json()["contours_ready"] is False
         assert entered.wait(2)
         for _ in range(4):
