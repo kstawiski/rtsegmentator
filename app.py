@@ -17,7 +17,7 @@ import tarfile
 import zipfile
 from collections import deque
 from pathlib import Path
-from threading import Event
+from threading import Event, current_thread
 
 import pydicom
 from nv_reason_ct_report import TASK as REPORT_TASK, detect_cbct
@@ -26,6 +26,8 @@ from PIL import Image
 import asyncio
 import fcntl
 from contextlib import contextmanager
+from functools import wraps
+from job_progress import TaskActivity, tail_log, stage_phrase, task_detail
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response, JSONResponse
 from starlette.concurrency import run_in_threadpool
@@ -70,6 +72,9 @@ ENABLED_MODELS_FILE = Path(os.environ.get("ENABLED_MODELS_FILE", str(BASE / "ena
 CATALOG_TTL_SECONDS = int(os.environ.get("CATALOG_TTL_SECONDS", "600"))
 PREFLIGHT_TIMEOUT_SECONDS = int(os.environ.get("PREFLIGHT_TIMEOUT_SECONDS", "900"))
 TASK_TIME_LIMIT_SECONDS = int(os.environ.get("TASK_TIME_LIMIT_SECONDS", str(12 * 3600)))
+RTSEG_STALL_SECONDS = max(1, int(os.environ.get("RTSEG_STALL_SECONDS", "1200")))
+RTSEG_STALL_RETRIES = max(0, int(os.environ.get("RTSEG_STALL_RETRIES", "1")))
+TASK_MONITOR_SECONDS = 5
 TASK_STOP_GRACE_SECONDS = int(os.environ.get("TASK_STOP_GRACE_SECONDS", "45"))
 BASE.mkdir(parents=True, exist_ok=True)
 
@@ -83,7 +88,28 @@ submission_lock = threading.RLock()
 pending_jobs = deque()
 queue_running = False
 queue_active = False
+queue_current = None
+queue_thread = None
 metadata_lock = threading.Lock()
+job_workers = {}
+job_workers_lock = threading.Lock()
+watchdog_stop = threading.Event()
+
+
+def tracked_job_worker(function):
+    """Register a worker while it executes a job, including task stall retries."""
+    @wraps(function)
+    def tracked(job, *args, **kwargs):
+        with job_workers_lock:
+            job_workers[job.name] = current_thread()
+        try:
+            return function(job, *args, **kwargs)
+        finally:
+            with job_workers_lock:
+                if job_workers.get(job.name) is current_thread():
+                    job_workers.pop(job.name, None)
+    return tracked
+
 logger = logging.getLogger(__name__)
 viewer = ViewerService(globals())
 app.include_router(viewer.router)
@@ -854,9 +880,8 @@ def run_remote_gpu_task(job, task, index, total):
 
 def execute_job_task(job, task, index, total, remote=None):
     data = metadata(job)
-    report_job = REPORT_TASK in data["models"]
-    if (report_job and task != REPORT_TASK and task in data.get("completed_models", [])
-            and (job / "output" / f"{task}_RTSTRUCT.dcm").is_file()):
+    result = job / "output" / ("report/nv_reason_ct_report.json" if task == REPORT_TASK else f"{task}_RTSTRUCT.dcm")
+    if task in data.get("completed_models", []) and result.is_file():
         return
     if task == REPORT_TASK: save_metadata(job, report_status="running", report_reason="")
     if remote is not None:
@@ -865,55 +890,154 @@ def execute_job_task(job, task, index, total, remote=None):
         run_remote_gpu_task(job, task, index, total)
     else:
         run_local_task(job, task, index, total)
-    if report_job:
-        done = metadata(job).get("completed_models", [])
-        save_metadata(job, completed_models=list(dict.fromkeys([*done, task])))
+    done = metadata(job).get("completed_models", [])
+    save_metadata(job, completed_models=list(dict.fromkeys([*done, task])))
+
+
+def process_cpu_times(root):
+    """CPU ticks by (PID, start-time); child exit and PID reuse cannot hide activity."""
+    samples = {}
+    for pid, started in process_tree(root).items():
+        try:
+            fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+            if fields[19] == started:
+                # Include waited-for children, which may start and exit between polls.
+                samples[(pid, started)] = sum(int(fields[i]) for i in (11, 12, 13, 14))
+        except (OSError, ValueError, IndexError):
+            pass
+    return samples
+
+
+def reset_task_output(job, task, remote=None):
+    """Discard only this task's partial results and work; keep completed models."""
+    if not re.fullmatch(r"[A-Za-z0-9_]+", task): raise ValueError("Invalid task")
+    relative = [f"external/{task}", "output/report" if task == REPORT_TASK else f"output/{task}"]
+    relative.extend(p.relative_to(job).as_posix() for p in (job / "output").glob(f"{task}_RTSTRUCT.dcm*"))
+    for name in relative:
+        path = job / name
+        if path.is_dir(): shutil.rmtree(path)
+        else: path.unlink(missing_ok=True)
+    if remote is not None:
+        # Shell expansion is restricted to a validated task identifier.
+        prefix = shlex.quote(f"{remote}/output/{task}_RTSTRUCT.dcm") + "*"
+        paths = [f"{remote}/external/{task}", f"{remote}/output/{'report' if task == REPORT_TASK else task}"]
+        command = "rm -rf -- " + " ".join(shlex.quote(path) for path in paths) + " " + prefix
+        subprocess.run(["ssh", WORKER, command], check=True, timeout=30)
+
+
+def run_monitored_task(job, task, index, total, command, *, environment=None, remote=None):
+    log = job / f"{task}.log"
+    data = metadata(job)
+    retries = sum(event.get('task') == task and event.get('action') == 'retry'
+                  for event in data.get('stall_events', []))
+    while True:
+        now = time.time()
+        activity = TaskActivity(now)
+        started = time.monotonic()
+        timings = metadata(job).get('task_timings', {})
+        prior = timings.get(task, {})
+        timings[task] = {**prior, 'started': prior.get('started', now), 'attempt_started': now,
+                         'attempts': prior.get('attempts', 0) + 1, 'status': 'running'}
+        save_metadata(job, status='processing', current_task=task, task_started=now, task_remote=remote is not None,
+                      model_index=index, model_total=total, progress=None,
+                      task_timings=timings, stage=activity.stage['stage'], stage_key='staging',
+                      stage_started=now, stage_done=None, stage_total=None,
+                      last_activity=now, last_cpu_activity=now, stall_warning=False,
+                      stall_threshold=RTSEG_STALL_SECONDS,
+                      detail=f"{task} ({index}/{total}): preparing model input")
+        warned = False
+        stalled = False
+        # Append on a stall retry so the failed attempt remains inspectable.
+        with log.open('a' if retries else 'w') as output:
+            if retries:
+                output.write(f"\nAutomatic stall retry {retries} for {task}\n")
+                output.flush()
+            activity.position = log.stat().st_size
+            attempt_log_start = activity.position
+            process = subprocess.Popen(command, env=environment, stdout=output,
+                                       stderr=subprocess.STDOUT, text=True)
+            pid = getattr(process, 'pid', None)
+            stat = proc_stat(pid) if pid else None
+            save_metadata(job, task_pid=pid, task_pid_started=stat[2] if stat else None)
+            stopped = False
+            try:
+                while process.poll() is None:
+                    now = time.time()
+                    fields = activity.sample(log, now, None if remote else process_cpu_times(process.pid))
+                    idle = activity.stalled(now, RTSEG_STALL_SECONDS, remote=remote is not None)
+                    save_metadata(job, **fields, stall_warning=idle,
+                                  detail=task_detail(task, index, total, fields))
+                    if time.monotonic() - started > TASK_TIME_LIMIT_SECONDS:
+                        if remote: stop_remote_task(remote, task)
+                        stop_process_tree(process)
+                        stopped = True
+                        finish_task_timing(job, task, 'failed')
+                        raise subprocess.TimeoutExpired(command, TASK_TIME_LIMIT_SECONDS)
+                    if idle and warned:
+                        stalled = True
+                        if remote: stop_remote_task(remote, task)
+                        stop_process_tree(process)
+                        stopped = True
+                        break
+                    warned = idle  # Publish a warning for one monitor interval before stopping.
+                    time.sleep(TASK_MONITOR_SECONDS)
+                fields = activity.sample(log, time.time(), None if remote or not pid else process_cpu_times(pid))
+                save_metadata(job, **fields, detail=task_detail(task, index, total, fields))
+            finally:
+                # Never leave a running inference child if monitoring itself fails.
+                if not stopped and process.poll() is None:
+                    if remote: stop_remote_task(remote, task)
+                    stop_process_tree(process)
+                save_metadata(job, task_pid=None, task_pid_started=None)
+        if stalled:
+            data = metadata(job)
+            retry = retries < RTSEG_STALL_RETRIES
+            event = {'task': task, 'stage': activity.stage['stage'], 'time': time.time(),
+                     'action': 'retry' if retry else 'failed'}
+            save_metadata(job, stall_events=[*data.get('stall_events', []), event])
+            if retry:
+                reset_task_output(job, task, remote)
+                retries += 1
+                continue
+            duration = f"{RTSEG_STALL_SECONDS / 60:g} min"
+            suffix = '; retried once' if retries == 1 else (f'; retried {retries} times' if retries else '')
+            message = f"{task} stalled during {stage_phrase(activity.stage['stage'])} for {duration}{suffix}"
+            finish_task_timing(job, task, 'failed')
+            raise RuntimeError(message)
+        if process.returncode:
+            finish_task_timing(job, task, 'failed')
+            with log.open('rb') as source:
+                source.seek(max(attempt_log_start, source.seek(0, 2) - 24000))
+                error = source.read(24000).decode('utf-8', errors='replace')[-6000:]
+            raise RuntimeError(error or f"{task} exited with status {process.returncode}")
+        finish_task_timing(job, task, 'done')
+        save_metadata(job, stall_warning=False)
+        return
+
+
+def finish_task_timing(job, task, status):
+    timings = metadata(job).get('task_timings', {})
+    timing = timings.get(task, {})
+    now = time.time()
+    timings[task] = {**timing, 'finished': now, 'duration': max(0, now - timing.get('started', now)),
+                     'status': status}
+    save_metadata(job, task_timings=timings)
 
 
 def run_worker_task(job: Path, remote: str, task: str, index: int, total: int):
-    """Run inference while keeping the portal heartbeat visibly current."""
-    detail = f"Running {task} ({index}/{total})"
-    log = job / f"{task}.log"
-    started = time.monotonic()
-    with log.open("w") as output:
-        process = subprocess.Popen(remote_command(*remote_environment(), REMOTE_PYTHON, REMOTE_RUNNER, remote, task),
-                                   stdout=output, stderr=subprocess.STDOUT, text=True)
-        while process.poll() is None:
-            if time.monotonic() - started > TASK_TIME_LIMIT_SECONDS:
-                stop_remote_task(remote, task)
-                stop_process_tree(process)
-                raise subprocess.TimeoutExpired(process.args, TASK_TIME_LIMIT_SECONDS)
-            save_metadata(job, status="processing", detail=detail, progress=None,
-                          model_index=index, model_total=total)
-            time.sleep(5)
-    if process.returncode:
-        error = log.read_text(errors="replace")[-6000:]
-        raise RuntimeError(error or f"{task} exited with status {process.returncode}")
+    command = remote_command(*remote_environment(), REMOTE_PYTHON, REMOTE_RUNNER, remote, task)
+    run_monitored_task(job, task, index, total, command, remote=remote)
+
 
 def run_local_task(job: Path, task: str, index: int, total: int):
-    detail = f"Running {task} locally ({index}/{total})"
-    log = job / f"{task}.log"
-    started = time.monotonic()
-    with log.open("w") as output:
-        environment = os.environ.copy()
-        worker_local = WORKER_MODE == "auto"
-        runner = REMOTE_RUNNER if worker_local else LOCAL_RUNNER
-        python = REMOTE_PYTHON if worker_local else LOCAL_PYTHON
-        environment.setdefault("RTSEG_APP_ROOT", REMOTE_APP_ROOT if worker_local else str(Path(runner).parent))
-        environment.setdefault("RTSEG_MODEL_ROOT", REMOTE_MODEL_ROOT if worker_local else "/models")
-        environment.setdefault("RTSEG_RUNTIME_ROOT", REMOTE_RUNTIME_ROOT if worker_local else environment["RTSEG_MODEL_ROOT"])
-        process = subprocess.Popen([python, runner, str(job), task], env=environment,
-                                   stdout=output, stderr=subprocess.STDOUT, text=True)
-        while process.poll() is None:
-            if time.monotonic() - started > TASK_TIME_LIMIT_SECONDS:
-                stop_process_tree(process)
-                raise subprocess.TimeoutExpired(process.args, TASK_TIME_LIMIT_SECONDS)
-            save_metadata(job,status="processing",detail=detail,progress=None,
-                          model_index=index,model_total=total)
-            time.sleep(5)
-    if process.returncode:
-        raise RuntimeError(log.read_text(errors="replace")[-6000:] or
-                           f"{task} exited with status {process.returncode}")
+    environment = os.environ.copy()
+    worker_local = WORKER_MODE == "auto"
+    runner = REMOTE_RUNNER if worker_local else LOCAL_RUNNER
+    python = REMOTE_PYTHON if worker_local else LOCAL_PYTHON
+    environment.setdefault("RTSEG_APP_ROOT", REMOTE_APP_ROOT if worker_local else str(Path(runner).parent))
+    environment.setdefault("RTSEG_MODEL_ROOT", REMOTE_MODEL_ROOT if worker_local else "/models")
+    environment.setdefault("RTSEG_RUNTIME_ROOT", REMOTE_RUNTIME_ROOT if worker_local else environment["RTSEG_MODEL_ROOT"])
+    run_monitored_task(job, task, index, total, [python, runner, str(job), task], environment=environment)
 
 def is_gpu_oom(exc: Exception) -> bool:
     """Recognize GPU allocation failures without hiding unrelated model errors."""
@@ -1151,6 +1275,9 @@ def finalize_results(job: Path, empty=()):
     if not results and not empty and report is None:
         raise RuntimeError("Worker completed without producing an RTSTRUCT file")
     omissions = conversion_notes(job)
+    save_metadata(job, status="retrieving", detail="Preparing results for download", progress=None,
+                  stage="Exporting results", stage_key="export", stage_started=time.time(),
+                  stage_done=None, stage_total=None, stall_warning=False)
     with zipfile.ZipFile(job/"rtstruct-results.zip","w",zipfile.ZIP_DEFLATED) as z:
         nested = sorted(path for path in (job / "output").rglob("*")
                         if path.is_file() and path.parent != job / "output")
@@ -1206,6 +1333,7 @@ def postprocess_prostate_crop(job: Path):
     except NoSelectedROIError as exc:
         note_prostate_not_cropped(job, str(exc))
 
+@tracked_job_worker
 def process_prostate_sbrt_crop(job: Path):
     """CPU-only tool; deliberately independent of the segmentation FIFO dispatcher."""
     incoming = job / "rtstruct-results.zip.incoming"
@@ -1303,6 +1431,12 @@ def new_job_id():
     return time.strftime("%Y%m%d-%H%M%S-") + f"{time.time_ns():020d}-" + secrets.token_hex(4)
 
 
+def queue_detail(ahead):
+    if ahead == 0:
+        return "Next in queue"
+    return f"Queued behind {ahead} earlier {'job' if ahead == 1 else 'jobs'}"
+
+
 def update_queue_details():
     """Called under queue_guard; the active job also counts as an earlier job."""
     ahead = int(queue_active)
@@ -1310,7 +1444,7 @@ def update_queue_details():
         try:
             if metadata(job).get("status") != "queued":
                 continue
-            save_metadata(job, detail=f"Queued behind {ahead} earlier jobs" if ahead else "Queued; next to run")
+            save_metadata(job, detail=queue_detail(ahead))
             ahead += 1
         except (OSError, ValueError, HTTPException):
             # Retention may remove an old queued job; it must not stop the dispatcher.
@@ -1318,7 +1452,7 @@ def update_queue_details():
 
 
 def drain_jobs():
-    global queue_running, queue_active
+    global queue_running, queue_active, queue_current
     while True:
         with queue_guard:
             if not pending_jobs:
@@ -1326,6 +1460,7 @@ def drain_jobs():
                 return
             job, target, args = pending_jobs.popleft()
             queue_active = True
+            queue_current = (job, current_thread())
             update_queue_details()
         try:
             if metadata(job).get("status") != "queued":
@@ -1340,23 +1475,56 @@ def drain_jobs():
                 logger.warning("Could not save failed job %s", job.name, exc_info=True)
         finally:
             with queue_guard:
-                queue_active = False
+                # Keep an interrupted worker's reservation until the watchdog
+                # recovers or fails it. A surviving task must not be passed.
+                if sys.exc_info()[0] is None:
+                    queue_active = False
+                    queue_current = None
                 update_queue_details()
+
+
+def dispatcher_can_restart():
+    """Do not pass an active job whose dispatcher died, even before it is stale."""
+    if queue_current is None:
+        return True
+    job, _ = queue_current
+    try:
+        return (metadata(job).get("status") not in {"queued", "transferring", "processing", "retrieving"}
+                or any(queued == job for queued, _, _ in pending_jobs))
+    except HTTPException:
+        return True
 
 
 def enqueue_jobs(jobs, target=None, args=None):
     """Reserve the entire batch before starting one FIFO dispatcher."""
-    global queue_running
-    with queue_guard:
+    global queue_running, queue_thread, queue_current, queue_active
+    with submission_lock, queue_guard:
         for job in jobs:
             pending_jobs.append((job, target or process, args if args is not None else (job,)))
-        update_queue_details()
-        start = not queue_running
+        # Recovered older jobs join ahead of newer waiting jobs. Never preempt
+        # the running job or its in-place stall retry/readiness wait.
+        def creation_order(entry):
+            try:
+                return metadata(entry[0]).get("created", 0), entry[0].name
+            except HTTPException:
+                return 0, entry[0].name
+        ordered = sorted(pending_jobs, key=creation_order)
+        pending_jobs.clear()
+        pending_jobs.extend(ordered)
+        start = ((not queue_running or (queue_thread is not None and not queue_thread.is_alive()))
+                 and dispatcher_can_restart())
         queue_running = True
-    if start:
-        threading.Thread(target=drain_jobs, args=(), daemon=True).start()
+        if start:
+            # A dead dispatcher must not strand reservations or a recovered job.
+            queue_current = None
+            queue_active = False
+            queue_thread = threading.Thread(target=drain_jobs, args=(), daemon=True)
+        update_queue_details()
+        if start:
+            queue_thread.start()
 
 
+@tracked_job_worker
 def process(job: Path):
     # Production callers execute through enqueue_jobs; task execution is unchanged.
     jid=job.name; remote=f"{REMOTE_BASE}/{jid}"
@@ -2177,7 +2345,7 @@ def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="
                 if prompt_data:
                     (job / "prompt.json").write_text(json.dumps(prompt_data, indent=2))
                 public_series = series_metadata(series)
-                (job / "job.json").write_text(json.dumps({"id": jid, "status": "queued", "detail": "Queued; next to run",
+                (job / "job.json").write_text(json.dumps({"id": jid, "status": "queued", "detail": "Next in queue",
                     "models": subset, "report_status": "pending" if REPORT_TASK in subset else None,
                     "created": time.time(), "error": None, "prompted": bool(prompt_data), "postprocess": postprocessing,
                     "batch_id": batch_id, "batch_index": index, "batch_size": len(plans), "series": public_series}, indent=2))
@@ -2251,6 +2419,24 @@ async def create_job(files: list[UploadFile]=File(...), models: list[str]=Form(.
 def get_job(jid: str):
     if not re.fullmatch(r"[A-Za-z0-9-]+",jid): raise HTTPException(404)
     return metadata(BASE/jid)
+
+@app.get("/api/v1/jobs/{jid}/log", tags=["automation"])
+def get_job_log(jid: str, task: str | None = None, lines: int = 40):
+    if not re.fullmatch(r"[A-Za-z0-9-]+", jid): raise HTTPException(404)
+    job = BASE / jid
+    data = metadata(job)
+    task = task or data.get('current_task')
+    if (not isinstance(task, str) or not re.fullmatch(r"[A-Za-z0-9_]+", task)
+            or task not in data.get('models', [])):
+        raise HTTPException(404, "Unknown job task")
+    path = job / f"{task}.log"
+    if path.is_symlink(): raise HTTPException(404, "Task log unavailable")
+    try:
+        content = tail_log(path, lines)
+    except FileNotFoundError:
+        content = []
+    return JSONResponse({'task': task, 'lines': content}, headers={'Cache-Control': 'no-store'})
+
 
 @app.get("/api/jobs")
 @app.get("/api/v1/jobs", tags=["automation"])
@@ -2428,74 +2614,142 @@ def cleanup_loop():
         cleanup_once()
         time.sleep(3600)
 
-def recover_interrupted_jobs():
+def recover_interrupted_jobs(candidates=None, *, orphaned=False):
     """Requeue interrupted jobs when their retained input permits a safe rerun."""
-    interrupted = []
-    for job in sorted(BASE.iterdir(), key=lambda path: path.name):
-        if not job.is_dir() or job.name.startswith("upload-"):
-            continue
-        try:
-            data = metadata(job)
-            if data.get("status") in {"queued", "transferring", "processing", "retrieving"}:
-                interrupted.append((job, data.get("status", "unknown")))
-        except Exception:
-            continue
-    interrupted.sort(key=lambda entry: (metadata(entry[0]).get("created", 0), entry[0].name))
-    retry = []
-    for job, previous_status in interrupted:
-        data = metadata(job)
-        is_tool = bool(data.get("tool"))
-        active_remote = data.get("remote_task_active")
-        if not is_tool and active_remote:
-            remote = f"{REMOTE_BASE}/{job.name}"
-            stop_remote_task(remote, active_remote)
-            try: recover_remote_results(job, remote, active_remote)
-            except Exception:
-                save_metadata(job, status="failed", detail="Remote recovery needs inspection",
-                              error="Could not recover remote results; retained on worker")
+    # Keep later reservations from dispatching while older jobs are reset.
+    with submission_lock, queue_guard:
+        interrupted = []
+        for job in (BASE.iterdir() if candidates is None else candidates):
+            if not job.is_dir() or job.name.startswith("upload-"):
                 continue
-        if not is_tool and (WORKER_MODE == "ssh" or (WORKER_MODE == "colab" and COLAB_ORCHESTRATOR == "worker")):
-            remote = f"{REMOTE_BASE}/{job.name}"
-            if WORKER_MODE == "colab":
-                session = f"rtseg-{job.name[-12:]}"
-                subprocess.run(["ssh", WORKER, str(Path.home() / ".local/bin/colab"),
-                                "--auth=oauth2", "stop", "-s", session], timeout=60)
-            if WORKER_MODE == "ssh" and REPORT_TASK in data.get("models", []):
-                for task in data["models"]: stop_remote_task(remote, task)
-                try: recover_remote_results(job, remote)
+            try:
+                data = metadata(job)
+                if not job_is_live(job, data) and data.get("status") in {"queued", "transferring", "processing", "retrieving"}:
+                    interrupted.append((job, data.get("status", "unknown")))
+            except Exception:
+                continue
+        interrupted.sort(key=lambda entry: (metadata(entry[0]).get("created", 0), entry[0].name))
+        retry = []
+        for job, previous_status in interrupted:
+            data = metadata(job)
+            is_tool = bool(data.get("tool"))
+            active_remote = data.get("remote_task_active")
+            if not is_tool and active_remote:
+                remote = f"{REMOTE_BASE}/{job.name}"
+                stop_remote_task(remote, active_remote)
+                try: recover_remote_results(job, remote, active_remote)
                 except Exception:
                     save_metadata(job, status="failed", detail="Remote recovery needs inspection",
                                   error="Could not recover remote results; retained on worker")
                     continue
+            if not is_tool and (WORKER_MODE == "ssh" or (WORKER_MODE == "colab" and COLAB_ORCHESTRATOR == "worker")):
+                remote = f"{REMOTE_BASE}/{job.name}"
+                if WORKER_MODE == "colab":
+                    session = f"rtseg-{job.name[-12:]}"
+                    subprocess.run(["ssh", WORKER, str(Path.home() / ".local/bin/colab"),
+                                    "--auth=oauth2", "stop", "-s", session], timeout=60)
+                if WORKER_MODE == "ssh" and REPORT_TASK in data.get("models", []):
+                    for task in data["models"]: stop_remote_task(remote, task)
+                    try: recover_remote_results(job, remote)
+                    except Exception:
+                        save_metadata(job, status="failed", detail="Remote recovery needs inspection",
+                                      error="Could not recover remote results; retained on worker")
+                        continue
+                else:
+                    subprocess.run(["ssh", WORKER, "rm", "-rf", remote], timeout=30)
+            elif not active_remote and not is_tool and WORKER_MODE in {"auto", "colab"} and COLAB_ORCHESTRATOR == "nfs":
+                session = f"rtseg-{job.name[-12:]}"
+                subprocess.run(colab_command("stop", "-s", session), timeout=60,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                shutil.rmtree(job / "colab-stage", ignore_errors=True)
+            data = metadata(job); recovery_count = int(data.get("recovery_count",0)) + 1
+            has_input = (job/"input").is_dir() and any((job/"input").iterdir())
+            if has_input and recovery_count <= 3:
+                completed = data.get("completed_models", [])
+                if not completed or (REPORT_TASK in data.get("models", []) and REPORT_TASK not in completed):
+                    reset_job_output(job, data)
+                elif data.get("current_task") in data.get("models", []) and data["current_task"] not in completed:
+                    reset_task_output(job, data["current_task"])
+                reason = "worker stopped unexpectedly" if orphaned else "service interruption"
+                save_metadata(job,status="queued",detail=f"Restarting after {reason} ({recovery_count}/3)",
+                              error=None,progress=0,model_index=0,recovery_count=recovery_count,
+                              interrupted_status=previous_status)
+                retry.append(job)
             else:
-                subprocess.run(["ssh", WORKER, "rm", "-rf", remote], timeout=30)
-        elif not active_remote and not is_tool and WORKER_MODE in {"auto", "colab"} and COLAB_ORCHESTRATOR == "nfs":
-            session = f"rtseg-{job.name[-12:]}"
-            subprocess.run(colab_command("stop", "-s", session), timeout=60,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            shutil.rmtree(job / "colab-stage", ignore_errors=True)
-        data = metadata(job); recovery_count = int(data.get("recovery_count",0)) + 1
-        has_input = (job/"input").is_dir() and any((job/"input").iterdir())
-        if has_input and recovery_count <= 3:
-            reset_job_output(job, data)
-            save_metadata(job,status="queued",detail=f"Restarting after service interruption ({recovery_count}/3)",
-                          error=None,progress=0,model_index=0,recovery_count=recovery_count,
-                          interrupted_status=previous_status)
-            retry.append(job)
-        else:
-            reason = "retained input is unavailable" if not has_input else "automatic recovery limit was reached"
-            save_metadata(job,status="failed",detail="Processing was interrupted by a portal service restart",
-                          error=f"Could not restart automatically because {reason}.",
-                          recovery_count=recovery_count,interrupted_status=previous_status)
-    segmentation_jobs = [job for job in retry if not metadata(job).get("tool")]
-    if segmentation_jobs:
-        enqueue_jobs(segmentation_jobs)
-    for job in retry:
-        if metadata(job).get("tool"):
-            threading.Thread(target=process_prostate_sbrt_crop, args=(job,), daemon=True).start()
+                reason = "retained input is unavailable" if not has_input else "automatic recovery limit was reached"
+                detail = "Job worker stopped unexpectedly" if orphaned else "Processing was interrupted by a portal service restart"
+                save_metadata(job,status="failed",detail=detail,
+                              error=f"Could not restart automatically because {reason}.",
+                              recovery_count=recovery_count,interrupted_status=previous_status)
+        segmentation_jobs = [job for job in retry if not metadata(job).get("tool")]
+        if segmentation_jobs:
+            enqueue_jobs(segmentation_jobs)
+        for job in retry:
+            if metadata(job).get("tool"):
+                threading.Thread(target=process_prostate_sbrt_crop, args=(job,), daemon=True).start()
+
+def job_is_live(job, data):
+    """FIFO reservations, readiness waits, workers and matching processes are live."""
+    with queue_guard:
+        if any(queued == job for queued, _, _ in pending_jobs):
+            return True
+        if queue_current and queue_current[0] == job and queue_current[1].is_alive():
+            return True
+        with job_workers_lock:
+            worker = job_workers.get(job.name)
+            if worker and worker.is_alive():
+                return True
+        pid = data.get('task_pid')
+        stat = proc_stat(pid) if pid else None
+        return bool(stat and stat[0] != 'Z' and stat[2] == data.get('task_pid_started'))
+
+
+def watchdog_once(now=None):
+    """Recover all stale orphans together, preserving creation order in the FIFO."""
+    now = time.time() if now is None else now
+    # Creation, staging reservation and recovery share this lock. A job cannot
+    # become visible to this scan before its FIFO reservation is published.
+    with submission_lock, queue_guard:
+        orphaned = []
+        for job in BASE.iterdir():
+            if not job.is_dir() or job.name.startswith('upload-'): continue
+            try:
+                data = metadata(job)
+                if data.get('status') not in {'queued', 'transferring', 'processing', 'retrieving'}: continue
+                if now - data.get('updated', data.get('created', now)) < RTSEG_STALL_SECONDS: continue
+                if job_is_live(job, data): continue
+                events = data.get('stall_events', [])
+                save_metadata(job, stall_events=[*events, {'task': data.get('current_task'),
+                              'stage': data.get('stage'), 'time': now, 'action': 'orphan_recovery'}])
+                orphaned.append(job)
+            except Exception:
+                logger.exception('Orphaned-job watchdog could not inspect %s', job.name)
+        if orphaned:
+            try:
+                recover_interrupted_jobs(orphaned, orphaned=True)
+            except Exception:
+                logger.exception('Orphaned-job watchdog could not recover interrupted jobs')
+        if pending_jobs and queue_thread is not None and not queue_thread.is_alive():
+            enqueue_jobs([])
+
+
+def watchdog_loop():
+    while not watchdog_stop.wait(min(30, RTSEG_STALL_SECONDS)):
+        try:
+            watchdog_once()
+        except OSError:
+            logger.exception("Orphaned-job watchdog could not scan jobs")
+
 
 @app.on_event("startup")
 def startup():
     refresh_catalog_in_background()  # Warm the catalog; log and expose any initial failure.
     recover_interrupted_jobs()
     threading.Thread(target=cleanup_loop,daemon=True).start()
+    watchdog_stop.clear()
+    threading.Thread(target=watchdog_loop,daemon=True).start()
+
+
+@app.on_event("shutdown")
+def stop_watchdog():
+    watchdog_stop.set()

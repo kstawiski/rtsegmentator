@@ -432,3 +432,44 @@ test('job titles and grouping keep batch series together in series order',()=>{
   assert.deepEqual(ui.groupBatchJobs(jobs).map(j=>j.id),['new','first','second','old']);
   assert.equal(jobs[1].id,'second','Grouping does not mutate input ordering');
 });
+
+test('job status formats stage counts, elapsed time and CPU activity without false stalls',()=>{
+  const job={status:'processing',created:100,current_task:'total',stage:'Validating RTSTRUCT geometry',stage_key:'rtstruct_validation',stage_done:43,stage_total:117,stage_started:120,last_activity:130,last_cpu_activity:195,stall_threshold:20};
+  const result=ui.jobProgress(job,200);
+  assert.equal(result.text,'total: Validating RTSTRUCT geometry · 43/117 structures');
+  assert.equal(result.elapsed,'Elapsed 1m 40s');assert.equal(result.stageTime,'stage 1m 20s');
+  assert.equal(result.last,'last activity 5 s ago');assert.equal(result.warning,'');
+  assert.equal(result.percent,100*43/117);
+  assert.match(ui.jobProgress({...job,last_cpu_activity:130},200).warning,/No log or CPU activity/);
+  assert.match(ui.jobProgress({...job,task_remote:true},200).warning,/No worker log activity/);
+  assert.equal(ui.jobProgress({...job,status:'complete',updated:180},200).warning,'');
+  assert.equal(ui.jobProgress({status:'processing',detail:'Starting'},200).percent,null);
+});
+
+test('model checklist shows completed duration, running elapsed and waiting models',()=>{
+  const rows=ui.modelChecklist({status:'processing',models:['first','second','third'],completed_models:['first'],current_task:'second',task_timings:{first:{duration:65,status:'done'},second:{started:100,status:'running'}}},130);
+  assert.deepEqual(rows.map(row=>row.status),['done','running','waiting']);
+  assert.equal(rows[0].text,'✓ first · done · 1m 5s');
+  assert.equal(rows[1].text,'second · running · 30s');
+  assert.equal(ui.modelChecklist({status:'failed',models:['second'],current_task:'second',task_timings:{second:{status:'failed'}}})[0].status,'failed');
+});
+
+
+test('queued recovery and transfers do not display a previous task stage as current',()=>{
+  const stale={status:'queued',current_task:'total',detail:'Retry queued',stage:'Validating RTSTRUCT geometry',stage_done:43,stage_total:117,stage_started:100,last_activity:100,progress:0,created:90,stall_warning:true};
+  assert.equal(ui.jobProgress(stale,2000).text,'Retry queued');
+  assert.equal(ui.jobProgress(stale,2000).percent,0);
+  assert.equal(ui.jobProgress(stale,2000).warning,'');
+  assert.equal(ui.jobProgress({...stale,status:'transferring',detail:'Sending DICOM series'},2000).text,'Sending DICOM series');
+});
+
+
+test('a finished task waiting for export never shows a task stall warning',()=>{
+  const result=ui.jobProgress({status:'processing',current_task:'total',created:100,stage:'Exporting results',stage_done:1,stage_total:1,last_activity:100,stall_warning:true,task_timings:{total:{status:'done'}}},2000);
+  assert.equal(result.activeStage,false);assert.equal(result.warning,'');assert.equal(result.percent,null);
+});
+
+test('models accepted with no structures are shown as completed with their duration',()=>{
+  const rows=ui.modelChecklist({status:'complete',models:['total'],no_structures_found:['total'],task_timings:{total:{status:'failed',duration:15}}});
+  assert.equal(rows[0].text,'✓ total · done · 15s');
+});

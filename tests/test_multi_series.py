@@ -233,14 +233,14 @@ def test_fifo_reserves_batch_and_updates_waiting_positions(portal, monkeypatch):
     try:
         portal.enqueue_jobs(jobs[:1]); assert entered[0].wait(30)
         portal.enqueue_jobs(jobs[1:3]); portal.enqueue_jobs(jobs[3:])
-        assert portal.metadata(jobs[1])['detail'] == 'Queued behind 1 earlier jobs'
+        assert portal.metadata(jobs[1])['detail'] == 'Queued behind 1 earlier job'
         assert portal.metadata(jobs[2])['detail'] == 'Queued behind 2 earlier jobs'
         assert portal.metadata(jobs[3])['detail'] == 'Queued behind 3 earlier jobs'
         release[0].set(); assert entered[1].wait(30)
-        assert portal.metadata(jobs[2])['detail'] == 'Queued behind 1 earlier jobs'
+        assert portal.metadata(jobs[2])['detail'] == 'Queued behind 1 earlier job'
         assert portal.metadata(jobs[3])['detail'] == 'Queued behind 2 earlier jobs'
         release[1].set(); assert entered[2].wait(30)
-        assert portal.metadata(jobs[3])['detail'] == 'Queued behind 1 earlier jobs'
+        assert portal.metadata(jobs[3])['detail'] == 'Queued behind 1 earlier job'
     finally:
         for event in release:
             event.set()
@@ -330,7 +330,7 @@ def test_failed_or_expired_queued_jobs_do_not_stall_dispatcher(portal, monkeypat
         portal.save_metadata(job, status='complete')
     monkeypatch.setattr(portal, 'process', run)
     monkeypatch.setattr(portal, 'threading', SimpleNamespace(Thread=lambda target, args, **kwargs:
-        SimpleNamespace(start=lambda: target(*args))))
+        SimpleNamespace(start=lambda: target(*args), is_alive=lambda: False)))
     portal.enqueue_jobs(jobs)
     assert order == [jobs[0], jobs[2]]
     assert portal.metadata(jobs[0])['status'] == 'failed'
@@ -374,7 +374,7 @@ def test_session_stages_input_while_retaining_fifo_position(portal, monkeypatch,
         job = portal.BASE/response.json()['id']
         assert staged.wait(30)
         assert any((job/'input').iterdir()), 'Input must be retained before the earlier job finishes'
-        assert portal.metadata(job)['detail'] == 'Queued behind 1 earlier jobs'
+        assert portal.metadata(job)['detail'] == 'Queued behind 1 earlier job'
         assert order == [first]
     finally:
         release.set()

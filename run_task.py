@@ -14,6 +14,8 @@ import pydicom
 from nv_segment_logic import MODES as NV_SEGMENT_MODES
 import lnctvseg_bundle
 from monai_bundle import compatible_config, bundle_command
+from task_progress import Progress, command_stage
+progress = Progress()
 
 job=Path(sys.argv[1]); task=sys.argv[2]
 if not re.fullmatch(r"[A-Za-z0-9_]+",task): raise SystemExit("Invalid task")
@@ -94,11 +96,15 @@ def run(cmd, env=None, cwd=None):
     env = os.environ.copy() if env is None else env.copy()
     for name in ("TMPDIR", "TEMP", "TMP"):
         env[name] = str(TEMP_ROOT)
+    stage = command_stage(cmd)
+    progress.emit(stage, 0, 1, force=True)
     child = subprocess.Popen(cmd, start_new_session=True, env=env, cwd=cwd)
     code = child.wait()
     child = None
     if code:
         raise SystemExit(code)
+    if stage != "rtstruct_contours":
+        progress.emit(stage, 1, 1, force=True)
 
 def stop_child(*_):
     if child is not None and child.poll() is None:
@@ -159,6 +165,7 @@ def identify_rtstruct(path: Path, model_name: str):
 signal.signal(signal.SIGTERM, stop_child)
 signal.signal(signal.SIGINT, stop_child)
 try:
+    progress.emit("staging")
     isrt_tasks = {
         "isrt_ct_resunet": ("resunet", "ResUNet"),
         "isrt_ct_segresnet": ("segresnet", "SegResNet"),
@@ -603,6 +610,7 @@ try:
              '--work', str(work / 'inference'), '--model-root', str(MODEL_ROOT)])
         # Preserve every raw checkpoint class for Dice; export only documented IDs.
         exported = work / 'export' / 'case.nii.gz'
+        progress.emit("postprocessing")
         lnctvseg_bundle.prepare_export(prediction_dir / 'case.nii.gz', exported,
                                       job / 'output' / task)
         run([sys.executable, str(APP_ROOT / 'convert_validate_rtstruct.py'),
@@ -1444,10 +1452,12 @@ test_time_augmentation_iteration=0
              "--dicom", str(job / "input"), "--output", str(output),
              "--labels", str(labels)])
         shutil.rmtree(work, ignore_errors=True)
+    progress.emit("export", 0, 1)
     if task != "nv_reason_ct_report":
         if not output.exists():
             raise SystemExit(f"{task} did not create its expected RTSTRUCT")
         identify_rtstruct(output, task)
+    progress.emit("export", 1, 1, force=True)
 finally:
     if child is not None and child.poll() is None:
         try: os.killpg(child.pid, signal.SIGKILL)

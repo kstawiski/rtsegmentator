@@ -17,7 +17,7 @@ const fixtureReport={status:'generated',regions:[{region:'chest',sections:{techn
   {heading:'ABDOMEN',text:'',organ_status:'unmapped'},
   {heading:'Liver',text:'Not in scanned volume — statement withheld',organ_status:'absent'}],impression:['Synthetic text for UI tests.'],labels:[]},unchecked_headings:['CHEST','Medical devices','ABDOMEN']}],coverage:{heart:{volume_ml:12.345,slice_range:[1,4]}}};
 const failed={status:'failed',created:1700000000,updated:1700000060,models:['total',reportName],report_status:'failed',report_reason:'Task failed; see job error',error:'Synthetic test failure',detail:'Processing failed',model_total:2};
-const fixtureJobs=[{...failed,id:'qa-earlier',model_index:1,completed_models:[]},
+const fixtureJobs=[{id:'qa-active',status:'processing',created:Date.now()/1000-300,updated:Date.now()/1000,models:['total','nv_segment_ct_auto',reportName],current_task:'nv_segment_ct_auto',stage:'Validating RTSTRUCT geometry',stage_key:'rtstruct_validation',stage_done:43,stage_total:117,stage_started:Date.now()/1000-60,last_activity:Date.now()/1000-5,last_cpu_activity:Date.now()/1000-2,stall_threshold:1200,completed_models:['total'],task_timings:{total:{status:'done',duration:120},nv_segment_ct_auto:{status:'running',started:Date.now()/1000-180}}},{...failed,id:'qa-earlier',model_index:1,completed_models:[]},
   {...failed,id:'qa-report',model_index:2,completed_models:['total']},
   {...failed,id:'qa-complete',status:'complete',report_status:'generated',report_reason:'',error:null,model_index:2,completed_models:['total',reportName]}];
 const fixtureSeries=[
@@ -38,6 +38,7 @@ window.fetch=async (input,options={})=>{
   else if(path.includes('health'))body={worker_mode:'local',worker_reachable:false};
   else if(path==='/api/v1/jobs')body={jobs:url.searchParams.get('batch_id')==='qa-archived-batch'?archivedBatchJobs:fixtureJobs};
   else if(/^\/api\/v1\/jobs\/[^/]+$/.test(path))body=[...fixtureJobs,...archivedBatchJobs].find(j=>j.id===path.split('/').at(-1))||{};
+  else if(path.endsWith('/log'))body={task:url.searchParams.get('task'),lines:['RTSEG_PROGRESS {\"stage\":\"rtstruct_validation\",\"done\":43,\"total\":117}','Synthetic task log: <no markup>']};
   else if(path.endsWith('/report'))body=fixtureReport;
   else if(path.endsWith('/viewer')){body={detail:'Synthetic UI fixture: no image pixels supplied.'};status=404;}
   else if(path==='/api/v1/upload-sessions')body={session_id:'ui-fixture',max_request_bytes:1048576};
@@ -49,7 +50,12 @@ window.fetch=async (input,options={})=>{
     window.uiBatchRequests.push({keys,models:names});
     const now=Date.now()/1000,batch_id='synthetic-batch';
     const jobs=keys.map((key,i)=>({id:'qa-batch-'+i,series_key:key,models:names.filter(name=>fixtureModels.find(t=>t.name===name).modality===fixtureSeries.find(s=>s.key===key).modality)}));
-    fixtureJobs.push(...jobs.map((job,i)=>({...job,status:'queued',created:now+i*.2,detail:'Queued behind '+i+' earlier jobs',batch_id,batch_index:i+1,batch_size:jobs.length,series:fixtureSeries.find(s=>s.key===job.series_key)})));
+    fixtureJobs.push(...jobs.map((job,i)=>({...job,status:i?'queued':'processing',created:now+i*.2,
+      detail:i?'Queued behind 1 earlier job':'total (1/2): validating RTSTRUCT geometry · 43/117 structures',
+      ...(i?{}:{current_task:'total',model_index:1,stage:'Validating RTSTRUCT geometry',stage_key:'rtstruct_validation',
+        stage_done:43,stage_total:117,stage_started:now-60,last_activity:now-5,last_cpu_activity:now-2,
+        stall_threshold:1200,task_timings:{total:{status:'running',started:now-180}}}),
+      batch_id,batch_index:i+1,batch_size:jobs.length,series:fixtureSeries.find(s=>s.key===job.series_key)})));
     fixtureJobs.push({id:'qa-unrelated',status:'queued',created:now+.1,models:['total']});
     body={batch_id,ids:jobs.map(j=>j.id),jobs};status=202;
   }

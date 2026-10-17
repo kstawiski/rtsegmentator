@@ -173,10 +173,40 @@ The recent-jobs list groups batches newest first and keeps each batch in series 
 Use `GET /api/v1/jobs?batch_id=BATCH_ID` to retrieve an older batch for sibling navigation.
 Jobs execute sequentially in FIFO submission order; a batch reserves consecutive queue
 positions in the submitted series order. Waiting `detail` reports the number of earlier
-jobs and updates as jobs finish. Restart recovery requeues retained jobs in creation order.
+jobs and updates as jobs finish: "Next in queue", "Queued behind 1 earlier job", or
+"Queued behind N earlier jobs". Restart and watchdog recovery re-enter this dispatcher
+in creation order among waiting jobs. FIFO reservations and jobs awaiting input staging
+are live to the watchdog. A task stall retry keeps the running job’s queue position.
 
 The legacy `POST /api/uploads/{uid}/start` accepts one `series_key` with its existing
 strict model/series validation and still returns HTTP 200 with `{"id":"JOB_ID"}`.
 It uses the shared creation code and records batch fields with `batch_size=1`.
 Direct and resumable single-series segmentation submissions also record size-one batches;
 resumable submissions fill the series metadata after staging and before inference.
+
+## Job activity and task logs
+
+`GET /api/v1/jobs/{id}` includes these optional progress fields in `job.json`:
+
+| Field | Meaning |
+| --- | --- |
+| `current_task` | Model/task identifier currently being executed. |
+| `stage`, `stage_key` | Human-readable stage and stable stage identifier. |
+| `stage_done`, `stage_total` | Completed and total items in the current stage, or null when unknown. |
+| `stage_started` | Unix timestamp when this stage began. |
+| `task_started` | Unix timestamp when the current task attempt began. |
+| `last_activity` | Unix timestamp of the latest observed log growth/progress. |
+| `last_cpu_activity` | Unix timestamp of the latest observed increase in local process-tree CPU ticks; initialized at attempt start. |
+| `task_remote` | True for an SSH-monitored task; activity is based on log growth. |
+| `task_timings` | Object keyed by task with `started`, `attempt_started`, `attempts`, `status` (`running`, `done`, `failed`), and, after completion, `finished` and `duration` in seconds. Duration includes retries. |
+| `completed_models` | Successfully completed tasks; retained outputs can be reused during recovery. |
+| `stall_threshold`, `stall_warning` | Configured inactivity interval in seconds and warning state before recovery. |
+| `stall_events` | Event array with `task`, human-readable `stage`, Unix `time` and `action` (`retry`, `failed`, `orphan_recovery`). |
+| `task_pid`, `task_pid_started` | Internal local runner/SSH-client process identity for liveness checks; cleared after the attempt. |
+| `recovery_count`, `interrupted_status` | Existing interrupted-job recovery count and prior state. |
+
+`detail` remains available and names the actual task, stage and structure count when known. `updated` records metadata writes, including monitor polls; use the activity fields for liveness. Older jobs can lack these fields.
+
+`GET /api/v1/jobs/{id}/log?task=total&lines=40` returns `{"task":"total","lines":["..."]}`. Omitting `task` selects `current_task`. Only a task in the job's `models` list is accepted. Invalid job/task identifiers, unknown jobs/tasks and symlinked task logs return 404. A task without a log returns an empty `lines` array. `lines` is clamped to 1–200 and the file read is capped at 256 KiB; the response can contain fewer lines. ANSI escape sequences are removed and carriage-return progress updates collapse to their latest rendition. The endpoint reads the log only and accepts no file paths.
+
+`RTSEG_STALL_SECONDS` (default 1200) and `RTSEG_STALL_RETRIES` (default 1) configure automatic task recovery. A monitor publishes a warning for one polling interval before stopping a stalled task. A silent local task with increasing process-tree CPU time remains active. SSH monitoring currently relies on log growth. See [Operations](OPERATIONS.md#task-progress-and-stall-recovery) for retry and orphan-watchdog behavior.

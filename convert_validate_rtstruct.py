@@ -7,7 +7,8 @@ import pydicom
 from pydicom.uid import RTStructureSetStorage
 from rtstruct_geometry import add_roi, create_rtstruct, mask_bounds, report_omissions, dicom_grid, unique_roi_names
 from orientation_contract import exact_orientation, restore_image, write_export_record
-from rtstruct_roundtrip import validate_roi_roundtrip
+from rtstruct_roundtrip import CroppedMask, data_box, validate_roi_roundtrip
+from task_progress import Progress
 
 
 def deterministic_color(name: str) -> list[int]:
@@ -34,22 +35,33 @@ def main():
     # shared writer transposes each plane for OpenCV without reversing rows.
     rtstruct = create_rtstruct(a.dicom, inp)
     expected_bounds = {}
-    expected_masks = {}
+    expected_boxes = {}
+    progress = Progress()
+    progress.emit("rtstruct_contours", 0, len(present))
+    done = 0
     omitted = []
     for class_idx, class_name in labels.items():
-        binary = data == class_idx
-        if not np.any(binary):
+        if class_idx not in present:
             continue
-        if not add_roi(rtstruct, binary, class_name, deterministic_color(class_name)):
+        box = data_box(data, label=class_idx)
+        offset = tuple(s.start for s in box)
+        binary = data[box] == class_idx
+        if not add_roi(rtstruct, binary, class_name, deterministic_color(class_name), offset=offset):
             omitted.append({"name": class_name, "voxels": int(binary.sum()),
                             "reason": "no contour returned for nonempty mask"})
+            del binary
             continue
-        expected_bounds[class_name] = mask_bounds(binary, rtstruct.series_data)
-        expected_masks[class_name] = binary
+        expected_bounds[class_name] = mask_bounds(binary, rtstruct.series_data, offset=offset)
+        expected_boxes[class_name] = (class_idx, box)
+        del binary
+        done += 1
+        progress.emit("rtstruct_contours", done, len(present))
     report_omissions(a.output, omitted)
-    if not expected_masks:
+    if not expected_boxes:
         raise SystemExit("no contourable structures: no RTSTRUCT created")
+    progress.emit("rtstruct_writing")
     rtstruct.save(str(a.output))
+    progress.emit("rtstruct_validation", 0, len(expected_boxes))
     ds=pydicom.dcmread(a.output,stop_before_pixels=True)
     if ds.SOPClassUID != RTStructureSetStorage or ds.Modality != "RTSTRUCT": raise SystemExit("output is not DICOM RT Structure Set Storage")
     rois=getattr(ds,"StructureSetROISequence",[]); contours=getattr(ds,"ROIContourSequence",[])
@@ -70,7 +82,7 @@ def main():
     spacing=np.asarray(inp.header.get_zooms()[:3],dtype=float)
     tolerance=max(2.1,float(spacing.max())*2.1)
     max_delta=0.0; roundtrip={}
-    for roi in contours:
+    for done, roi in enumerate(contours, 1):
         name=roi_names[int(roi.ReferencedROINumber)]
         pieces=[np.asarray(c.ContourData,dtype=float).reshape(-1,3)
                 for c in getattr(roi,"ContourSequence",[]) if getattr(c,"ContourData",None)]
@@ -82,10 +94,15 @@ def main():
         if delta>tolerance:
             raise SystemExit(f"RTSTRUCT geometry mismatch for {name}: {delta:.3f} mm > {tolerance:.3f} mm")
         try:
-            roundtrip[name]=validate_roi_roundtrip(roi,pred,expected_masks[name],
+            class_idx, box = expected_boxes[name]
+            expected = CroppedMask(data[box] == class_idx, tuple(s.start for s in box), data.shape)
+            roundtrip[name]=validate_roi_roundtrip(roi,pred,expected,
                                                   source_slices=rtstruct.series_data)
         except ValueError as exc:
             raise SystemExit(f"RTSTRUCT physical round-trip mismatch for {name}: {exc}") from exc
+        del expected
+        progress.emit("rtstruct_validation", done, len(contours))
+    progress.emit("export")
     write_export_record(a.output, a.model_input, inverse)
     print(json.dumps({"valid":True,"rois":len(rois),"contour_sets":len(contours),
         "referenced_images":len(refs),"geometry_bbox_max_delta_mm":round(max_delta,4),

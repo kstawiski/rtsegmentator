@@ -395,6 +395,18 @@ h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus{outline:none}
 .badge.default{color:var(--teal-deep);background:var(--teal-wash)}
 .batch-siblings{margin-bottom:1rem}
 .batch-siblings [aria-current=page]{border:2px solid var(--teal-deep)}
-.job.is-new{outline:2px solid var(--coral);outline-offset:2px}
+.job.is-new{border-left:4px solid var(--teal-deep)}
 
 .model-row .model-details:not([open]){flex-basis:auto;margin-left:auto}
+
+/* Progress uses the existing neutral panels and coral warning accent. */
+.job-stage:empty{display:none}
+.model-checklist{list-style:none;padding:0;margin:.8rem 0;font-size:.875rem}
+.model-checklist li{padding:.18rem 0;overflow-wrap:anywhere}
+.model-checklist [data-status="done"]{color:var(--green,#2d6751)}
+.model-checklist [data-status="running"]{font-weight:600}
+.model-checklist [data-status="waiting"]{color:var(--muted)}
+.stall-warning{border-left:3px solid var(--coral);background:#fff7e8;padding:.7rem .9rem;color:#74470a}
+.live-log{margin:.8rem 0}
+.live-log summary{cursor:pointer;font-size:.875rem;font-weight:600}
+.live-log pre{max-height:22rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--paper,#f5f7f7);padding:.8rem;font-size:.75rem}
