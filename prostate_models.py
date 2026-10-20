@@ -5,7 +5,9 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import re
 import shutil
+import subprocess
 
 CHANNEL_ROLES = ('t2w', 'adc', 'hbv')
 TRAINER = 'nnUNetTrainerV2_Loss_FL_and_CE_checkpoints'
@@ -46,6 +48,27 @@ def model_folder(task):
     return Path('weights') / model
 
 
+_SHA256_CACHE = {}
+
+
+def file_sha256(path):
+    """SHA-256 of a checkpoint, cached per process by path, size and mtime.
+
+    Preflight runs on every catalogue refresh; re-reading several GB each time is
+    needlessly slow, while a replaced or modified file changes size or mtime.
+    """
+    path = Path(path)
+    stat = path.stat()
+    key = (str(path.resolve()), stat.st_size, stat.st_mtime_ns)
+    if key not in _SHA256_CACHE:
+        digest = hashlib.sha256()
+        with path.open('rb') as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                digest.update(chunk)
+        _SHA256_CACHE[key] = digest.hexdigest()
+    return _SHA256_CACHE[key]
+
+
 def weight_files(task):
     folder = model_folder(task)
     if task.startswith('picai_'):
@@ -63,7 +86,7 @@ def requirements(task):
              f'runtime-envs/{env}/bin/python', f'sources/{model}/LICENSE',
              *map(str, weight_files(task)), f'validation/{task}.json']
     if task.startswith('picai_'):
-        files += ['@convert_masks_validate_rtstruct.py', f'runtime-envs/{env}/bin/nnUNet_predict']
+        files += ['@convert_masks_validate_rtstruct.py', '@picai_predict.py', f'runtime-envs/{env}/bin/nnUNet_predict']
         files += [f'sources/{model}/{name}' for name in (
             'nnUNetTrainerV2_focalLoss.py', 'nnUNetTrainerV2_Loss_CE_checkpoints.py',
             'nnUNetTrainerV2_Loss_FL_and_CE.py')]
@@ -74,6 +97,73 @@ def requirements(task):
                       '@third_party/umu_prostate_zones/utils_postprocess_nnUNet.py',
                       '@third_party/umu_prostate_zones/LICENSE']
     return files
+
+
+def marker_has_failure(value):
+    """A success label cannot conceal failed checks or a waived failure."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in {'passed', 'predeclared_passed'} and item is not True:
+                return True
+            if key in {'result', 'status'} and item not in {'passed', 'nonempty'}:
+                return True
+            if key in {'error', 'errors', 'fatal_error', 'failure', 'failures', 'failed_checks',
+                       'unresolved_failures', 'deviations'} and item:
+                return True
+            if marker_has_failure(item):
+                return True
+    elif isinstance(value, list):
+        return any(marker_has_failure(item) for item in value)
+    return False
+
+
+def validate_acceptance(record, task, root):
+    """Validate the prostate harness marker against this installed release."""
+    def require(condition, message):
+        if not condition:
+            raise ValueError(message)
+
+    require(isinstance(record, dict) and record.get('task') == task and record.get('result') == 'passed',
+            'Acceptance task/result mismatch')
+    require(not marker_has_failure(record), 'Acceptance contains a failure or deviation')
+    modes = record.get('acceptance_modes')
+    require(isinstance(modes, list) and len(modes) == 2 and 'reference' in modes and 'dicom' in modes,
+            'Both acceptance modes are required')
+    proof = record.get('reference_mode')
+    require(isinstance(proof, dict) and proof.get('passed') is True and
+            isinstance(proof.get('result_sha256'), str) and re.fullmatch('[0-9a-f]{64}', proof['result_sha256']) and
+            type(proof.get('runs')) is int and proof['runs'] == (2 if task.startswith('picai_') else 1),
+            'Missing bound reference evidence')
+    checks = record.get('checks')
+    required = {'gpu_inference', 'exact_input_grid', 'rtstruct_roundtrip', 'orientation', 'both_acceptance_modes',
+                'author_reference_and_repeatability' if task.startswith('picai_') else 'model_output_contract'}
+    require(isinstance(checks, list) and all(isinstance(c, str) for c in checks) and required <= set(checks),
+            'Incomplete acceptance checks')
+    model = TASKS[task][0]
+    source = Path(root) / 'sources' / model
+    if (source / '.git').exists():
+        try:
+            installed_commit = subprocess.run(['git', '-C', str(source), 'rev-parse', 'HEAD'],
+                capture_output=True, text=True, check=True, timeout=10).stdout.strip()
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise ValueError('Cannot verify installed source commit') from exc
+    else:
+        installed_commit = json.loads((source / 'RTSEG_MANIFEST.json').read_text())['commit']
+    require(record.get('source_commit') == installed_commit == SOURCE_COMMITS[model], 'Source commit mismatch')
+    hashes = {relative.as_posix(): file_sha256(Path(root) / relative) for relative in weight_files(task)}
+    require(record.get('checkpoint_hashes') == hashes, 'Checkpoint hashes mismatch')
+    digest = hashlib.sha256(json.dumps(hashes, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    require(record.get('checkpoint_sha256') == digest, 'Checkpoint digest mismatch')
+    revision = (installed_commit if task.startswith('picai_') else
+                'Dataset077_ProstateZones/checkpoint_best.pth' if model == 'umu_prostate_zones' else
+                'zenodo:7040585/tumor.pt')
+    require(record.get('checkpoint_revision') == revision, 'Checkpoint revision mismatch')
+
+
+def validate_orientation(record, task):
+    if (not isinstance(record, dict) or record.get('task') != task or record.get('result') != 'passed'
+            or marker_has_failure(record)):
+        raise ValueError('Orientation task/result mismatch or failed checks')
 
 
 def validate_umu_dataset(data):
@@ -205,11 +295,7 @@ def runtime_provenance(task, root):
     weights = []
     for relative in weight_files(task):
         path = Path(root) / relative
-        digest = hashlib.sha256()
-        with path.open('rb') as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b''):
-                digest.update(chunk)
-        weights.append({'path': relative.as_posix(), 'bytes': path.stat().st_size, 'sha256': digest.hexdigest()})
+        weights.append({'path': relative.as_posix(), 'bytes': path.stat().st_size, 'sha256': file_sha256(path)})
     return {'task': task, 'source_commit': SOURCE_COMMITS[model], 'packages': packages, 'weights': weights}
 
 

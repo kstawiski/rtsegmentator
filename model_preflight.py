@@ -15,6 +15,7 @@ from run_lnq_atlas import (total_python as lnq_total_python, MODEL_RELATIVE as L
 from nv_segment_logic import MODES as NV_SEGMENT_MODES, validate_acceptance
 import lnctvseg_bundle
 from prostate_models import TASKS as PROSTATE_TASKS, requirements as prostate_requirements
+from prostate_models import validate_acceptance as prostate_acceptance, validate_orientation as prostate_orientation
 
 MODEL_ROOT = Path(os.environ.get("RTSEG_MODEL_ROOT", "/models"))
 RUNTIME_ROOT = Path(os.environ.get("RTSEG_RUNTIME_ROOT", MODEL_ROOT))
@@ -523,13 +524,26 @@ def audit(tasks=None) -> dict[str, dict]:
                 if f"validation/{task}.json" not in missing:
                     missing.append(f"validation/{task}.json (inconsistent acceptance contents)")
         orientation = MODEL_ROOT / "orientation-validation" / f"{task}.json"
+        orientation_ready = orientation.is_file()
+        if task in PROSTATE_TASKS:
+            for folder, validator in (("validation", lambda record: prostate_acceptance(record, task, MODEL_ROOT)),
+                                      ("orientation-validation", lambda record: prostate_orientation(record, task))):
+                try:
+                    validator(json.loads((MODEL_ROOT / folder / f"{task}.json").read_text()))
+                    if folder == "validation":
+                        acceptance_ready = True
+                except (OSError, ValueError, TypeError, AttributeError, KeyError):
+                    if folder == "orientation-validation":
+                        orientation_ready = False
+                    if f"{folder}/{task}.json" not in missing:
+                        missing.append(f"{folder}/{task}.json (inconsistent {folder} contents)")
         report[task] = {"ready": not missing, "missing": missing,
-                        "orientation_ready": orientation.is_file()}
+                        "orientation_ready": orientation_ready}
         if task == lnctvseg_bundle.TASK:
             report[task]['orientation_ready'] = lnctvseg_bundle.orientation_ready(orientation)
         if task == "nv_reason_ct_report":
             report[task]["acceptance_ready"] = report_acceptance_ready()
-        elif task in NV_SEGMENT_MODES or task == lnctvseg_bundle.TASK:
+        elif task in NV_SEGMENT_MODES or task == lnctvseg_bundle.TASK or task in PROSTATE_TASKS:
             report[task]["acceptance_ready"] = acceptance_ready
     # Native tasks have the same installed-runtime contract as the production catalog.
     for task in set(tasks or []) - REQUIREMENTS.keys():

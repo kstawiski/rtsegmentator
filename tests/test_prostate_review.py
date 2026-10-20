@@ -1,5 +1,7 @@
 """Review reproductions using synthetic files and mocked inference/transport."""
 import contextlib
+import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -278,7 +280,7 @@ def test_review_m5_environments_belong_to_model_root(tmp_path, monkeypatch, task
     monkeypatch.setattr(model_preflight, 'RUNTIME_ROOT', runtime_root)
     monkeypatch.setattr(model_preflight, 'COMMON', [])
     monkeypatch.setattr(model_preflight, 'REQUIREMENTS', {task: [relative]})
-    assert model_preflight.audit([task])[task]['ready']
+    assert relative not in model_preflight.audit([task])[task]['missing']
     job = tmp_path / 'job'
     job.mkdir()
     (job / 'job.json').write_text('{}')
@@ -303,3 +305,123 @@ def test_review_m5_environments_belong_to_model_root(tmp_path, monkeypatch, task
     other.parent.mkdir(parents=True)
     other.write_text('wrong root; never executed')
     assert relative in model_preflight.audit([task])[task]['missing']
+
+
+def synthetic_acceptance_bundle(root, task):
+    """Use the full real requirement list; no executable or checkpoint is loaded."""
+    model = prostate_models.TASKS[task][0]
+    for requirement in prostate_models.requirements(task):
+        if not requirement.startswith('@'):
+            path = root / requirement
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('synthetic placeholder')
+    commit = prostate_models.SOURCE_COMMITS[model]
+    (root / 'sources' / model / 'RTSEG_MANIFEST.json').write_text(json.dumps({'commit': commit}))
+    hashes = {str(p): hashlib.sha256((root / p).read_bytes()).hexdigest() for p in prostate_models.weight_files(task)}
+    record = {'task': task, 'result': 'passed', 'source_commit': commit,
+        'checkpoint_revision': commit if task.startswith('picai_') else
+            'Dataset077_ProstateZones/checkpoint_best.pth' if model == 'umu_prostate_zones' else 'zenodo:7040585/tumor.pt',
+        'checkpoint_hashes': hashes,
+        'checkpoint_sha256': hashlib.sha256(json.dumps(hashes, sort_keys=True, separators=(',', ':')).encode()).hexdigest(),
+        'acceptance_modes': ['reference', 'dicom'], 'deviations': [],
+        'reference_mode': {'passed': True, 'result_sha256': 'a' * 64,
+                           'runs': 2 if task.startswith('picai_') else 1, 'deviations': []},
+        'checks': ['gpu_inference', 'exact_input_grid', 'rtstruct_roundtrip', 'orientation', 'both_acceptance_modes',
+                   'author_reference_and_repeatability' if task.startswith('picai_') else 'model_output_contract']}
+    orientation = {'task': task, 'result': 'passed'}
+    return record, orientation
+
+
+@pytest.mark.parametrize('task', list(prostate_models.TASKS))
+@pytest.mark.parametrize('defect', ['good', 'empty', 'wrong_task', 'failed', 'malformed', 'missing', 'stale_hash',
+    'stale_file', 'missing_hash', 'wrong_digest', 'wrong_source', 'installed_source', 'missing_mode',
+    'missing_check', 'failed_reference', 'unresolved_failure', 'deviation', 'reference_deviation',
+    'orientation_empty', 'orientation_wrong_task', 'orientation_failed', 'orientation_missing', 'no_preflight'])
+def test_round2_m1_real_preflight_to_catalogue(portal, tmp_path, monkeypatch, task, defect):
+    import model_preflight
+    root = tmp_path / 'synthetic-bundle'
+    record, orientation = synthetic_acceptance_bundle(root, task)
+    model = prostate_models.TASKS[task][0]
+    if defect == 'empty': record = {}
+    elif defect == 'wrong_task': record['task'] = 'wrong-task'
+    elif defect == 'failed': record['result'] = 'failed'
+    elif defect == 'stale_hash': record['checkpoint_hashes'][str(prostate_models.weight_files(task)[0])] = '0' * 64
+    elif defect == 'stale_file': (root / prostate_models.weight_files(task)[0]).write_text('changed installed bytes')
+    elif defect == 'missing_hash': record['checkpoint_hashes'].pop(str(prostate_models.weight_files(task)[0]))
+    elif defect == 'wrong_digest': record['checkpoint_sha256'] = '0' * 64
+    elif defect == 'wrong_source': record['source_commit'] = '0' * 40
+    elif defect == 'installed_source': (root / 'sources' / model / 'RTSEG_MANIFEST.json').write_text('{"commit":"stale"}')
+    elif defect == 'missing_mode': record['acceptance_modes'] = ['reference']
+    elif defect == 'missing_check': record['checks'].remove('rtstruct_roundtrip')
+    elif defect == 'failed_reference': record['reference_mode']['passed'] = False
+    elif defect == 'unresolved_failure': record['unresolved_failures'] = ['failed run']
+    elif defect == 'deviation': record['deviations'] = [{'check': 'reference.map'}]
+    elif defect == 'reference_deviation': record['reference_mode']['deviations'] = [{'check': 'reference.map'}]
+    elif defect == 'orientation_empty': orientation = {}
+    elif defect == 'orientation_wrong_task': orientation['task'] = 'wrong-task'
+    elif defect == 'orientation_failed': orientation['result'] = 'failed'
+    marker = root / 'validation' / f'{task}.json'
+    marker.write_text('{' if defect == 'malformed' else json.dumps(record))
+    if defect == 'missing': marker.unlink()
+    marker = root / 'orientation-validation' / f'{task}.json'
+    marker.parent.mkdir()
+    if defect != 'orientation_missing': marker.write_text(json.dumps(orientation))
+    monkeypatch.setattr(model_preflight, 'MODEL_ROOT', root)
+    monkeypatch.setattr(model_preflight, 'RUNTIME_ROOT', root)
+    check = model_preflight.audit([task])[task]
+    assert check['ready'] == (defect in {'good', 'no_preflight'}), check
+    assert check['orientation_ready'] == (not defect.startswith('orientation_'))
+    item = {'name': task, 'enabled': True, **copy.deepcopy(portal.PROSTATE_TASKS[task])}
+    portal.apply_model_gates(item, None if defect == 'no_preflight' else check, {task})
+    assert item['enabled'] == (defect == 'good' and task != 'picai_nnunet_supervised_bpmri'), item
+    if task == 'picai_nnunet_supervised_bpmri':
+        assert '390 vs 1,132 voxels' in item['status'] and 'Not enabled' in item['status']
+
+
+@pytest.mark.parametrize('task,number', [('picai_nnunet_supervised_bpmri', '2201'),
+                                        ('picai_nnunet_semisupervised_bpmri', '2203')])
+def test_round2_m3_flags_after_trainer_restore_and_unchanged_arguments(monkeypatch, task, number):
+    import picai_predict
+    import run_picai
+    command = run_picai.prediction_command('input path', 'output path', task)
+    expected = ['-t', f'Task{number}_picai_baseline', '-i', 'input path', '-o', 'output path',
+        '-m', '3d_fullres', '-tr', prostate_models.TRAINER, '--num_threads_preprocessing', '2',
+        '--num_threads_nifti_save', '1', '-f', '0', '1', '2', '3', '4', '-chk', 'model_best', '--save_npz']
+    assert command == [sys.executable, str(Path(run_picai.__file__).with_name('picai_predict.py')), *expected]
+    flags = SimpleNamespace(deterministic=True, benchmark=False)
+    restored = object()
+    calls = []
+    def restore(*args, **kwargs):
+        calls.append((args, kwargs))
+        flags.deterministic, flags.benchmark = False, True  # Training-time state restored.
+        return restored
+    predict = SimpleNamespace(load_model_and_checkpoint_files=restore)
+    def upstream_main():
+        assert sys.argv[1:] == expected
+        # Repeated restores must each reapply the policy, preserving all arguments/results.
+        for fold in (0, 1):
+            assert predict.load_model_and_checkpoint_files('model', [fold], checkpoint_name='model_best') is restored
+            assert flags.deterministic is True and flags.benchmark is False
+        return 'predicted'
+    modules = {'torch': SimpleNamespace(backends=SimpleNamespace(cudnn=flags)),
+        'nnunet': SimpleNamespace(), 'nnunet.inference': SimpleNamespace(predict=predict),
+        'nnunet.inference.predict_simple': SimpleNamespace(main=upstream_main)}
+    for name, module in modules.items(): monkeypatch.setitem(sys.modules, name, module)
+    monkeypatch.setattr(sys, 'argv', command[1:])
+    assert picai_predict.main() == 'predicted'
+    assert predict.load_model_and_checkpoint_files is restore
+    assert calls == [(('model', [fold]), {'checkpoint_name': 'model_best'}) for fold in (0, 1)]
+    assert run_picai.CUDNN_POLICY == {'deterministic': True, 'benchmark': False,
+        'applied_after': 'load_model_and_checkpoint_files (trainer restore and initialize)'}
+
+
+def test_checkpoint_hash_cache_rehashes_changed_files(tmp_path):
+    import os
+    import prostate_models
+    path = tmp_path / 'weights.bin'
+    path.write_bytes(b'first')
+    first = prostate_models.file_sha256(path)
+    assert prostate_models.file_sha256(path) == first
+    path.write_bytes(b'second, longer')
+    os.utime(path, ns=(path.stat().st_atime_ns, path.stat().st_mtime_ns + 1_000_000))
+    assert prostate_models.file_sha256(path) != first

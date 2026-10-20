@@ -9,6 +9,16 @@ const dwi={...primary,key:'dwi',description:'DWI',hbv_options:[{b_value:800,b_va
 const multi={name:'synthetic_bpmri',modality:'MR',input_roles:roles,reference_role:'t2w'};
 const single={name:'total_mr',modality:'MR'};
 
+test('supervised PI-CAI card gives the numeric reason for its explicit block',()=>{
+  const {blockedReason}=require('../static/app.js');
+  const task=require('../catalog/prostate.json').picai_nnunet_supervised_bpmri;
+  const reason=blockedReason({...task,name:'picai_nnunet_supervised_bpmri'},primary,[primary,adc,dwi]);
+  assert.equal(task.enabled,false);
+  assert.equal(task.blocked_status,task.status);
+  assert.match(reason,/390 vs 1,132 voxels/);
+  assert.match(reason,/outside the authors' reproduction tolerance/);
+});
+
 test('ADC evidence ranks above description; candidates stay within the study and modality',()=>{
   const rows=[primary,adc,dwi,{...adc,key:'named',is_adc:false},{...adc,key:'foreign',study_uid:'other'},{...adc,key:'ct',modality:'CT'}];
   const options=roleCandidates(primary,rows,roles[1]);

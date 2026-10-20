@@ -1501,6 +1501,20 @@ def safe_extract(archive: Path, destination: Path, budget: int = MAX_BYTES):
 def inspect_upload(input_dir: Path) -> dict:
     groups = {}; ignored = 0; unattributed = []; rejected_by_uid = {}
 
+    def image_evidence(ds):
+        sop = str(getattr(ds, "SOPClassUID", "") or
+                  getattr(getattr(ds, "file_meta", None), "MediaStorageSOPClassUID", ""))
+        return (getattr(ds, "preamble", None) is not None or
+                "Image Storage" in pydicom.uid.UID(sop).name or
+                any(tag in ds for tag in ("PixelData", "FloatPixelData", "DoubleFloatPixelData")))
+
+    def recover_identity(path):
+        # Deferred pixels are used only as tag evidence, never decoded or loaded.
+        return pydicom.dcmread(path, force=True, defer_size=1, specific_tags=[
+            "Modality", "SeriesInstanceUID", "StudyInstanceUID", "FrameOfReferenceUID",
+            "SeriesDescription", "StudyDate", "SOPClassUID", "PixelData",
+            "FloatPixelData", "DoubleFloatPixelData"])
+
     def identify(ds):
         modality = str(getattr(ds, "Modality", ""))
         uid = str(getattr(ds, "SeriesInstanceUID", ""))
@@ -1515,7 +1529,7 @@ def inspect_upload(input_dir: Path) -> dict:
             "files": [], "rows": 0, "columns": 0, **({"instances": []} if modality == "MR" else {})})
 
     for f in sorted(input_dir.iterdir()):
-        g = None
+        g = None; identified_image = False
         try:
             ds = pydicom.dcmread(f, stop_before_pixels=True)
             # Keep the series identity before detailed metadata can reject an instance.
@@ -1527,6 +1541,9 @@ def inspect_upload(input_dir: Path) -> dict:
                         "file": f.name, "reason": "Instance has missing or unsupported Modality"})
                 elif str(getattr(ds, "Modality", "")) == "MR":
                     raise ValueError("MR instance has no SeriesInstanceUID")
+                elif image_evidence(ds) or image_evidence(recover_identity(f)):
+                    identified_image = True
+                    raise ValueError("Image instance has no recoverable series identity")
                 ignored += 1; continue
             instance = mr_instance(ds, f.name) if g["modality"] == "MR" else None
             rows, columns = int(ds.Rows), int(ds.Columns)
@@ -1545,14 +1562,14 @@ def inspect_upload(input_dir: Path) -> dict:
             ignored += 1
             if g is None:
                 try:
-                    identity = pydicom.dcmread(f, stop_before_pixels=True, specific_tags=[
-                        "Modality", "SeriesInstanceUID", "StudyInstanceUID", "FrameOfReferenceUID",
-                        "SeriesDescription", "StudyDate"])
+                    identity = recover_identity(f)
+                    identified_image = identified_image or image_evidence(identity)
                     g = identify(identity)
                 except Exception:
                     pass
             known_reasons = {"Invalid NumberOfFrames", "Invalid image dimensions",
-                             "MR instance has no SeriesInstanceUID"}
+                             "MR instance has no SeriesInstanceUID",
+                             "Image instance has no recoverable series identity"}
             reason = str(exc) if str(exc) in known_reasons else f"Unreadable or rejected image metadata ({type(exc).__name__})"
             error = {"file": f.name, "reason": reason}
             if g is not None:
@@ -1563,7 +1580,7 @@ def inspect_upload(input_dir: Path) -> dict:
                 try:
                     with f.open("rb") as stream:
                         is_dicom = stream.read(132)[128:] == b"DICM"
-                    if is_dicom or f.suffix.lower() == ".dcm":
+                    if identified_image or is_dicom or f.suffix.lower() == ".dcm":
                         unattributed.append(error)
                 except OSError:
                     pass

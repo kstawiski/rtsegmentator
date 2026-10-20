@@ -210,6 +210,55 @@ def test_review_h1_rejected_modality_remains_attached_to_series_uid(mri, modalit
     assert not mri.enqueued and not list(mri.portal.BASE.glob('*/job.json'))
 
 
+@pytest.mark.parametrize('phase', ['assessment', 'before_manifest'])
+@pytest.mark.parametrize('name,offset', [('T2 axial', 0), ('Diffusion map', 0), ('DWI', 6)])
+@pytest.mark.parametrize('slice_index', [0, 1, 2])
+def test_round2_h1_missing_identity_blocks_every_mr_role(mri, phase, name, offset, slice_index):
+    t2, adc, hbv, _, _ = standard_exam(mri)
+    path = mri.root / 'input' / f'{name}-{offset + slice_index}.dcm'
+    ds = pydicom.dcmread(path)
+    del ds.Modality, ds.SeriesInstanceUID
+    ds.save_as(path, enforce_file_format=True)
+    if phase == 'assessment':
+        rows = mri.assess()
+        assert all(row['unavailable_reason'] for row in rows.values())
+        assert all(any(error['file'] == path.name for error in row['assessment_errors']) for row in rows.values())
+    response = mri.submit([t2], {t2: {'adc': adc, 'hbv': {'series_key': hbv, 'b_value': 1400}}})
+    assert response.status_code == 400, response.text
+    assert 'assessment' in response.text.lower()
+    assert not mri.enqueued and not list(mri.portal.BASE.glob('*/job.json'))
+
+
+@pytest.mark.parametrize('evidence', ['preamble', 'sop_class', 'pixel_data'])
+def test_round2_h1_image_evidence_without_identity_or_filename(mri, evidence):
+    t2, _, _, _, _ = standard_exam(mri)
+    path = mri.root / 'input/Diffusion map-2.dcm'
+    ds = pydicom.dcmread(path)
+    del ds.Modality, ds.SeriesInstanceUID
+    if evidence != 'preamble':
+        ds.preamble = None
+    if evidence != 'sop_class':
+        del ds.SOPClassUID, ds.file_meta.MediaStorageSOPClassUID
+    if evidence != 'pixel_data':
+        del ds.PixelData
+    path.unlink()
+    ds.save_as(path.with_suffix('.bin'), enforce_file_format=False)
+    assert all(row['unavailable_reason'] for row in mri.assess().values())
+    assert mri.submit([t2]).status_code == 400
+    assert not mri.enqueued
+
+
+def test_round2_h1_unrelated_non_dicom_file_is_ignored(mri):
+    t2, _, _, _, _ = standard_exam(mri)
+    (mri.root / 'input/readme.txt').write_text('Unrelated upload notes')
+    rows = mri.assess()
+    assert not any(row.get('unavailable_reason') for row in rows.values())
+    assert json.loads((mri.root / 'upload.json').read_text())['ignored'] == 1
+    assert mri.submit([t2]).status_code == 202
+    job = mri.enqueued[0]
+    assert mri.portal.input_manifest_complete(job, mri.portal.metadata(job))
+
+
 def test_review_h2_explicit_tagged_adc_override_records_user(mri):
     t2, adc, hbv, _, _ = standard_exam(mri)
     assert mri.submit([t2], {t2: {'adc': adc, 'hbv': {'series_key': hbv, 'b_value': 800}}}).status_code == 202

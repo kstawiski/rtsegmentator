@@ -16,6 +16,7 @@ import SimpleITK as sitk
 
 from prostate_models import CHANNEL_ROLES, TASKS, TRAINER, model_folder, runtime_provenance
 from prostate_postprocess import assert_same_grid, extract_picai, write_array, write_json
+from picai_predict import CUDNN_POLICY
 
 
 def mirror_files(source, target):
@@ -40,7 +41,7 @@ def prepare_trainer_overlay(source, target):
 
 def prediction_command(input_dir, output_dir, task):
     number = '2201' if task == 'picai_nnunet_supervised_bpmri' else '2203'
-    return [sys.executable, '-m', 'nnunet.inference.predict_simple', '-t', f'Task{number}_picai_baseline',
+    return [sys.executable, str(Path(__file__).with_name('picai_predict.py')), '-t', f'Task{number}_picai_baseline',
             '-i', str(input_dir), '-o', str(output_dir), '-m', '3d_fullres', '-tr', TRAINER,
             '--num_threads_preprocessing', '2', '--num_threads_nifti_save', '1',
             '-f', '0', '1', '2', '3', '4', '-chk', 'model_best', '--save_npz']
@@ -61,6 +62,7 @@ def main():
     provenance.update(json.loads((work / 'context.json').read_text()))
     provenance.update({'weights_licence': 'CC BY-NC-SA 4.0', 'noncommercial': True,
                        'checkpoint': 'model_best', 'folds': list(range(5)), 'trainer': TRAINER,
+                       'cudnn': dict(CUDNN_POLICY),
                        'preprocessing': 'picai-prep 2.0.0 Sample.preprocess(); no extra registration',
                        'adc_units': 'DICOM stored values with converter rescale; no inferred unit conversion'})
     scans = [sitk.ReadImage(str(work / 'native' / f'{role}.nii.gz')) for role in CHANNEL_ROLES]
