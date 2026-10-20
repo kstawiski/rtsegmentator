@@ -271,3 +271,25 @@ def test_catalogue_order_is_numeric_while_runner_maps_sort_as_strings():
     assert names[:3] == ['Label_1', 'Label_2', 'Label_3']
     assert list(serialised)[:3] == ['1', '10', '11']
     assert sorted(names) == sorted(serialised.values())
+
+
+def test_lut_commands_keep_their_baseline_errors_and_empty_results(tmp_path):
+    import subprocess, sys
+    nib = pytest.importorskip('nibabel')
+    np = pytest.importorskip('numpy')
+    bad = tmp_path / 'invalid.txt'
+    bad.write_bytes(b'7 Left\xffCortex 1 2 3 0\n')
+    run = subprocess.run([sys.executable, str(ROOT / 'lut_to_labels.py'), str(bad), str(tmp_path / 'a.json')],
+                         capture_output=True, text=True, cwd=ROOT)
+    assert run.returncode != 0 and 'UnicodeDecodeError' in run.stderr
+    empty = tmp_path / 'background.txt'
+    empty.write_text('0 Background 0 0 0 0\n')
+    run = subprocess.run([sys.executable, str(ROOT / 'lut_to_labels.py'), str(empty), str(tmp_path / 'b.json')],
+                         capture_output=True, text=True, cwd=ROOT)
+    assert run.returncode != 0 and 'No labels parsed from' in run.stderr
+    seg = tmp_path / 'seg.nii.gz'
+    nib.save(nib.Nifti1Image(np.zeros((2, 2, 2), dtype=np.uint8), np.eye(4)), str(seg))
+    out = tmp_path / 'c.json'
+    subprocess.run([sys.executable, str(ROOT / 'labels_from_segmentation_lut.py'), str(seg), str(empty), str(out)],
+                   check=True, cwd=ROOT)
+    assert json.loads(out.read_text()) == {}

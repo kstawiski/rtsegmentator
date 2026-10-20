@@ -71,7 +71,11 @@ def spec_labels(spec, app_root: Path, model_root: Path):
     return spec["labels"]
 
 
-def lut_labels(path: Path, *, freesurfer=False):
+class EmptyLookupTable(ValueError):
+    """The lookup table defines no foreground label."""
+
+
+def lut_labels(path: Path, *, freesurfer=False, allow_empty=False):
     """Parse a colour lookup table exactly as the two runtime readers do.
 
     GOUHFI (default): strict UTF-8, keeps the index spelling from the file and
@@ -85,8 +89,8 @@ def lut_labels(path: Path, *, freesurfer=False):
                          r"^\s*(\d+)\s+([^#]+?)(?:\s+\d+\s+\d+\s+\d+\s+\d+)?\s*$", line)
         if match and int(match[1]):
             labels[str(int(match[1])) if freesurfer else match[1]] = match[2].strip().replace(" ", "_")
-    if not labels:
-        raise ValueError("LUT contains no foreground names")
+    if not labels and not allow_empty:
+        raise EmptyLookupTable("LUT contains no foreground names")
     return labels
 
 

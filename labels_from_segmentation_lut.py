@@ -13,7 +13,7 @@ p.add_argument("lut")
 p.add_argument("output")
 a = p.parse_args()
 
-names = {int(k): v for k, v in lut_labels(Path(a.lut), freesurfer=True).items()}
+names = {int(k): v for k, v in lut_labels(Path(a.lut), freesurfer=True, allow_empty=True).items()}
 present = sorted(int(v) for v in np.unique(np.asanyarray(nib.load(a.segmentation).dataobj)) if v)
 missing = [value for value in present if value not in names]
 if missing:
