@@ -107,3 +107,46 @@ test('every regional model has separate licences, evidence and accurate interact
   assert.match(details.clnet_235.description,/18 neck and 15 chest/);
   assert.match(details.lnctvseg_nnunet_v1.limitations,/omits 7 and logs its volume/);
 });
+
+test('LNQ author correction removes only the stale licence badges',()=>{
+  for(const name of ['lnq_mediastinal_v1','lnq_abdominopelvic_v1','lnq_inguinal_v1','lnq_axillary_v1']){
+    assert.equal(details[name].code_license,'Apache-2.0');
+    assert.equal(details[name].weights_license,'CC BY 4.0');
+    assert.deepEqual(ui.licenceBadges(details[name]),[]);
+    assert.match(details[name].evidence_note,/19 October 2026/);
+    assert(details[name].evidence_sources.some(url=>url.endsWith('fffa35913d9d08234638e482159268fa27322221/MODELS.md')));
+  }
+  assert(ui.licenceBadges(details.voxtell_v1_1_text_prompted).includes('Non-commercial weights'));
+  assert(ui.licenceBadges(details.lnq_atlas).includes('Non-commercial code'));
+});
+
+test('LNCTVSeg summaries include Vc and distinguish the shorter export names',()=>{
+  for(const name of ['lnctvseg_nnunet_v1','lnctvseg_swinunetr','lnctvseg_3duxnet','lnctvseg_repuxnet']){
+    assert.match(metadata.overrides[name].purpose,/left\/right II\+III\+Va, IV\+Vb\+Vc and Ib/);
+    assert.match(metadata.overrides[name].purpose,/export names abbreviate the lower-neck pair to IV–Vb/);
+    assert.match(details[name].description,/IV\+Vb\+Vc/);
+    assert.match(details[name].limitations,/export names abbreviate this pair to IV–Vb/);
+  }
+});
+
+test('SAM-Med3D guidance explains point precedence and the limited box role',()=>{
+  const appSource=require('node:fs').readFileSync(require.resolve('../static/app.js'),'utf8');
+  const help=appSource.match(/sam_med3d_turbo_prompted: '([^']+)'/)[1];
+  for(const text of [help,details.sam_med3d_turbo_prompted.description,metadata.nodal.guidance.sam_med3d_turbo_prompted]){
+    assert.match(text,/Points take precedence over a box/);
+    assert.match(text,/box centre is used only when no positive or negative points are given/);
+    assert.match(text,/box is not a spatial boundary/);
+    assert.match(text,/128³ at 1\.5 mm/);
+  }
+});
+
+test('release absence notes are dated and bounded while integration blockers stay explicit',()=>{
+  const regions=Object.fromEntries(metadata.nodal.regions.map(r=>[r.id,r]));
+  const note=(region,id)=>regions[region].sections.find(s=>s.id===id).note;
+  assert(note('mediastinum','elective').startsWith('No released model with verified IASLC station outputs was found in the sources reviewed on 20 October 2026.'));
+  for(const [region,area] of [['abdomen','abdominal'],['pelvis','pelvic']]){
+    assert.match(note(region,'gtv'),/was found in the sources reviewed on 20 October 2026/);
+    assert.match(regions[region].prompt_note,/were found in the sources reviewed on 20 October 2026/);
+    assert(note(region,'elective').startsWith('No enabled '+area+' nodal-region model.'));
+  }
+});

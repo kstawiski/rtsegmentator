@@ -64,15 +64,13 @@
     "name": "lnq_mediastinal_v1",
     "enabled": true,
     "modality": "CT",
-    "status": "validated",
-    "noncommercial": true
+    "status": "validated"
   },
   {
     "name": "lnq_abdominopelvic_v1",
     "enabled": true,
     "modality": "CT",
-    "status": "validated_fold0",
-    "noncommercial": true
+    "status": "validated_fold0"
   },
   {
     "name": "lnq_inguinal_v1",
@@ -84,8 +82,7 @@
     "name": "lnq_axillary_v1",
     "enabled": true,
     "modality": "CT",
-    "status": "validated_fold0",
-    "noncommercial": true
+    "status": "validated_fold0"
   },
   {
     "name": "compai_lnq",

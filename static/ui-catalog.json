@@ -477,22 +477,22 @@
     "lnctvseg_nnunet_v1": {
       "title": "NPC grouped nodal CTVs · LNCTVSeg nnU-Net v1",
       "group": "ctv",
-      "purpose": "Six bilateral unions: II–III–Va, IV–Vb and Ib. Undocumented checkpoint class 7 is omitted from nnU-Net export."
+      "purpose": "Six outputs: left/right II+III+Va, IV+Vb+Vc and Ib. The released export names abbreviate the lower-neck pair to IV–Vb. Undocumented checkpoint class 7 is omitted from nnU-Net export."
     },
     "lnctvseg_swinunetr": {
       "title": "NPC grouped nodal CTVs · LNCTVSeg SwinUNETR",
       "group": "ctv",
-      "purpose": "Intended six NPC nodal unions. Inference contract unresolved; checkpoint class 7 is undocumented."
+      "purpose": "Six intended outputs: left/right II+III+Va, IV+Vb+Vc and Ib. The released export names abbreviate the lower-neck pair to IV–Vb. Inference remains unavailable; checkpoint class 7 is undocumented."
     },
     "lnctvseg_3duxnet": {
       "title": "NPC grouped nodal CTVs · LNCTVSeg 3D UXNet",
       "group": "ctv",
-      "purpose": "Intended six NPC nodal unions. Inference contract unresolved; checkpoint class 7 is undocumented."
+      "purpose": "Six intended outputs: left/right II+III+Va, IV+Vb+Vc and Ib. The released export names abbreviate the lower-neck pair to IV–Vb. Inference remains unavailable; checkpoint class 7 is undocumented."
     },
     "lnctvseg_repuxnet": {
       "title": "NPC grouped nodal CTVs · LNCTVSeg RepUXNet",
       "group": "ctv",
-      "purpose": "Intended six NPC nodal unions. Inference contract unresolved; checkpoint class 7 is undocumented."
+      "purpose": "Six intended outputs: left/right II+III+Va, IV+Vb+Vc and Ib. The released export names abbreviate the lower-neck pair to IV–Vb. Inference remains unavailable; checkpoint class 7 is undocumented."
     }
   },
   "nodal": {
@@ -584,7 +584,7 @@
               "clnet_235",
               "choi_tmli"
             ],
-            "note": "No published model with released weights segments IASLC stations: CL-Net's nodal decoders were not released, and Choi's region map and preprocessing are unconfirmed."
+            "note": "No released model with verified IASLC station outputs was found in the sources reviewed on 20 October 2026. CL-Net's nodal decoders were not released, and Choi's region map and preprocessing are unconfirmed."
           },
           {
             "id": "candidates",
@@ -605,7 +605,7 @@
             "models": [
               "pediatric_thoracic_lymphoma"
             ],
-            "note": "Paediatric lymphoma mass on contrast CT; no separate general nodal GTV model was identified."
+            "note": "Paediatric lymphoma mass on contrast CT. No separate released general nodal GTV model was found in the sources reviewed on 20 October 2026."
           },
           {
             "id": "isrt",
@@ -650,7 +650,7 @@
           "lnq_abdominopelvic_v1"
         ],
         "note": "LNQ abdominopelvic fold 0 supplies pooled node candidates. Held-out accuracy is not documented in the inspected release.",
-        "prompt_note": "No verified abdominal nodal-region text strings. Use a spatial prompt for one visible node; vessel names are not nodal regions.",
+        "prompt_note": "No verified abdominal nodal-region text strings were found in the sources reviewed on 20 October 2026. Use a spatial prompt for one visible node; vessel names are not nodal regions.",
         "sections": [
           {
             "id": "elective",
@@ -672,7 +672,7 @@
             "id": "gtv",
             "title": "Nodal GTV",
             "models": [],
-            "note": "No published abdominal nodal GTV model with released weights was found."
+            "note": "No released model with verified abdominal nodal GTV outputs was found in the sources reviewed on 20 October 2026."
           },
           {
             "id": "interactive",
@@ -704,7 +704,7 @@
           "lnq_inguinal_v1"
         ],
         "note": "LNQ abdominopelvic and inguinal fold 0 produce separate node-candidate outputs. Neither defines an elective pelvic or inguinal CTV.",
-        "prompt_note": "No verified pelvic nodal-region text strings. Use a spatial prompt for one visible node; iliac vessels and obturator muscles are not substitutes.",
+        "prompt_note": "No verified pelvic nodal-region text strings were found in the sources reviewed on 20 October 2026. Use a spatial prompt for one visible node; iliac vessels and obturator muscles are not substitutes.",
         "sections": [
           {
             "id": "elective",
@@ -727,7 +727,7 @@
             "id": "gtv",
             "title": "Nodal GTV",
             "models": [],
-            "note": "No published pelvic nodal GTV model with released weights was found."
+            "note": "No released model with verified pelvic nodal GTV outputs was found in the sources reviewed on 20 October 2026."
           },
           {
             "id": "interactive",
@@ -943,7 +943,7 @@
       "pam_prompted": "PAM: one seed slice. Positive points become disks and a box becomes a filled rectangle; negative points are ignored. Mask/scribble input and the published Box2Mask workflow are not implemented.",
       "sat3d_prompted": "SAT3D: points select one local object within a 128³ native-voxel crop; output outside the crop is zero.",
       "vista3d_prompted_ct": "VISTA3D: at least one positive CT point; negatives can exclude adjacent tissue. No text contract.",
-      "sam_med3d_turbo_prompted": "SAM-Med3D Turbo: points select one local object; a box becomes its centre point. The crop is 128³ at 1.5 mm.",
+      "sam_med3d_turbo_prompted": "SAM-Med3D Turbo: a positive point selects one local object. Points take precedence over a box. The box centre is used only when no positive or negative points are given; a box is not a spatial boundary. The crop is 128³ at 1.5 mm.",
       "medsam2_ct_lesion_prompted": "MedSAM2: points or a box on one axial slice. A box overrides points; only the largest 3D component is retained.",
       "medical_sam2_prompted_ct": "Medical-SAM2: points or a box on one axial slice; box overrides points. Only the largest 3D component is retained. The checkpoint was trained on organs.",
       "sam_med2d_prompted": "SAM-Med2D: prompt every intended slice; no propagation to other slices.",

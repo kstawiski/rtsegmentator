@@ -41,8 +41,8 @@
   "lnctvseg_nnunet_v1": {
     "code_license": "GPL-3.0",
     "weights_license": "Separate checkpoint licence not supplied; dataset CC BY 4.0 is distinct",
-    "description": "LNCTVSeg: six NPC-specific unions, bilateral II–III–Va, IV–Vb and Ib. These cannot be separated into generic nodal levels.",
-    "limitations": "Eight checkpoint channels: background, IDs 1–6 and undocumented ID 7. nnU-Net exports 1–6 unchanged, omits 7 and logs its volume; other architectures remain inference-contract blocked.",
+    "description": "LNCTVSeg: six NPC-specific unions, left/right II+III+Va, IV+Vb+Vc and Ib. These cannot be separated into generic nodal levels.",
+    "limitations": "The paper includes Vc in the lower-neck pair (IV+Vb+Vc); the released export names abbreviate this pair to IV–Vb. Eight checkpoint channels: background, IDs 1–6 and undocumented ID 7. nnU-Net exports 1–6 unchanged, omits 7 and logs its volume; other architectures remain inference-contract blocked.",
     "evidence_note": "The nnU-Net technical acceptance metadata match the pinned manifest; its pending descriptive status is stale. This does not establish independent accuracy. The manifest is hash-guarded.",
     "evidence_sources": [
       "catalog/lnctvseg.json",
@@ -55,8 +55,8 @@
   "lnctvseg_swinunetr": {
     "code_license": "GPL-3.0",
     "weights_license": "Separate checkpoint licence not supplied; dataset CC BY 4.0 is distinct",
-    "description": "LNCTVSeg SwinUNETR: intended six NPC nodal unions, bilateral II–III–Va, IV–Vb and Ib; no accepted runnable export.",
-    "limitations": "Release-specific ROI size, spacing, orientation and intensity transforms are missing. Checkpoint class 7 is undocumented. The nnU-Net omission policy is not an accepted inference contract for this architecture.",
+    "description": "LNCTVSeg SwinUNETR: intended six NPC nodal unions, left/right II+III+Va, IV+Vb+Vc and Ib; no accepted runnable export.",
+    "limitations": "The paper includes Vc in the lower-neck pair (IV+Vb+Vc); the released export names abbreviate this pair to IV–Vb. Release-specific ROI size, spacing, orientation and intensity transforms are missing. Checkpoint class 7 is undocumented. The nnU-Net omission policy is not an accepted inference contract for this architecture.",
     "evidence_note": "Published internal mean Dice 83.49%; no accuracy is assigned to an unimplemented local export.",
     "evidence_sources": [
       "catalog/lnctvseg.json",
@@ -69,8 +69,8 @@
   "lnctvseg_3duxnet": {
     "code_license": "GPL-3.0",
     "weights_license": "Separate checkpoint licence not supplied; dataset CC BY 4.0 is distinct",
-    "description": "LNCTVSeg 3D UXNet: intended six NPC nodal unions, bilateral II–III–Va, IV–Vb and Ib; no accepted runnable export.",
-    "limitations": "Release-matched architecture implementation and preprocessing are missing; strict loading is unexecuted. Checkpoint class 7 is undocumented. The nnU-Net omission policy is not an accepted inference contract for this architecture.",
+    "description": "LNCTVSeg 3D UXNet: intended six NPC nodal unions, left/right II+III+Va, IV+Vb+Vc and Ib; no accepted runnable export.",
+    "limitations": "The paper includes Vc in the lower-neck pair (IV+Vb+Vc); the released export names abbreviate this pair to IV–Vb. Release-matched architecture implementation and preprocessing are missing; strict loading is unexecuted. Checkpoint class 7 is undocumented. The nnU-Net omission policy is not an accepted inference contract for this architecture.",
     "evidence_note": "Published internal mean Dice 83.43%; no accuracy is assigned to an unimplemented local export.",
     "evidence_sources": [
       "catalog/lnctvseg.json",
@@ -83,8 +83,8 @@
   "lnctvseg_repuxnet": {
     "code_license": "GPL-3.0",
     "weights_license": "Separate checkpoint licence not supplied; dataset CC BY 4.0 is distinct",
-    "description": "LNCTVSeg RepUXNet: intended six NPC nodal unions, bilateral II–III–Va, IV–Vb and Ib; no accepted runnable export.",
-    "limitations": "Release-matched architecture implementation and preprocessing are missing; strict loading is unexecuted. Checkpoint class 7 is undocumented. The nnU-Net omission policy is not an accepted inference contract for this architecture.",
+    "description": "LNCTVSeg RepUXNet: intended six NPC nodal unions, left/right II+III+Va, IV+Vb+Vc and Ib; no accepted runnable export.",
+    "limitations": "The paper includes Vc in the lower-neck pair (IV+Vb+Vc); the released export names abbreviate this pair to IV–Vb. Release-matched architecture implementation and preprocessing are missing; strict loading is unexecuted. Checkpoint class 7 is undocumented. The nnU-Net omission policy is not an accepted inference contract for this architecture.",
     "evidence_note": "Published internal mean Dice 83.75%; no accuracy is assigned to an unimplemented local export.",
     "evidence_sources": [
       "catalog/lnctvseg.json",
@@ -143,54 +143,63 @@
     "weights_license_unresolved": true
   },
   "lnq_mediastinal_v1": {
-    "code_license": "Unverified in the inspected release",
-    "weights_license": "CC BY-NC 4.0",
+    "code_license": "Apache-2.0",
+    "weights_license": "CC BY 4.0",
     "description": "LNQ mediastinal: pooled node candidates from CT; no elective regions or malignancy classification.",
     "limitations": "Five-fold inference.",
-    "evidence_note": "Inspected registry: 120 training scans; held-out accuracy and protocol mix not documented. Historical nonempty outputs establish execution only.",
+    "evidence_note": "Inspected registry: 120 training scans; held-out accuracy and protocol mix not documented. Historical nonempty outputs establish execution only. Authors corrected licences on 19 October 2026: code Apache-2.0; all four checkpoints CC BY 4.0. Earlier non-commercial labels in the fixed release archives are stale. Attribution is required; see the cited correction.",
     "evidence_sources": [
+      "https://github.com/pieper/lnq-segmenter/commit/fffa35913d9d08234638e482159268fa27322221",
+      "https://github.com/pieper/lnq-segmenter/blob/fffa35913d9d08234638e482159268fa27322221/MODELS.md",
       "https://github.com/pieper/lnq-segmenter/blob/main/src/lnq_segmenter/_registry.json",
       "EXTERNAL_MODELS.md"
     ],
-    "noncommercial": true,
+    "noncommercial": false,
     "weights_license_unresolved": false
   },
   "lnq_abdominopelvic_v1": {
-    "code_license": "Unverified in the inspected release",
-    "weights_license": "CC BY-NC 4.0",
+    "code_license": "Apache-2.0",
+    "weights_license": "CC BY 4.0",
     "description": "LNQ abdominopelvic: pooled node candidates from CT; no elective regions or malignancy classification.",
     "limitations": "Fold-0 inference. All detected nodes share one aggregate ROI.",
-    "evidence_note": "Inspected registry: 69 training scans; held-out accuracy and protocol mix not documented. Historical nonempty outputs establish execution only.",
+    "evidence_note": "Inspected registry: 69 training scans; held-out accuracy and protocol mix not documented. Historical nonempty outputs establish execution only. Authors corrected licences on 19 October 2026: code Apache-2.0; all four checkpoints CC BY 4.0. Earlier non-commercial labels in the fixed release archives are stale. Attribution is required; see the cited correction.",
     "evidence_sources": [
+      "https://github.com/pieper/lnq-segmenter/commit/fffa35913d9d08234638e482159268fa27322221",
+      "https://github.com/pieper/lnq-segmenter/blob/fffa35913d9d08234638e482159268fa27322221/MODELS.md",
       "https://github.com/pieper/lnq-segmenter/blob/main/src/lnq_segmenter/_registry.json",
       "EXTERNAL_MODELS.md"
     ],
-    "noncommercial": true,
+    "noncommercial": false,
     "weights_license_unresolved": false
   },
   "lnq_inguinal_v1": {
-    "code_license": "Unverified in the inspected release",
+    "code_license": "Apache-2.0",
     "weights_license": "CC BY 4.0",
     "description": "LNQ inguinal: pooled node candidates from CT; no elective regions or malignancy classification.",
     "limitations": "Fold-0 inference. All detected nodes share one aggregate ROI.",
-    "evidence_note": "Inspected registry: 20 training scans; held-out accuracy and protocol mix not documented. Historical nonempty outputs establish execution only.",
+    "evidence_note": "Inspected registry: 20 training scans; held-out accuracy and protocol mix not documented. Historical nonempty outputs establish execution only. Authors corrected licences on 19 October 2026: code Apache-2.0; all four checkpoints CC BY 4.0. Earlier non-commercial labels in the fixed release archives are stale. Attribution is required; see the cited correction.",
     "evidence_sources": [
+      "https://github.com/pieper/lnq-segmenter/commit/fffa35913d9d08234638e482159268fa27322221",
+      "https://github.com/pieper/lnq-segmenter/blob/fffa35913d9d08234638e482159268fa27322221/MODELS.md",
       "https://github.com/pieper/lnq-segmenter/blob/main/src/lnq_segmenter/_registry.json",
       "EXTERNAL_MODELS.md"
     ],
-    "weights_license_unresolved": false
+    "weights_license_unresolved": false,
+    "noncommercial": false
   },
   "lnq_axillary_v1": {
-    "code_license": "Unverified in the inspected release",
-    "weights_license": "CC BY-NC 4.0",
+    "code_license": "Apache-2.0",
+    "weights_license": "CC BY 4.0",
     "description": "LNQ axillary: pooled node candidates from CT; no elective regions or malignancy classification.",
     "limitations": "Fold-0 inference. All detected nodes share one aggregate ROI.",
-    "evidence_note": "Inspected registry: 20 training scans; held-out accuracy and protocol mix not documented. Historical nonempty outputs establish execution only.",
+    "evidence_note": "Inspected registry: 20 training scans; held-out accuracy and protocol mix not documented. Historical nonempty outputs establish execution only. Authors corrected licences on 19 October 2026: code Apache-2.0; all four checkpoints CC BY 4.0. Earlier non-commercial labels in the fixed release archives are stale. Attribution is required; see the cited correction.",
     "evidence_sources": [
+      "https://github.com/pieper/lnq-segmenter/commit/fffa35913d9d08234638e482159268fa27322221",
+      "https://github.com/pieper/lnq-segmenter/blob/fffa35913d9d08234638e482159268fa27322221/MODELS.md",
       "https://github.com/pieper/lnq-segmenter/blob/main/src/lnq_segmenter/_registry.json",
       "EXTERNAL_MODELS.md"
     ],
-    "noncommercial": true,
+    "noncommercial": false,
     "weights_license_unresolved": false
   },
   "compai_lnq": {
@@ -476,7 +485,7 @@
   "sam_med3d_turbo_prompted": {
     "code_license": "Apache-2.0",
     "weights_license": "Separate checkpoint terms unverified",
-    "description": "SAM-Med3D Turbo: points select one local object; a box becomes its centre point. The crop is 128³ at 1.5 mm.",
+    "description": "SAM-Med3D Turbo: a positive point selects one local object. Points take precedence over a box. The box centre is used only when no positive or negative points are given; a box is not a spatial boundary. The crop is 128³ at 1.5 mm.",
     "limitations": "One binary Prompted_Target ROI. No verified elective nodal atlas contract.",
     "evidence_note": "No nodal-region accuracy established by the historical local object/geometry checks.",
     "evidence_sources": [

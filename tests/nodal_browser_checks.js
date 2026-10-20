@@ -19,6 +19,7 @@ async function runNodalBrowserChecks(frame) {
   assert(row('clnet_235').textContent.includes('nodal_decoders_unavailable'),'CL-Net exact blocker is shown');
   assert(row('uwlair_hntsmrg_pre_t2').querySelector('input').disabled&&row('uwlair_hntsmrg_pre_t2').textContent.includes('Requires MR'),'MR GTV model stays visible with modality reason on CT');
   assert(group().textContent.includes('20 exported elective structures'),'HNLNL combined and unsided label summary is visible');
+  assert(row('lnctvseg_nnunet_v1').textContent.includes('IV+Vb+Vc')&&row('lnctvseg_nnunet_v1').textContent.includes('abbreviate the lower-neck pair to IV–Vb'),'LNCTVSeg shows Vc coverage and abbreviated export names');
   assert(row('lnsegfm_resenc_l').textContent.includes('Code licence:')&&row('lnsegfm_resenc_l').textContent.includes('Checkpoint licence:'),'Code and checkpoint licences are separate');
   assert(row('lnsegfm_resenc_l').textContent.includes('Checkpoint licence unresolved'),'Unresolved checkpoint terms are visible');
   for(const [region,names] of [
@@ -29,10 +30,14 @@ async function runNodalBrowserChecks(frame) {
     assert(JSON.stringify(selected())===JSON.stringify(names.sort()),region+' preset selects exactly its compatible defaults');
     assert(group().textContent.includes('Selected from published results; not validated on your data.'),region+' preset basis is shown');
     assert(row('choi_tmli').querySelector('input').disabled,region+' view cannot enable Choi');
+    for(const name of names.filter(name=>name.startsWith('lnq_'))){
+      const text=row(name).textContent;
+      assert(text.includes('Apache-2.0')&&text.includes('CC BY 4.0')&&!text.includes('Non-commercial weights'),name+' shows corrected licences without a non-commercial badge');
+    }
     if(region==='mediastinum')assert(group().querySelector('[data-nodal-section="isrt"]')&&group().textContent.includes('decoders were not released'),'Mediastinal ISRT section and station gap are visible');
     if(['abdomen','pelvis'].includes(region))assert(group().textContent.includes('No verified '+(region==='abdomen'?'abdominal':'pelvic')+' nodal-region text strings'),region+' text vocabulary gap is shown');
   }
-  assert(row('lnq_abdominopelvic_v1').textContent.includes('Non-commercial weights'),'Preset preserves LNQ non-commercial badge');
+  assert(row('voxtell_v1_1_text_prompted').textContent.includes('Non-commercial weights'),'VoxTell retains its applicable non-commercial badge');
   const first=group().querySelector('input[value="lnq_abdominopelvic_v1"]');first.click();await settle();
   assert([...doc.querySelectorAll('input[value="lnq_abdominopelvic_v1"]')].every(i=>!i.checked),'Selection synchronizes across duplicate regional and original cards');
   $('clearModels').click();row('voxtell_v1_1_text_prompted').querySelector('input').click();$('toReview').click();await settle();

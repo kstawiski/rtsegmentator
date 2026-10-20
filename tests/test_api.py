@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import sys
 from pathlib import Path
 
 import numpy as np
 import pydicom
+import pytest
 from fastapi.testclient import TestClient
 from pydicom.dataset import FileDataset, FileMetaDataset
 from pydicom.uid import CTImageStorage, ExplicitVRLittleEndian, generate_uid
@@ -95,3 +97,59 @@ def test_assessment_api_groups_dicom_series(tmp_path):
     assert len(payload["series"]) == 1
     assert payload["series"][0]["modality"] == "CT"
     assert payload["series"][0]["slices"] == 3
+
+
+@pytest.mark.parametrize('positive,negative,box,accepted', [
+    (True, False, False, True),
+    (False, False, True, True),
+    (True, False, True, True),
+    (True, True, True, True),
+    (True, True, False, True),
+    (False, True, True, False),
+    (False, True, False, False),
+])
+def test_sam_med3d_prompt_combinations(portal, positive, negative, box, accepted):
+    name = 'sam_med3d_turbo_prompted'
+    prompt = {'positive_points': [[1, 1, 1]] if positive else [],
+              'negative_points': [[2, 2, 1]] if negative else [],
+              'box': [[4, 4, 1], [12, 12, 1]] if box else None}
+    items = {name: portal.model_details(name)}
+    selected = {'columns': 32, 'rows': 32, 'slices': 12}
+    if accepted:
+        assert portal.validate_assessed_prompt([name], items, selected, json.dumps(prompt)) == prompt
+    else:
+        with pytest.raises(portal.HTTPException) as error:
+            portal.validate_assessed_prompt([name], items, selected, json.dumps(prompt))
+        assert error.value.status_code == 400
+        assert 'positive point' in error.value.detail
+        if box:
+            assert 'ignores the box when points are present' in error.value.detail
+
+
+@pytest.mark.parametrize('route,series_field', [
+    ('/api/uploads/upload-synthetic/start', 'series_key'),
+    ('/api/v1/uploads/upload-synthetic/jobs', 'series_keys'),
+])
+def test_sam_med3d_negative_points_and_box_rejected_before_submission(portal, monkeypatch, route, series_field):
+    name = 'sam_med3d_turbo_prompted'
+    monkeypatch.setattr(portal, 'tasks', lambda: {'tasks': [{'name': name, **portal.model_details(name)}]})
+    queued = []
+    monkeypatch.setattr(portal, 'enqueue_jobs', lambda jobs: queued.extend(jobs))
+    stage = portal.BASE / 'upload-synthetic'
+    stage.mkdir()
+    (stage / 'upload.json').write_text(json.dumps({'series': [
+        {'key': 'synthetic-ct', 'modality': 'CT', 'columns': 32, 'rows': 32, 'slices': 12, 'files': []}
+    ]}))
+    # No lifecycle or worker is needed: exercise the real HTTP validation route.
+    client = TestClient(portal.app)
+    try:
+        response = client.post(route, data={series_field: 'synthetic-ct', 'models': name,
+            'prompt_json': json.dumps({'negative_points': [[2, 2, 1]], 'box': [[4, 4, 1], [12, 12, 1]]})})
+    finally:
+        client.close()
+    assert response.status_code == 400
+    assert 'SAM-Med3D ignores the box when points are present' in response.json()['detail']
+    assert 'Add a positive point' in response.json()['detail']
+    assert queued == []
+    assert list(portal.BASE.iterdir()) == [stage]
+    assert (stage / 'upload.json').is_file()

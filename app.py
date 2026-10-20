@@ -81,7 +81,26 @@ BASE.mkdir(parents=True, exist_ok=True)
 app = FastAPI(title="DICOM RT Segmentation Portal", version="1.0.0",
               docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json")
 STRUCTURE_CATALOG = json.loads((Path(__file__).resolve().parent / "catalog/structures.json").read_text())
-NODAL_MODEL_DETAILS = json.loads((Path(__file__).resolve().parent / "catalog/nodal-models.json").read_text())
+NODAL_DESCRIPTIVE_FIELDS = frozenset({
+    "code_license", "weights_license", "weights_license_unresolved", "description",
+    "limitations", "evidence_note", "evidence_sources", "noncommercial", "code_noncommercial",
+})
+
+
+def load_nodal_model_details(path):
+    details = json.loads(path.read_text())
+    if not isinstance(details, dict):
+        raise ValueError("nodal-models.json must contain an object keyed by model name")
+    for name, fields in details.items():
+        if not isinstance(fields, dict):
+            raise ValueError(f"nodal-models.json: {name} must contain a descriptive object")
+        unknown = fields.keys() - NODAL_DESCRIPTIVE_FIELDS
+        if unknown:
+            raise ValueError(f"nodal-models.json: {name} has unsupported fields: {', '.join(sorted(unknown))}")
+    return details
+
+
+NODAL_MODEL_DETAILS = load_nodal_model_details(Path(__file__).resolve().parent / "catalog/nodal-models.json")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -400,7 +419,7 @@ INFORMATIONAL_MODELS = {
         "enabled":True, "licensed":False, "prompt":"points_or_box", "status":"validated_research",
         "clinical_tag_ids":["lung_cancer","prostate_cancer","bladder_cancer","glioblastoma_glioma","brain_metastases","head_neck_cancer","breast_cancer","liver_cancer","pancreatic_cancer","kidney_cancer","colorectal_cancer","cervical_cancer","lymphoma","spine_tumors","neuroendocrine_tumors","sarcoma_soft_tissue","whole_body_metastatic"],
         "structures":"One point-prompted 3-D organ, tumour, lesion or other object",
-        "description":"Official 100.5M-parameter SAM-Med3D Turbo checkpoint. A positive 3-D point selects the object; a submitted box is converted to its 3-D centre point. The public AMOS fixture passed strict checkpoint loading and inference, followed by source-grid DICOM RTSTRUCT validation.",
+        "description":"Official 100.5M-parameter SAM-Med3D Turbo checkpoint. A positive 3-D point selects the object. Points take precedence over a box; the box centre is used only when no positive or negative points are given. A box is not a spatial boundary. The public AMOS fixture passed strict checkpoint loading and inference, followed by source-grid DICOM RTSTRUCT validation.",
         "reference":"https://huggingface.co/blueyo0/SAM-Med3D"},
     "universeg_few_shot_2d": {"modality":"CT", "modalities":["CT","MR","PT"],
         "enabled":False, "status":"requires_support_image_mask_uploads",
@@ -2005,7 +2024,7 @@ def build_catalog():
         nodal = NODAL_MODEL_DETAILS.get(item["name"])
         if nodal:
             # Descriptions never grant availability or replace a gate's blocker.
-            item.update(nodal)
+            item.update({key: value for key, value in nodal.items() if key in NODAL_DESCRIPTIVE_FIELDS})
             item["license"] = f"Code: {nodal['code_license']}; checkpoints: {nodal['weights_license']}"
             item.pop("license_note", None)
             if item.get("enabled") and item.get("status", "").startswith("validated"):
@@ -2433,6 +2452,9 @@ def validate_assessed_prompt(models, items, selected, prompt_json):
             contract = items[name].get("prompt_contract", {})
             if box and (positives or negatives) and contract.get("allow_box_with_points") is False:
                 raise HTTPException(400, f"{name} cannot combine box and point prompts; use points or a box")
+            if name == "sam_med3d_turbo_prompted" and negatives and box and not positives:
+                raise HTTPException(400, "SAM-Med3D ignores the box when points are present. Add a positive point, "
+                                    "or remove all points to use only the box centre; negative points alone are insufficient.")
             if kind in {"points", "points_or_box"} and not (positives or (box and kind == "points_or_box")):
                 raise HTTPException(400, f"{name} requires a positive point" +
                                     (" or a two-corner box prompt" if kind == "points_or_box" else " prompt"))

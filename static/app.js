@@ -16,7 +16,7 @@ const PROMPT_HELP = {
   sam_med2d_prompted: 'SAM-Med2D: prompt every intended slice. It does not propagate to unprompted slices.',
   medsam_vit_b_box_2d: 'MedSAM ViT-B: draw a tight box on one slice. Only that slice is segmented.',
   medical_sam3_3d_prompted: 'Medical-SAM3: a box and a medical concept in Target description are required. Output covers the publisher’s eight-slice window.',
-  sam_med3d_turbo_prompted: 'SAM-Med3D Turbo: place a positive point inside the 3D object. A box is interpreted as its centre point.',
+  sam_med3d_turbo_prompted: 'SAM-Med3D Turbo: a positive point selects one local object. Points take precedence over a box. The box centre is used only when no positive or negative points are given; a box is not a spatial boundary. The crop is 128³ at 1.5 mm.',
   medsam2_ct_lesion_prompted: 'MedSAM2: points or a tight box on one axial lesion slice; a box overrides points. Propagates in both directions and retains only the largest 3D component.',
   medical_sam2_prompted_ct: 'Medical-SAM2 (ImprintLab): place points or a box on one axial slice. This is a distinct model from MedSAM2.',
   nninteractive_v1_prompted: 'nnInteractive: place a positive point or an axial box. Negative points can exclude adjacent structures.',
