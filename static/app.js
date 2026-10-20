@@ -77,6 +77,38 @@ function supports(task, series) { return !!series && (task.modalities || [task.m
 function pairedCT(series, allSeries) {
   return allSeries.find(s => s.modality === 'CT' && series?.study_uid && series?.frame_uid && s.study_uid === series.study_uid && s.frame_uid === series.frame_uid);
 }
+function roleCandidates(primary, allSeries, role) {
+  const options=[];
+  for(const s of allSeries){
+    if(s.key===primary.key||!primary.study_uid||s.study_uid!==primary.study_uid||s.modality!==(role.modality||'MR')||s.metadata_consistent===false)continue;
+    if(role.role==='hbv'){
+      for(const volume of s.hbv_options||[])options.push({series:s,choice:{series_key:s.key,b_value:volume.b_value},score:volume.b_value,volume});
+    }else{
+      const score=role.role==='adc'?(s.is_adc?2:/\badc\b|apparent diffusion/i.test([s.description,s.protocol_name].join(' '))?1:0):0;
+      options.push({series:s,choice:{series_key:s.key},score});
+    }
+  }
+  return options.sort((a,b)=>b.score-a.score||a.series.key.localeCompare(b.series.key));
+}
+function reviewedRole(primary, allSeries, role, choices={}) {
+  const options=roleCandidates(primary,allSeries,role),explicit=Object.hasOwn(choices,role.role);
+  let choice=choices[role.role];
+  if(typeof choice==='string')choice={series_key:choice};
+  const ambiguous=!explicit&&options.length>1&&options[0].score===options[1].score&&options[0].score>0;
+  if(!explicit)choice=options[0]?.score>0&&!ambiguous?options[0].choice:null;
+  const selected=options.find(o=>o.choice.series_key===choice?.series_key&&(role.role!=='hbv'||o.choice.b_value===choice?.b_value));
+  const reason=selected||role.required===false?'':`${ambiguous?'Ambiguous':'Missing'} ${role.label||role.role}; select a series`;
+  return {options,choice:selected?.choice||null,selected,reason};
+}
+function taskRoleReason(task, primary, allSeries, choices={}) {
+  return (task.input_roles||[]).filter(r=>r.role!==task.reference_role).map(r=>reviewedRole(primary,allSeries,r,choices).reason).filter(Boolean).join(' · ');
+}
+function roleOptionLabel(option, primary) {
+  const s=option.series,dimensions=option.volume?.dimensions||s.dimensions||[s.columns,s.rows,s.slices];
+  const diffusion=option.volume?`b=${option.volume.b_value} s/mm² · ${option.volume.b_value_source}`:
+    s.b_values?.length?`b=${s.b_values.join(', ')} s/mm² · ${(s.b_value_sources||[]).join(', ')}`:'b-value not supplied';
+  return `${s.description||'No series description'} · ${diffusion} · ${dimensions.join(' × ')}${s.acquisition_time?' · '+s.acquisition_time:''}${s.frame_uid!==primary.frame_uid?' · Frame of Reference differs':''}`;
+}
 function blockedReason(task, series, allSeries, reportTask = 'nv_reason_ct_report') {
   const reasons = [];
   if (task.enabled === false) {
@@ -105,13 +137,14 @@ function batchBlockedReason(task, series, allSeries, reportName = 'nv_reason_ct_
   if(series.some(s=>!blockedReason(task,s,allSeries,reportName)))return '';
   return [...new Set(series.map(s=>blockedReason(task,s,allSeries,reportName)))].join(' · ')||'Select an image series';
 }
-function seriesPlan(series, selected, catalog, allSeries = series, reportName = 'nv_reason_ct_report') {
+function seriesPlan(series, selected, catalog, allSeries = series, reportName = 'nv_reason_ct_report', roles = {}) {
   const tasks=catalog.filter(t=>selected.has(t.name)).sort((a,b)=>Number(a.output==='report'||a.name===reportName)-Number(b.output==='report'||b.name===reportName));
   return series.map(s=>{
     const compatible=tasks.filter(t=>supports(t,s)&&!((t.output==='report'||t.name===reportName)&&s.cbct));
-    const models=compatible.filter(t=>!batchBlockedReason(t,series,allSeries,reportName)&&!blockedReason(t,s,allSeries,reportName));
+    const skipped=compatible.filter(t=>taskRoleReason(t,s,allSeries,roles[s.key]||{})).map(t=>({name:t.name,reason:taskRoleReason(t,s,allSeries,roles[s.key]||{})}));
+    const models=compatible.filter(t=>!batchBlockedReason(t,series,allSeries,reportName)&&!blockedReason(t,s,allSeries,reportName)&&!skipped.some(x=>x.name===t.name));
     const errors=compatible.map(t=>batchBlockedReason(t,series,allSeries,reportName)||blockedReason(t,s,allSeries,reportName)).filter(Boolean);
-    return {series:s,models,reason:errors.length?[...new Set(errors)].join(' · '):models.length?'':
+    return {series:s,models,skipped,reason:errors.length?[...new Set(errors)].join(' · '):models.length?'':skipped.length?skipped.map(x=>`${x.name}: ${x.reason}`).join(' · '):
       s.cbct&&tasks.some(t=>t.name===reportName)?'No compatible segmentation model selected; AI reports exclude CBCT':'No compatible model selected. Deselect this series or add a compatible model.'};
   });
 }
@@ -314,7 +347,7 @@ async function request(url, options={}) {
 
 if (typeof document !== 'undefined') {
   const $ = id => document.getElementById(id);
-  const state = {step:0,upload:null,series:null,seriesKeys:[],modelsEdited:false,catalog:[],metadata:{overrides:{}},nodalRegion:'head_neck',nodalContext:false,presetNotice:'',selected:new Set(),config:null,health:null,catalogReady:false,starting:false};
+  const state = {step:0,upload:null,series:null,seriesKeys:[],roles:{},modelsEdited:false,catalog:[],metadata:{overrides:{}},nodalRegion:'head_neck',nodalContext:false,presetNotice:'',selected:new Set(),config:null,health:null,catalogReady:false,starting:false};
   let seriesViewer=null, jobViewer=null, detailId=null, detailToken=0, detailLoaded=false, detailInfo=null, detailReport=null, detailLoading=false;
   const stepPanels=[$('uploadStep'),$('seriesStep'),$('modelsStep'),$('reviewStep')];
   const stepTitles=[$('uploadTitle'),$('seriesTitle'),$('modelsTitle'),$('reviewTitle')];
@@ -339,7 +372,7 @@ if (typeof document !== 'undefined') {
   const isRemote=t=>executesRemotely(t,state.config,state.health);
   const selectedSeries=()=>state.upload?.series.filter(s=>state.seriesKeys.includes(s.key))||[];
   const reason=t=>batchBlockedReason(t,selectedSeries(),state.upload?.series||[],reportTask());
-  const plan=()=>seriesPlan(selectedSeries(),state.selected,state.catalog,state.upload?.series||[],reportTask());
+  const plan=()=>seriesPlan(selectedSeries(),state.selected,state.catalog,state.upload?.series||[],reportTask(),state.roles);
   const cropAvailable=()=>selectedSeries().some(s=>cropSupported(s,state.selected,state.catalog,state.config,state.health));
   function applyDefaults(){state.selected=defaultSelection(state.catalog,selectedSeries(),state.selected,state.modelsEdited);}
   function showError(el,message){el.textContent=message;el.hidden=!message;}
@@ -393,7 +426,7 @@ if (typeof document !== 'undefined') {
     if(c.busy||!files.length)return;c.files=files;c.session=null;
     c.selection.textContent=`${counted(files.length,'file')} · ${formatBytes(files.reduce((n,f)=>n+f.size,0))}`;
     showError(c.error,'');c.progress.hidden=true;
-    if(c===uploads.seg){state.upload=null;state.series=null;state.seriesKeys=[];state.modelsEdited=false;state.selected.clear();seriesViewer?.destroy();seriesViewer=null;$('assessment').textContent='';$('toSeries').hidden=true;resetPrompt();goStep(0,false);await inspect();}
+    if(c===uploads.seg){state.upload=null;state.series=null;state.seriesKeys=[];state.roles={};state.modelsEdited=false;state.selected.clear();seriesViewer?.destroy();seriesViewer=null;$('assessment').textContent='';$('toSeries').hidden=true;resetPrompt();goStep(0,false);await inspect();}
   }
   Object.values(uploads).forEach(c=>{
     c.buttons[0].onclick=()=>c.filesInput.click();c.buttons[1].onclick=()=>c.folderInput.click();
@@ -443,7 +476,7 @@ if (typeof document !== 'undefined') {
       await uploadRequest(base+'/assess',{method:'POST'});
       let result;for(;;){const data=(await uploadRequest(base)).body;if(data.status==='ready'){result=data.result;break;}if(data.status==='failed'){c.session=null;throw Error(data.error||'Inspection failed');}await sleep(1000);}
       if(!result?.series?.length)throw Error('No valid CT, MR or PET image series found.');
-      state.upload=result;state.series=null;state.seriesKeys=preselectSeries(result.series);state.modelsEdited=false;state.selected.clear();applyDefaults();
+      state.upload=result;state.roles={};state.series=null;state.seriesKeys=preselectSeries(result.series);state.modelsEdited=false;state.selected.clear();applyDefaults();
       const valid=result.series.reduce((n,s)=>n+s.slices,0);
       $('assessment').textContent=`${counted(valid,'valid image file')} in ${result.series.length} series · ${counted(result.ignored || 0,'ignored file')}`;
       uploadStatus(c,'Upload and inspection complete.');$('toSeries').hidden=false;
@@ -598,12 +631,43 @@ if (typeof document !== 'undefined') {
     }catch(error){$('catalogStatus').textContent='Model catalog could not be loaded: '+error.message;$('reloadCatalog').hidden=false;}
   }
   $('reloadCatalog').onclick=loadCatalog;
+  function companionRoles(series){
+    const roles=new Map();
+    for(const task of chosen().filter(t=>supports(t,series)))for(const role of task.input_roles||[]){
+      if(role.role!==task.reference_role)roles.set(role.role,role);
+    }
+    return [...roles.values()];
+  }
+  function reviewedChoices(){
+    const result={};
+    for(const series of selectedSeries()){
+      const roles=companionRoles(series);
+      if(roles.length)result[series.key]=Object.fromEntries(roles.map(role=>[role.role,reviewedRole(series,state.upload.series,role,state.roles[series.key]||{}).choice]));
+    }
+    return result;
+  }
+  function renderRoles(series){
+    const roles=companionRoles(series);
+    if(!roles.length)return '';
+    return `<fieldset class="sequence-roles"><legend>MRI inputs</legend><p class="small">Reference: ${esc(series.description||'Selected primary series')}. Choose companion volumes from this examination.</p>${roles.map(role=>{
+      const review=reviewedRole(series,state.upload.series,role,state.roles[series.key]||{}),id=`role-${state.upload.series.indexOf(series)}-${role.role}`;
+      const difference=review.selected&&review.selected.series.frame_uid!==series.frame_uid;
+      const unavailable=role.role==='hbv'&&!review.options.length?state.upload.series.filter(s=>s.modality==='MR'&&s.key!==series.key&&s.study_uid===series.study_uid&&s.hbv_unavailable_reason).map(s=>`${s.description}: ${s.hbv_unavailable_reason}`).join(' · '):'';
+      return `<label for="${esc(id)}">${esc(role.label||role.role)}${role.required===false?' (optional)':''}</label><select id="${esc(id)}" data-role="${esc(role.role)}" data-primary="${esc(series.key)}"><option value="" ${!review.selected?'selected':''}>${esc(review.reason||'No companion selected')}</option>${review.options.map((o,i)=>`<option value="${i}" ${o===review.selected?'selected':''}>${esc(roleOptionLabel(o,series))}</option>`).join('')}</select>${review.selected?`<p class="small muted">${esc(roleOptionLabel(review.selected,series))}</p>`:''}${difference?'<p class="series-warning">Frame of Reference differs. Check the source images for alignment.</p>':''}${unavailable?`<p class="small">${esc(unavailable)}</p>`:''}`;
+    }).join('')}</fieldset>`;
+  }
   function renderReview(){
     if(state.seriesKeys.length===1)selectSeries(selectedSeries()[0]);
     const tasks=chosen().sort((a,b)=>Number(a.output==='report')-Number(b.output==='report')),plans=plan();
     const invalid=tasks.filter(t=>reason(t));
-    $('reviewContent').innerHTML=plans.map(p=>`<article class="review-card" data-plan-series="${esc(p.series.key)}"><h3>${esc(p.series.description||'No series description')}</h3><p><span class="pill">${esc(modalityName(p.series.modality))}</span> · ${counted(p.series.slices,'image')}</p><ul>${p.models.map(t=>`<li><strong>${esc(meta(t).title)}</strong><span class="small muted">${t.output==='report'?'AI draft report · JSON, Markdown and HTML':`RTSTRUCT contours · ${esc(t.structure_kind==='fixed'?counted(t.structure_count,'structure'):structureInfo(t).label)}`}${isRemote(t)?' · remote GPU':''}${t.requires_ct?' · paired CT included':''}</span><div class="badges">${badges(t)}</div></li>`).join('')}</ul>${p.reason?`<p class="error">${esc(p.reason)}</p>`:''}<button type="button" data-edit-series>Edit series selection</button></article>`).join('');
+    $('reviewContent').innerHTML=plans.map(p=>`<article class="review-card" data-plan-series="${esc(p.series.key)}"><h3>${esc(p.series.description||'No series description')}</h3><p><span class="pill">${esc(modalityName(p.series.modality))}</span> · ${counted(p.series.slices,'image')}</p><ul>${p.models.map(t=>`<li><strong>${esc(meta(t).title)}</strong><span class="small muted">${t.output==='report'?'AI draft report · JSON, Markdown and HTML':`RTSTRUCT contours · ${esc(t.structure_kind==='fixed'?counted(t.structure_count,'structure'):structureInfo(t).label)}`}${isRemote(t)?' · remote GPU':''}${t.requires_ct?' · paired CT included':''}</span><div class="badges">${badges(t)}</div></li>`).join('')}</ul>${renderRoles(p.series)}${p.skipped.map(x=>`<p class="series-warning">${esc(meta(state.catalog.find(t=>t.name===x.name)).title)} will not run: ${esc(x.reason)}</p>`).join('')}${p.reason?`<p class="error">${esc(p.reason)}</p>`:''}<button type="button" data-edit-series>Edit series selection</button></article>`).join('');
     $('reviewContent').querySelectorAll('[data-edit-series]').forEach(b=>b.onclick=()=>goStep(1));
+    $('reviewContent').querySelectorAll('[data-role]').forEach(select=>select.onchange=()=>{
+      const series=state.upload.series.find(s=>s.key===select.dataset.primary),role=companionRoles(series).find(r=>r.role===select.dataset.role);
+      const options=roleCandidates(series,state.upload.series,role);
+      (state.roles[series.key]||={})[role.role]=select.value===''?null:options[Number(select.value)].choice;
+      const id=select.id;renderReview();$(id)?.focus({preventScroll:true});
+    });
     showError($('startError'),invalid.map(t=>`${meta(t).title}: ${reason(t)}`).join(' · '));
     const crop=cropAvailable();$('postprocessPanel').hidden=!crop;if(!crop)$('prostatePostprocess').checked=false;
     $('promptPanel').hidden=!prompted().length;
@@ -709,11 +773,11 @@ if (typeof document !== 'undefined') {
     let promptValue='';if(prompted().length){try{prompt=readPrompt();const error=boxCorner?'Complete the second box corner or clear the prompt.':validatePrompt(prompt,prompted(),state.series);if(error)throw Error(error);promptValue=JSON.stringify(prompt);}catch(error){showError($('promptError'),error.message);$('promptError').scrollIntoView({block:'center'});return;}}
     state.starting=true;steps();$('startJob').disabled=true;$('startJob').textContent='Starting…';
     let failure=null;
-    try{const form=new FormData();state.seriesKeys.forEach(key=>form.append('series_keys',key));chosen().forEach(t=>form.append('models',t.name));if(promptValue)form.append('prompt_json',promptValue);
+    try{const form=new FormData();state.seriesKeys.forEach(key=>form.append('series_keys',key));chosen().forEach(t=>form.append('models',t.name));form.append('roles',JSON.stringify(reviewedChoices()));if(promptValue)form.append('prompt_json',promptValue);
       if($('prostatePostprocess').checked&&cropAvailable())form.append('postprocess','prostate_sbrt_crop');
       const result=await request(`/api/v1/uploads/${encodeURIComponent(state.upload.upload_id)}/jobs`,{method:'POST',body:form});
       result.ids.forEach(id=>{rememberJob(id);newJobs.add(id);});$('jobNotice').textContent=result.ids.length===1?'Job queued. Follow progress and download results here.':`${result.ids.length} jobs queued from one upload; they run one after another`;$('jobNotice').hidden=false;
-      state.upload=null;state.series=null;state.seriesKeys=[];state.modelsEdited=false;state.selected.clear();seriesViewer?.destroy();seriesViewer=null;uploads.seg.files=[];uploads.seg.session=null;uploads.seg.selection.textContent='No files selected';uploads.seg.progress.hidden=true;$('assessment').textContent='';$('toSeries').hidden=true;resetPrompt();
+      state.upload=null;state.series=null;state.seriesKeys=[];state.roles={};state.modelsEdited=false;state.selected.clear();seriesViewer?.destroy();seriesViewer=null;uploads.seg.files=[];uploads.seg.session=null;uploads.seg.selection.textContent='No files selected';uploads.seg.progress.hidden=true;$('assessment').textContent='';$('toSeries').hidden=true;resetPrompt();
       location.hash=result.ids.length===1?'jobs/'+encodeURIComponent(result.ids[0]):'jobs';pollJobs();
     }catch(error){failure=error.message;}
     finally{state.starting=false;$('startJob').disabled=false;steps();if(!state.upload)goStep(0,false);else renderReview();if(failure)routeStartError(failure);}
@@ -918,4 +982,4 @@ if (typeof document !== 'undefined') {
   }
   initialize();setInterval(pollJobs,4000);setInterval(refreshHealth,30000);
 }
-if(typeof module!=='undefined'&&module.exports)module.exports={nodalSections,regionPreset,promptSuggestions,insertPromptSuggestion,jobProgress,modelChecklist,preselectSeries,defaultSelection,seriesPlan,batchBlockedReason,jobTitle,groupBatchJobs,DEFAULT_MODELS,presentation,executesRemotely,supports,pairedCT,blockedReason,cropSupported,validatePrompt,structureInfo,humanize,safeReference,primarySelection,canDeleteJob,reportMarkdown,reportMarkup,licenceBadges,counted,reportStatusText,isReportSection,GROUPS};
+if(typeof module!=='undefined'&&module.exports)module.exports={nodalSections,regionPreset,promptSuggestions,insertPromptSuggestion,roleCandidates,reviewedRole,taskRoleReason,roleOptionLabel,jobProgress,modelChecklist,preselectSeries,defaultSelection,seriesPlan,batchBlockedReason,jobTitle,groupBatchJobs,DEFAULT_MODELS,presentation,executesRemotely,supports,pairedCT,blockedReason,cropSupported,validatePrompt,structureInfo,humanize,safeReference,primarySelection,canDeleteJob,reportMarkdown,reportMarkup,licenceBadges,counted,reportStatusText,isReportSection,GROUPS};

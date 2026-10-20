@@ -35,6 +35,8 @@ from fastapi.staticfiles import StaticFiles
 
 from crop_prostate_sbrt import NoSelectedROIError, crop_ct_rtstruct, discover_dicom
 from viewer import ViewerService
+from mri_inputs import (mr_instance, image_types, finish_mr_series, public_mr_fields, role_contract,
+                        resolve_roles, input_directories, input_identity)
 
 BASE = Path(os.environ.get("PORTAL_DATA", Path(__file__).parent / "data"))
 WORKER = os.environ.get("SEGMENTATION_WORKER", "worker@rtsegmentator-worker")
@@ -890,8 +892,10 @@ def reset_job_output(job, data):
 
 
 def worker_archive_members(job, tasks):
-    members = ["input"]
-    if (job / "input_ct").is_dir(): members.append("input_ct")
+    data = metadata(job)
+    members = [name for name in input_directories(data) if (job / name).is_dir()]
+    if data.get('input_roles'):
+        members.append('job.json')
     if (job / "prompt.json").is_file(): members.append("prompt.json")
     # The report needs finished contours, not bulky crop packages or previous drafts.
     if REPORT_TASK in tasks:
@@ -900,6 +904,9 @@ def worker_archive_members(job, tasks):
 
 
 def prepare_worker_job(job, remote, tasks):
+    data = metadata(job)
+    if data.get('input_roles') and not input_manifest_complete(job, data):
+        raise ValueError(INPUT_PREPARATION_ERROR)
     save_metadata(job, status="transferring", detail="Preparing selected DICOM series", progress=0)
     subprocess.run(remote_command("mkdir", "-p", f"{remote}/input", f"{remote}/output"), check=True, timeout=30)
     archive = job / "selected-series.tar"
@@ -1183,8 +1190,14 @@ def release_worker_gpu(job: Path, task: str) -> None:
 def colab_command(*args: str) -> list[str]:
     return [COLAB_CLI, f"--auth={COLAB_AUTH}", *args]
 
+def reject_multirole_colab(job):
+    # The separate Colab runners still package only legacy inputs/results.
+    if metadata(job).get('input_roles'):
+        raise RuntimeError("Multi-sequence MRI jobs require local or SSH execution; Colab role transport is not supported")
+
 def run_colab_job(job: Path, tasks: list[str] | None = None, finalize: bool = True):
     """Run a complete job in an ephemeral Colab GPU session."""
+    reject_multirole_colab(job)
     session = f"rtseg-{job.name[-12:]}"
     source = Path(__file__).resolve().parent
     app_archive = job / "colab-app.tar.gz"
@@ -1201,7 +1214,7 @@ def run_colab_job(job: Path, tasks: list[str] | None = None, finalize: bool = Tr
                 if path.is_file() or path.name in {"catalog", "labels"}:
                     archive.add(path, arcname=f"app/{path.name}")
         with tarfile.open(job_archive, "w:gz") as archive:
-            for name in ("input", "input_ct", "prompt.json"):
+            for name in (*input_directories(metadata(job)), "prompt.json"):
                 path = job / name
                 if path.exists(): archive.add(path, arcname=f"job/{name}")
             job_data = metadata(job)
@@ -1239,7 +1252,7 @@ def run_colab_job(job: Path, tasks: list[str] | None = None, finalize: bool = Tr
                        check=True, timeout=3600)
         with zipfile.ZipFile(result_archive) as archive:
             for info in archive.infolist():
-                if info.is_dir() or Path(info.filename).name != info.filename or not info.filename.endswith((".dcm", ".dcm.orientation.json")):
+                if info.is_dir() or Path(info.filename).name != info.filename or not info.filename.endswith((".dcm", ".dcm.orientation.json", ".dcm.lesions.json")):
                     raise RuntimeError("Colab returned an unsafe or unexpected result archive")
             archive.extractall(job / "output")
         if finalize:
@@ -1254,11 +1267,11 @@ def run_colab_job(job: Path, tasks: list[str] | None = None, finalize: bool = Tr
 
 def run_colab_job_via_worker(job: Path, tasks: list[str] | None = None, finalize: bool = True):
     """Stage assets from worker NFS so large models never touch portal storage."""
+    reject_multirole_colab(job)
     session = f"rtseg-{job.name[-12:]}"
     remote = f"{REMOTE_BASE}/{job.name}"
     archive = job / "selected-series.tar"
-    members = ["input", "job.json"]
-    if (job / "input_ct").is_dir(): members.append("input_ct")
+    members = [name for name in input_directories(metadata(job)) if (job / name).is_dir()] + ["job.json"]
     if (job / "prompt.json").is_file(): members.append("prompt.json")
     if tasks:
         data = metadata(job); data["models"] = tasks
@@ -1298,6 +1311,7 @@ def run_colab_job_via_worker(job: Path, tasks: list[str] | None = None, finalize
 
 def run_colab_job_on_nfs_worker(job: Path, tasks: list[str] | None = None, finalize: bool = True):
     """Run the NFS-aware Colab orchestrator directly on the model worker."""
+    reject_multirole_colab(job)
     session = f"rtseg-{job.name[-12:]}"
     if tasks:
         data = metadata(job)
@@ -1378,8 +1392,8 @@ def finalize_results(job: Path, empty=()):
     with zipfile.ZipFile(job/"rtstruct-results.zip","w",zipfile.ZIP_DEFLATED) as z:
         nested = sorted(path for path in (job / "output").rglob("*")
                         if path.is_file() and path.parent != job / "output")
-        orientation_records = sorted((job / "output").glob("*.dcm.orientation.json"))
-        for result in results + orientation_records + nested:
+        sidecars = sorted((job / "output").glob("*.dcm.orientation.json")) + sorted((job / "output").glob("*.dcm.lesions.json"))
+        for result in results + sidecars + nested:
             z.write(result, result.relative_to(job / "output").as_posix())
         if empty:
             z.writestr("NO_STRUCTURES_FOUND.txt",
@@ -1388,7 +1402,9 @@ def finalize_results(job: Path, empty=()):
         if omissions:
             z.writestr("CONVERSION_NOTES.txt", "\n".join(omissions) + "\n")
     # Retain the selected input for the viewer until job retention or explicit deletion.
-    shutil.rmtree(job/"input_ct",ignore_errors=True)
+    for name in input_directories(metadata(job)):
+        if name != 'input':
+            shutil.rmtree(job / name, ignore_errors=True)
     if not results:
         detail = f"No structures found by {', '.join(empty)}; no RTSTRUCT was created"
     elif empty:
@@ -1473,22 +1489,27 @@ def inspect_upload(input_dir: Path) -> dict:
             uid = str(getattr(ds, "SeriesInstanceUID", ""))
             if modality not in IMAGE_MODALITIES or not uid or not hasattr(ds, "Rows") or not hasattr(ds, "Columns"):
                 ignored += 1; continue
+            instance = mr_instance(ds, f.name) if modality == "MR" else None
             key = f"{uid}|{modality}"
             g = groups.setdefault(key, {"key": key, "series_uid": uid, "modality": modality,
                 "study_uid": str(getattr(ds, "StudyInstanceUID", "")),
                 "frame_uid": str(getattr(ds, "FrameOfReferenceUID", "")),
                 "description": str(getattr(ds, "SeriesDescription", "")),
-                "image_type": list(map(str, getattr(ds, "ImageType", []))), "study_date": str(getattr(ds, "StudyDate", "")),
+                "image_type": image_types(ds), "study_date": str(getattr(ds, "StudyDate", "")),
                 "files": [], "rows": int(ds.Rows), "columns": int(ds.Columns)})
-            g["image_type"] = list(dict.fromkeys(g["image_type"] + list(map(str, getattr(ds, "ImageType", [])))))
+            g["image_type"] = list(dict.fromkeys(g["image_type"] + image_types(ds)))
             check = detect_cbct(ds)
             g.setdefault("cbct", False)
             g.setdefault("cbct_reason", check["reason"])
             if check["is_cbct"]: g.update(cbct=True, cbct_reason=check["reason"])
             g["files"].append(f.name)
+            if modality == "MR":
+                g.setdefault("instances", []).append(instance)
         except Exception: ignored += 1
     series=[]
     for g in groups.values():
+        if g["modality"] == "MR":
+            finish_mr_series(g)
         g["slices"]=len(g["files"]); series.append(g)
     series.sort(key=lambda x:(x["modality"],x["description"],x["series_uid"]))
     return {"series":series,"ignored":ignored}
@@ -1511,8 +1532,16 @@ def validate_series(input_dir: Path) -> tuple[int, str]:
 def series_metadata(series):
     if series is None:
         return None
-    return {key: series.get(key) for key in ("key", "series_uid", "modality", "description",
+    result = {key: series.get(key) for key in ("key", "series_uid", "modality", "description",
         "slices", "rows", "columns", "study_date", "cbct")}
+    if series.get('modality') == 'MR':
+        result.update(public_mr_fields(series))
+    return result
+
+
+def public_assessment(report):
+    return {**report, 'series': [{**{k: v for k, v in s.items() if k not in {'files', 'instances', 'hbv_options'}},
+        **(public_mr_fields(s) if s['modality'] == 'MR' else {})} for s in report['series']]}
 
 
 def new_batch_id():
@@ -1532,14 +1561,15 @@ def directory_manifest(directory, names=None):
 
 
 def job_input_manifest(job):
-    return {name: directory_manifest(job / name) for name in ('input', 'input_ct') if (job / name).is_dir()}
+    data = metadata(job) if (job / 'job.json').is_file() else {}
+    return {name: directory_manifest(job / name) for name in input_directories(data) if (job / name).is_dir()}
 
 
 def legacy_input_complete(job, data):
     """Jobs created before input manifests: their metadata was written only after the series was in place, so a
     nonempty input holding one image series is the original input. Jobs from this version always carry a manifest
     (or a staging marker), so the fallback never applies to them."""
-    if 'input_manifest' in data or 'staging_upload' in data or data.get('input_preparation_interrupted'):
+    if 'input_manifest' in data or 'input_roles' in data or 'staging_upload' in data or data.get('input_preparation_interrupted'):
         return False
     try:
         slices, _ = validate_series(job / 'input')
@@ -1558,7 +1588,10 @@ def input_manifest_complete(job, data):
         # Never create a manifest from a possibly interrupted input directory.
         if not isinstance(manifest, dict):
             return legacy_input_complete(job, data)
-        return (bool(manifest.get('input')) and set(manifest) <= {'input', 'input_ct'}
+        allowed = set(input_directories(data))
+        required = {'input'} | {r['dir'] for r in data.get('input_roles', {}).values()}
+        return (required <= set(manifest) <= allowed and all(manifest[name] for name in required)
+                and (not data.get('input_roles') or data.get('input_identity') == input_identity(data))
                 and all(directory_manifest(job / name) == expected for name, expected in manifest.items()))
     except (OSError, ValueError, TypeError, KeyError):
         return False
@@ -1597,8 +1630,10 @@ def rollback_staged_batch(jobs):
             return False
         for source, destination in moves:
             shutil.move(source, destination)
-        for job, _ in records:
-            shutil.rmtree(job / 'input_ct', ignore_errors=True)
+        for job, data in records:
+            for name in input_directories(data):
+                if name != 'input':
+                    shutil.rmtree(job / name, ignore_errors=True)
         return True
     except (OSError, ValueError, KeyError, TypeError):
         logger.warning('Could not roll back interrupted input preparation', exc_info=True)
@@ -1732,7 +1767,11 @@ def process(job: Path):
     # Production callers execute through enqueue_jobs; task execution is unchanged.
     jid=job.name; remote=f"{REMOTE_BASE}/{jid}"
     try:
-        tasks_to_run = ordered_tasks(metadata(job)["models"])
+        data = metadata(job)
+        if data.get('input_roles') and not input_manifest_complete(job, data):
+            fail_input_preparation(job)
+            return
+        tasks_to_run = ordered_tasks(data["models"])
         if WORKER_MODE == "auto":
             prior = metadata(job)
             if prior.get("fallback_reason") == "gpu_oom":
@@ -2247,7 +2286,7 @@ def finish_session_assessment(session: Path, data: dict):
         report = inspect_upload(stage / "input")
         if not report["series"]: raise ValueError("No valid CT/MR/PET DICOM image series were found")
         (stage / "upload.json").write_text(json.dumps({"id":uid, "created":time.time(), **report}, indent=2))
-        public = {**report, "series":[{k:v for k,v in g.items() if k != "files"} for g in report["series"]]}
+        public = public_assessment(report)
         changes = {"status":"ready", "result":{"upload_id":uid, **public}, "error":None}
     except Exception as exc:
         shutil.rmtree(stage, ignore_errors=True)
@@ -2381,7 +2420,7 @@ async def assess_upload(files: list[UploadFile]=File(...)):
         report=inspect_upload(inp)
         if not report["series"]: raise ValueError("No valid CT/MR/PET DICOM image series were found")
         private={"id":uid,"created":time.time(),**report}; (stage/"upload.json").write_text(json.dumps(private,indent=2))
-        public={k:v for k,v in report.items()}; public["series"]=[{k:v for k,v in g.items() if k!="files"} for g in report["series"]]
+        public = public_assessment(report)
         return {"upload_id":uid,**public}
     except Exception as exc:
         shutil.rmtree(stage,ignore_errors=True); raise HTTPException(400,str(exc))
@@ -2411,6 +2450,8 @@ def validate_job_selection(models, catalog, *, assessed=False, batch=False):
             raise HTTPException(400, "A valid prompt is required; use the assessed-upload start route with prompt_json")
         if any(items[name].get("requires_ct") for name in models):
             raise HTTPException(400, "A paired CT series is required; use the assessed-upload start route")
+        if any(items[name].get("input_roles") for name in models):
+            raise HTTPException(400, "Sequence roles are required; use the assessed-upload batch route")
     return items
 
 
@@ -2495,7 +2536,7 @@ def validate_assessed_prompt(models, items, selected, prompt_json):
     return prompt_data
 
 
-def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="", *, legacy=False):
+def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="", *, legacy=False, roles=None):
     # Serialize consumption and submission so requests cannot consume the same upload twice.
     with submission_lock:
         if not re.fullmatch(r"upload-[A-Za-z0-9-]+", uid):
@@ -2520,12 +2561,62 @@ def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="
         prompted = [name for name in models if items[name].get("prompt")]
         if prompted and len(selected) != 1:
             raise HTTPException(400, "Select a single series to use interactive models: " + ", ".join(prompted))
-        plans, applied = [], set()
+        if isinstance(roles, str):
+            try:
+                roles = json.loads(roles) if roles else {}
+            except ValueError:
+                raise HTTPException(400, "roles must be a JSON object")
+        if roles is None:
+            roles = {}
+        if not isinstance(roles, dict) or set(roles) - set(series_keys):
+            raise HTTPException(400, "roles must map selected primary series keys to role selections")
+        for series in selected:
+            choices = roles.get(series['key'], {})
+            if not isinstance(choices, dict):
+                raise HTTPException(400, "Each primary series role selection must be an object")
+            allowed = {}
+            try:
+                for name in models:
+                    contract, reference = role_contract(items[name])
+                    for role in contract:
+                        if role['role'] != reference:
+                            allowed[role['role']] = (role, contract, reference)
+                for role_name, choice in choices.items():
+                    if role_name not in allowed:
+                        raise ValueError(f"Role {role_name} is not a companion role of a selected model")
+                    role, contract, reference = allowed[role_name]
+                    # Validate every explicit choice even if another required role is absent.
+                    ref = next(r for r in contract if r['role'] == reference)
+                    resolve_roles(series, data['series'], {'input_roles': [ref, role], 'reference_role': reference},
+                                  {role_name: choice})
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(400, f"Series {series['key']}: {exc}") from exc
+        plans, applied, role_blocked = [], set(), set()
         for series in selected:
             label = f"{series.get('description') or series['key']} ({series['modality']}; {series['key']})"
             subset = models if legacy else [name for name in models if series["modality"] in
                 (items[name].get("modalities") or [items[name].get("modality", task_modality(name))])
                 and not (name == REPORT_TASK and (series["modality"] != "CT" or series.get("cbct")))]
+            role_records, role_sources, skipped = {}, {}, {}
+            for name in list(subset):
+                try:
+                    records, sources, error = resolve_roles(series, data['series'], items[name], roles.get(series['key'], {}))
+                    if error:
+                        skipped[name] = error
+                        subset = [model for model in subset if model != name]
+                        role_blocked.add(name)
+                        continue
+                    for role, record in records.items():
+                        if role in role_records and role_records[role] != record:
+                            raise ValueError(f"Selected models have conflicting input role {role}")
+                        if record['dir'] == 'input' and any(r['dir'] == 'input' and key != role for key, r in role_records.items()):
+                            raise ValueError("Selected models have different reference roles")
+                        role_records[role] = record
+                    role_sources.update(sources)
+                except (ValueError, TypeError) as exc:
+                    raise HTTPException(400, f"Series {label}: {exc}") from exc
+            if not subset and skipped:
+                raise HTTPException(400, f"Series {label}: " + '; '.join(f"{name}: {error}" for name, error in skipped.items()))
             if not subset:
                 raise HTTPException(400, f"Series {label} has no compatible models to run from {', '.join(models)} (AI reports exclude CBCT)")
             try:
@@ -2549,24 +2640,30 @@ def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="
                 postprocessing = validate_postprocess(postprocess, subset)
             except HTTPException:
                 postprocessing = []
-            plans.append((series, ordered_tasks(subset), companion, prompt_data, postprocessing))
+            if companion and 'input_ct' in role_sources:
+                raise HTTPException(400, "A CT companion conflicts with a declared input role")
+            plans.append((series, ordered_tasks(subset), companion, prompt_data, postprocessing,
+                          role_records, role_sources, skipped))
             applied.update(subset)
-        unused = [name for name in models if name not in applied]
+        unused = [name for name in models if name not in applied and name not in role_blocked]
         if unused:
             raise HTTPException(400, "Models apply to no selected series: " + ", ".join(unused))
         if postprocess and not any(plan[4] for plan in plans):
             # Preserve the precise postprocess contract error.
             validate_postprocess(postprocess, models)
         # Check every source before allocating any job directories.
-        for series, _, companion, _, _ in plans:
+        for series, _, companion, _, _, _, role_sources, _ in plans:
             for source in [series] + ([companion] if companion else []):
                 if any(not (stage / "input" / name).is_file() for name in source["files"]):
                     raise HTTPException(400, f"Series {source['key']}: staged files are missing; upload again")
+            for names in role_sources.values():
+                if any(not (stage / 'input' / name).is_file() for name in names):
+                    raise HTTPException(400, "Companion files are missing; upload again")
         batch_id = new_batch_id()
         created, moved, results = [], [], []
         try:
             # Persist non-runnable metadata before copying or moving any input.
-            for index, (series, subset, companion, prompt_data, postprocessing) in enumerate(plans, 1):
+            for index, (series, subset, companion, prompt_data, postprocessing, role_records, role_sources, skipped) in enumerate(plans, 1):
                 jid = new_job_id()
                 job = BASE / jid
                 created.append(job)
@@ -2578,19 +2675,31 @@ def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="
                 manifest = {'input': directory_manifest(stage / 'input', series['files'])}
                 if companion:
                     manifest['input_ct'] = directory_manifest(stage / 'input', companion['files'])
+                for directory, names in role_sources.items():
+                    manifest[directory] = directory_manifest(stage / 'input', names)
+                role_data = {'input_roles': role_records} if role_records else {}
+                if role_records:
+                    role_data['input_identity'] = input_identity({**role_data, 'input_manifest': manifest})
                 (job / "job.json").write_text(json.dumps({"id": jid, "status": "staging", "detail": "Preparing input",
+                    **role_data, **({'skipped_models': skipped} if skipped else {}),
                     "input_manifest": manifest, "staging_upload": uid,
                     "models": subset, "report_status": "pending" if REPORT_TASK in subset else None,
                     "created": time.time(), "error": None, "prompted": bool(prompt_data), "postprocess": postprocessing,
                     "batch_id": batch_id, "batch_index": index, "batch_size": len(plans), "series": public_series}, indent=2))
-                results.append({"id": jid, "series_key": series["key"], "models": subset})
+                results.append({"id": jid, "series_key": series["key"], "models": subset, **({"skipped_models": skipped} if skipped else {})})
             # Copies precede every move: selected CT can also accompany several PET jobs.
-            for job, (_, _, companion, _, _) in zip(created, plans):
+            for job, (_, _, companion, _, _, _, role_sources, _) in zip(created, plans):
                 if companion:
                     (job / "input_ct").mkdir()
                     for name in companion['files']:
                         shutil.copy2(stage / 'input' / name, job / 'input_ct' / name)
-            for job, (series, _, _, _, _) in zip(created, plans):
+                for directory, names in role_sources.items():
+                    if directory == 'input':
+                        continue
+                    (job / directory).mkdir()
+                    for name in names:
+                        shutil.copy2(stage / 'input' / name, job / directory / name)
+            for job, (series, _, _, _, _, _, _, _) in zip(created, plans):
                 for name in series["files"]:
                     source, destination = stage / "input" / name, job / "input" / name
                     shutil.move(source, destination)
@@ -2612,8 +2721,8 @@ def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="
 
 @app.post("/api/v1/uploads/{uid}/jobs", status_code=202, tags=["automation"])
 def start_assessed_batch(uid: str, series_keys: list[str]=Form(...), models: list[str]=Form(...),
-                         prompt_json: str=Form(""), postprocess: str=Form("")):
-    return create_assessed_jobs(uid, series_keys, models, prompt_json, postprocess)
+                         prompt_json: str=Form(""), postprocess: str=Form(""), roles: str=Form("")):
+    return create_assessed_jobs(uid, series_keys, models, prompt_json, postprocess, roles=roles)
 
 
 @app.post("/api/uploads/{uid}/start")

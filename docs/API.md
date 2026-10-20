@@ -132,6 +132,78 @@ Segmentation jobs can request `postprocess=prostate_sbrt_crop` only with local `
 
 `POST /api/v1/jobs/{id}/retry` retries a failed job using retained input. Retention and cleanup can remove those inputs. There is no public cancellation endpoint.
 
+## MRI sequence roles
+
+Models declaring `input_roles` and `reference_role` use one job per selected primary
+series. The primary supplies the reference role, usually axial T2W. Other selected
+models without roles continue to use that primary alone. Use assessed uploads for
+these models; direct single-series submission rejects them.
+
+The batch endpoint accepts an optional `roles` form field containing a JSON object
+keyed by primary `series_key`. Its values map companion role names to a series key
+or selector object. For example (illustrative keys):
+
+```json
+{
+  "T2_SERIES_KEY": {
+    "adc": "ADC_SERIES_KEY",
+    "hbv": {"series_key": "DWI_SERIES_KEY", "b_value": 1400}
+  }
+}
+```
+
+```bash
+curl -fsS -X POST http://localhost:8080/api/v1/uploads/UPLOAD_ID/jobs \
+  -F 'series_keys=T2_SERIES_KEY' -F 'models=MODEL_WITH_INPUT_ROLES' \
+  -F 'roles={"T2_SERIES_KEY":{"adc":"ADC_SERIES_KEY","hbv":{"series_key":"DWI_SERIES_KEY","b_value":1400}}}'
+```
+
+All roles must have the declared modality and share a present StudyInstanceUID with
+the primary. Each role uses a different series. FrameOfReferenceUID may differ;
+the review UI warns about this and `input_roles` records both identifiers and
+`frame_of_reference_differs`. These checks do not establish inter-sequence alignment.
+Unknown primary/companion keys, undeclared roles, wrong modality/study or invalid
+b-value selectors return HTTP 400 before any job is created.
+
+An omitted role uses a suggestion only when the highest rank is unique. ADC
+ImageType evidence ranks above ADC/apparent-diffusion description or protocol text.
+An explicit ADC choice can select another same-study MR series. HBV candidates
+require a documented b-value of at least 800 s/mm²; the highest b-value ranks first.
+A `null` role explicitly leaves that role unselected. Missing or tied required
+roles skip only models requiring them, with reasons in `jobs[].skipped_models`
+and `job.json`. If a primary has no runnable models, the whole batch returns 400
+and retains the upload. The review page shows each skipped model before submission.
+
+MR assessment exposes `image_type`, `is_adc`, `protocol_name`, acquisition time/date-time,
+Study/Frame identifiers, orientation, spacing, dimensions, `instances`, `b_values`,
+`b_value_sources`, `hbv_options` and `hbv_unavailable_reason`. Dimensions are
+`[columns, rows, frames]`; an HBV option reports only the selected volume's frames.
+Each instance records its SOP UID and per-frame diffusion values/geometry. Public
+assessment omits source filenames. `b_value_source` is `(0018,9087)`;
+`b_value_path` distinguishes top-level, shared and per-frame functional groups.
+No vendor private tags or b-values inferred from descriptions are accepted.
+If any instance/frame lacks a standard b-value, the series cannot supply HBV.
+Enhanced MR containing several b-values inside one instance is assessed but cannot
+be selected as HBV: frame extraction is not implemented. Separate single-b Enhanced
+MR instances are supported. Known repeated slice positions and inconsistent volume
+geometry are rejected; no frame rewriting, resampling or ADC intensity conversion
+occurs during staging.
+
+Jobs store the reference in `input/`, companions in `input_<role>/`, and the chosen
+series and b-value/source in `input_roles`. For mixed-b series, only whole instances
+matching the selected b-value are copied to `input_hbv/`. Shared companions are
+copied before primary files are moved. `input_manifest` covers every role directory;
+`input_identity` binds that manifest to the role selections. Partial directories or
+changed selectors prevent dispatch, recovery and retry. Retry keeps the original
+choices. SSH transport carries the role directories and job record. Result packages
+retain `<task>_RTSTRUCT.dcm.lesions.json` sidecars. Companions are removed after
+successful result packaging; reference images remain for the existing viewer until
+deletion or retention expiry.
+
+Multi-sequence jobs support local and SSH execution. Colab execution/fallback is
+blocked for these jobs because the separate Colab runners retain a single-series
+transport contract. Existing single-series Colab jobs are unchanged.
+
 ## CT draft reports
 
 Select `nv_reason_ct_report` alone or with segmentation tasks. It runs last and produces a research AI draft requiring radiologist review. The catalog identifies `output: "report"`, license and limitations. Availability requires the report acceptance marker on the task's execution worker; segmentation orientation gates remain separate.

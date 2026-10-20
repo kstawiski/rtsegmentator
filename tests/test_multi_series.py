@@ -61,7 +61,10 @@ def test_batch_creates_series_order_subsets_and_public_metadata(batch):
         job = batch.client.get('/api/v1/jobs/'+jid).json()
         assert (job['batch_id'], job['batch_index'], job['batch_size']) == (payload['batch_id'], index, 2)
         assert job['report_status'] == ('pending' if index == 2 else None)
-        assert set(job['series']) == {'key', 'series_uid', 'modality', 'description', 'slices', 'rows', 'columns', 'study_date', 'cbct'}
+        fields = {'key', 'series_uid', 'modality', 'description', 'slices', 'rows', 'columns', 'study_date', 'cbct'}
+        if job['series']['modality'] == 'MR':
+            fields |= {'study_uid', 'frame_uid', 'instances', 'hbv_options'}
+        assert set(job['series']) == fields
         assert 'files' not in job['series']
         assert len(list((batch.portal.BASE/jid/'input').iterdir())) == 1
     assert not (batch.portal.BASE/'upload-synthetic').exists()

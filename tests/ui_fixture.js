@@ -24,6 +24,20 @@ const fixtureSeries=[
   {key:'synthetic-ct',series_uid:'synthetic-ct',modality:'CT',description:'Synthetic CT',slices:24,rows:32,columns:32,study_date:'20000101'},
   {key:'synthetic-mr',series_uid:'synthetic-mr',modality:'MR',description:'Synthetic MR',slices:30,rows:32,columns:32,study_date:'20000101'},
   {key:'synthetic-localiser',series_uid:'synthetic-localiser',modality:'CT',description:'Synthetic localiser',slices:3,rows:32,columns:32,study_date:'20000101'}];
+if(new URLSearchParams(location.search).has('mri')){
+  fixtureModels.push(model('synthetic_bpmri',{modality:'MR',description:'Synthetic three-sequence MRI model',reference_role:'t2w',input_roles:[
+    {role:'t2w',modality:'MR',required:true,label:'Axial T2-weighted'},
+    {role:'adc',modality:'MR',required:true,label:'ADC map'},
+    {role:'hbv',modality:'MR',required:true,label:'High b-value DWI (one b-value)'}]}));
+  const mr=(key,description,extra={})=>({key,series_uid:key,modality:'MR',study_uid:'synthetic-study',frame_uid:'synthetic-frame',
+    description,slices:24,rows:320,columns:320,dimensions:[320,320,24],study_date:'20000101',acquisition_time:'121314',...extra});
+  fixtureSeries.splice(0,fixtureSeries.length,mr('synthetic-t2','Synthetic axial T2W'),
+    mr('synthetic-adc','Synthetic ADC map',{is_adc:true}),
+    mr('synthetic-hbv','Synthetic diffusion series',{slices:48,dimensions:[160,160,48],rows:160,columns:160,frame_uid:'synthetic-diffusion-frame',b_values:[800,1400],b_value_sources:['(0018,9087)'],hbv_options:[
+      {b_value:1400,b_value_source:'(0018,9087)',dimensions:[160,160,24]},
+      {b_value:800,b_value_source:'(0018,9087)',dimensions:[160,160,24]}]}),
+    mr('synthetic-adc-repeat','Synthetic ADC repeat',{is_adc:true}));
+}
 const archivedBatchJobs=fixtureSeries.slice(0,2).map((series,i)=>({id:'qa-archived-'+i,status:'queued',created:1+i,
   models:[i?'total_mr':'total'],batch_id:'qa-archived-batch',batch_index:i+1,batch_size:2,
   series:{...series,description:'Archived '+series.description}}));
@@ -57,7 +71,7 @@ window.fetch=async (input,options={})=>{
   else if(path==='/api/v1/upload-sessions/ui-fixture')body={status:'ready',result:{upload_id:'ui-fixture',series:fixtureSeries}};
   else if(path==='/api/v1/uploads/ui-fixture/jobs'){
     const keys=options.body.getAll('series_keys'),names=options.body.getAll('models');
-    window.uiBatchRequests.push({keys,models:names});
+    window.uiBatchRequests.push({keys,models:names,roles:JSON.parse(options.body.get('roles')||'{}')});
     const now=Date.now()/1000,batch_id='synthetic-batch';
     const jobs=keys.map((key,i)=>({id:'qa-batch-'+i,series_key:key,models:names.filter(name=>fixtureModels.find(t=>t.name===name).modality===fixtureSeries.find(s=>s.key===key).modality)}));
     fixtureJobs.push(...jobs.map((job,i)=>({...job,status:i?'queued':'processing',created:now+i*.2,

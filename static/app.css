@@ -211,6 +211,11 @@ html{scroll-padding-bottom:var(--selection-tray-space,0px)}
 .review-card li{margin-bottom:.75rem}
 .review-card li:last-child{margin-bottom:0}
 .review-card .small{display:block}
+.sequence-roles{min-width:0;margin:1rem 0;padding:1rem;border:1px solid var(--line);border-radius:.75rem}
+.sequence-roles legend{font-weight:700;padding:0 .4rem}
+.sequence-roles label{display:block;margin:.9rem 0 .35rem;font-weight:600}
+.sequence-roles select{width:100%;min-width:0}
+.sequence-roles .small{overflow-wrap:anywhere}
 .option-panel,.prompt-panel{margin-top:1.6rem;padding-top:1.5rem;border-top:1px solid var(--line)}
 .option-panel p{margin:.5rem 0 0}
 .prompt-layout{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(240px,1fr);gap:1.6rem;max-width:1000px}
