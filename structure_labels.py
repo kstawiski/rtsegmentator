@@ -28,7 +28,12 @@ def unique_roi_names(names):
 
 
 def final_roi_names(labels):
-    """Return foreground names in numeric label-index order, as written by the converter."""
+    """Return validated foreground names in numeric label-index order.
+
+    This is the catalogue's display order. Runners serialise label maps with
+    string-sorted keys, so the ROI order inside an RTSTRUCT can differ; the set
+    of names and their count are the same.
+    """
     return unique_roi_names(v for k, v in sorted(labels.items(), key=lambda kv: int(kv[0])) if int(k) > 0)
 
 
@@ -67,12 +72,19 @@ def spec_labels(spec, app_root: Path, model_root: Path):
 
 
 def lut_labels(path: Path, *, freesurfer=False):
+    """Parse a colour lookup table exactly as the two runtime readers do.
+
+    GOUHFI (default): strict UTF-8, keeps the index spelling from the file and
+    joins multi-word names with underscores. FreeSurfer: undecodable bytes are
+    replaced, the index is an integer and the name is the first token.
+    """
     labels = {}
-    for line in path.read_text(errors="replace").splitlines():
+    text = path.read_text(errors="replace") if freesurfer else path.read_text()
+    for line in text.splitlines():
         match = re.match(r"^\s*(\d+)\s+([^\s#]+)" if freesurfer else
                          r"^\s*(\d+)\s+([^#]+?)(?:\s+\d+\s+\d+\s+\d+\s+\d+)?\s*$", line)
         if match and int(match[1]):
-            labels[str(int(match[1]))] = match[2].strip().replace(" ", "_")
+            labels[str(int(match[1])) if freesurfer else match[1]] = match[2].strip().replace(" ", "_")
     if not labels:
         raise ValueError("LUT contains no foreground names")
     return labels

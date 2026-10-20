@@ -4130,14 +4130,11 @@
     "note": "No RTSTRUCT exporter label contract is configured; model status: requires registered t1 t2 spine mr."
   },
   "sct_tumor_t2": {
-    "kind": "fixed",
-    "names": [
-      "Spinal_Cord",
-      "Spinal_Cord_Tumor"
-    ],
-    "count": 2,
-    "source": "SCT exporter label map",
-    "note": "Only structures found in the scan are written to the RTSTRUCT."
+    "kind": "unresolved",
+    "names": [],
+    "count": null,
+    "source": "Disabled model metadata",
+    "note": "SCT writes one mask that the exporter cannot name (it would be written as SCT_Label_1); the export naming contract must be fixed before this model is enabled."
   },
   "segrap2023_gtv": {
     "kind": "unresolved",

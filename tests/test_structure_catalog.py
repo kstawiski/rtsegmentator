@@ -74,6 +74,8 @@ def test_inline_export_contracts(task):
 def test_repo_derived_special_exporters():
     from structure_labels import sct_labels
     for task, spec in REGISTRIES['SCT_TASKS'].items():
+        if task in builder.SCT_SINGLE_TARGET_MODELS:
+            continue
         assert CATALOG[task]['names'] == final_roi_names(sct_labels(spec, ROOT)), task
     masks = json.loads((ROOT / 'labels/multitalent-v1-masks.json').read_text())
     for task in REGISTRIES['MULTITALENT_V1_TASKS']:
@@ -223,3 +225,49 @@ def test_total_segmentator_site_filters_keep_generated_anatomical_terms(portal):
     previous = portal.clinical_tags({**task, 'structures': ', '.join(names)})
     current = portal.clinical_tags({**task, 'structure_names': names})
     assert previous and current == previous
+
+
+def test_sct_single_target_catalogue_matches_what_the_combiner_writes(tmp_path):
+    """sct_deepseg keeps prediction.nii.gz for a one-target model; run the real combiner on it."""
+    import subprocess, sys
+    nib = pytest.importorskip('nibabel')
+    np = pytest.importorskip('numpy')
+    for task in builder.SCT_SINGLE_TARGET_MODELS:
+        spec = REGISTRIES['SCT_TASKS'][task]
+        work = tmp_path / task
+        work.mkdir()
+        data = np.zeros((4, 4, 4), dtype=np.uint8)
+        data[1:3, 1:3, 1:3] = 1
+        nib.save(nib.Nifti1Image(data, np.eye(4)), str(work / 'prediction.nii.gz'))
+        subprocess.run([sys.executable, str(ROOT / 'combine_sct_outputs.py'), '--glob', str(work / 'prediction*.nii.gz'),
+                        '--output', str(work / 'combined.nii.gz'), '--labels', str(work / 'labels.json'),
+                        '--output-names', json.dumps(spec['output_names'])], check=True, cwd=ROOT)
+        written = final_roi_names(json.loads((work / 'labels.json').read_text()))
+        entry = CATALOG[task]
+        if entry['kind'] == 'fixed':
+            assert entry['names'] == written
+        else:
+            assert entry['kind'] == 'unresolved' and written == ['SCT_Label_1']
+            assert 'SCT_Label_1' in entry['note']
+
+
+def test_lut_parsers_keep_their_runtime_edge_behaviour(tmp_path):
+    from structure_labels import lut_labels
+    lut = tmp_path / 'leading-zero.txt'
+    lut.write_text('007 Left Cortex 1 2 3 0\n')
+    assert lut_labels(lut) == {'007': 'Left_Cortex'}
+    assert lut_labels(lut, freesurfer=True) == {'7': 'Left'}
+    bad = tmp_path / 'invalid.txt'
+    bad.write_bytes(b'7 Left\xffCortex 1 2 3 0\n')
+    with pytest.raises(UnicodeDecodeError):
+        lut_labels(bad)
+    assert lut_labels(bad, freesurfer=True) == {'7': 'Left\ufffdCortex'}
+
+
+def test_catalogue_order_is_numeric_while_runner_maps_sort_as_strings():
+    labels = {str(i): f'Label_{i}' for i in range(1, 14)}
+    serialised = json.loads(json.dumps(labels, sort_keys=True))
+    names = final_roi_names(labels)
+    assert names[:3] == ['Label_1', 'Label_2', 'Label_3']
+    assert list(serialised)[:3] == ['1', '10', '11']
+    assert sorted(names) == sorted(serialised.values())

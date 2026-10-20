@@ -28,8 +28,8 @@ Other routes:
   Each task includes `structure_kind` (`fixed`, `variable`, `prompted`, `report`, or `unresolved`),
   `structure_names` (exact exported ROI names), and `structure_count` (an integer for `fixed`, null otherwise).
   `structure_source` and `structure_note` describe the label source and export semantics. `structures` remains
-  the short human-readable output summary. Fixed names follow label-index order after the writer's name
-  normalization; only structures present in a scan are written. Prompted outputs give the target ROI name;
+  the short human-readable output summary. Fixed names are listed in numeric label-index order after the writer's
+  name normalization (ROI order inside an RTSTRUCT can differ); only structures present in a scan are written. Prompted outputs give the target ROI name;
   variable outputs describe their naming pattern in the note. Disabled tasks with unavailable exporter metadata
   are `unresolved`. A worker task missing from the generated catalog is disabled as `structure_metadata_unavailable`.
   The public contract is generated from exporter inputs in `catalog/structures.json`, without loading model weights.

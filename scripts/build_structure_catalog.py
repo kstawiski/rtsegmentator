@@ -21,7 +21,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from structure_labels import (INLINE_LABELS, PROMPTED_TASKS, REPO_LABEL_FILES, dataset_json,
                               dataset_labels, final_roi_names, kept_label, lut_labels,
-                              repo_label_path, sct_labels, spec_labels, unique_roi_names)
+                              repo_label_path, sct_labels, sct_output_name, spec_labels,
+                              unique_roi_names)
 from nv_segment_logic import MODES, generate
 
 INTERNAL_TOTAL = {"test", "total_highres_test", "total_v1", "vertebrae_pp", "vertebrae_pp_refined"}
@@ -128,6 +129,11 @@ def fastsurfer_labels(source):
         str(base / "FreeSurferColorLUT.txt"), "labels_from_segmentation_lut.py: present-label subset"]
 
 
+# SCT tasks whose final model has a single target: sct_deepseg then writes exactly
+# the requested prediction.nii.gz (checked against the installed model config).
+SCT_SINGLE_TARGET_MODELS = {"sct_tumor_t2": "t2_tumor"}
+
+
 def fixed(labels, source, note=""):
     names = final_roi_names(labels)
     if len({n.casefold() for n in names}) != len(names):
@@ -183,6 +189,19 @@ def resolve(task, details, ns, bundle, maps, map_path, root=ROOT):
         return fixed(dict(enumerate(names, 1)), "MultiTalent binary-mask exporter names"), [str(path), "run_multitalent_v1.py: mask names in insertion order", "structure_labels.unique_roi_names"]
     if task in ns["SCT_TASKS"]:
         spec = ns["SCT_TASKS"][task]
+        if task in SCT_SINGLE_TARGET_MODELS:
+            # SCT keeps the requested file name when its model has one target, so the
+            # combiner sees a single prediction.nii.gz, not one file per alias.
+            model = SCT_SINGLE_TARGET_MODELS[task]
+            config = bundle / "runtime-homes/sct/sct_7.3/data/deepseg_models" / model / f"{model}.json"
+            targets = json.loads(config.read_text())["loader_parameters"]["target_suffix"]
+            if len(targets) != 1:
+                raise ValueError(f"SCT model {model} now has {len(targets)} targets; update the SCT export contract.")
+            name = sct_output_name("prediction.nii.gz", spec["output_names"], single=True)
+            if name.startswith("SCT_Label_"):
+                raise ValueError("SCT writes one mask that the exporter cannot name (it would be written as "
+                                 + name + "); the export naming contract must be fixed before this model is enabled.")
+            return fixed({"1": name}, "SCT exporter label map"), [str(config), "combine_sct_outputs.py: single output"]
         labels = sct_labels(spec, root)
         provenance = [str(root / spec.get("labels_file", "catalog/sct.json")), "structure_labels.sct_labels",
                       "structure_labels.sct_matched_name",
