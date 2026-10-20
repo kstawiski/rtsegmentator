@@ -1502,11 +1502,19 @@ def inspect_upload(input_dir: Path) -> dict:
     groups = {}; ignored = 0; unattributed = []; rejected_by_uid = {}
 
     def image_evidence(ds):
+        if any(tag in ds for tag in ("PixelData", "FloatPixelData", "DoubleFloatPixelData")):
+            return True
         sop = str(getattr(ds, "SOPClassUID", "") or
                   getattr(getattr(ds, "file_meta", None), "MediaStorageSOPClassUID", ""))
-        return (getattr(ds, "preamble", None) is not None or
-                "Image Storage" in pydicom.uid.UID(sop).name or
-                any(tag in ds for tag in ("PixelData", "FloatPixelData", "DoubleFloatPixelData")))
+        if sop:
+            name = pydicom.uid.UID(sop).name
+            if "Image Storage" in name:
+                return True
+            if name != sop:
+                # A known non-image object (e.g. a DICOMDIR media index) is not a lost image.
+                return False
+        # Unknown or absent SOP class: a DICOM preamble is the remaining image evidence.
+        return getattr(ds, "preamble", None) is not None
 
     def recover_identity(path):
         # Deferred pixels are used only as tag evidence, never decoded or loaded.

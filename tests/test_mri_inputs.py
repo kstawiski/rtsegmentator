@@ -248,6 +248,40 @@ def test_round2_h1_image_evidence_without_identity_or_filename(mri, evidence):
     assert not mri.enqueued
 
 
+@pytest.mark.parametrize('kind', ['fileset', 'minimal'])
+def test_round3_dicomdir_media_index_does_not_block_mr_series(mri, tmp_path, kind):
+    from pydicom.fileset import FileSet
+    t2, adc, hbv, _, _ = standard_exam(mri)
+    directory = mri.root / 'input' / 'DICOMDIR'
+    if kind == 'fileset':
+        fileset = FileSet()
+        for number, path in enumerate(sorted((mri.root / 'input').iterdir()), 1):
+            ds = pydicom.dcmread(path)
+            # The default DICOMDIR record creators need these patient/study/series fields.
+            for keyword, value in (('PatientID', 'SYNTHETIC'), ('PatientName', 'SYNTHETIC^MRI'),
+                                   ('StudyDate', '20260101'), ('StudyTime', '000000'), ('StudyID', '1'),
+                                   ('SeriesNumber', 1), ('InstanceNumber', number)):
+                if keyword not in ds:
+                    setattr(ds, keyword, value)
+            fileset.add(ds)
+        fileset.write(tmp_path / 'media')
+        shutil.copyfile(tmp_path / 'media' / 'DICOMDIR', directory)
+    else:
+        meta = FileMetaDataset()
+        meta.MediaStorageSOPClassUID = '1.2.840.10008.1.3.10'
+        meta.MediaStorageSOPInstanceUID = generate_uid()
+        meta.TransferSyntaxUID = ExplicitVRLittleEndian
+        ds = FileDataset(str(directory), {}, file_meta=meta, preamble=b'\0' * 128)
+        ds.FileSetID = 'SYNTHETIC'
+        ds.save_as(directory, enforce_file_format=True)
+    assert pydicom.dcmread(directory).file_meta.MediaStorageSOPClassUID == '1.2.840.10008.1.3.10'
+    rows = mri.assess()
+    assert not any(row.get('unavailable_reason') for row in rows.values())
+    assert mri.submit([t2], {t2: {'adc': adc, 'hbv': {'series_key': hbv, 'b_value': 800}}}).status_code == 202
+    job = mri.enqueued[0]
+    assert mri.portal.input_manifest_complete(job, mri.portal.metadata(job))
+
+
 def test_round2_h1_unrelated_non_dicom_file_is_ignored(mri):
     t2, _, _, _, _ = standard_exam(mri)
     (mri.root / 'input/readme.txt').write_text('Unrelated upload notes')
