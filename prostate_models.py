@@ -49,17 +49,17 @@ def weight_files(task):
 def requirements(task):
     model, env, runner = TASKS[task]
     files = [f'@{runner}', '@prostate_models.py', '@prostate_postprocess.py',
-             f'envs/{env}/bin/python', f'sources/{model}/LICENSE',
+             f'runtime-envs/{env}/bin/python', f'sources/{model}/LICENSE',
              *map(str, weight_files(task)), f'validation/{task}.json']
     if task.startswith('picai_'):
-        files += ['@convert_masks_validate_rtstruct.py', f'envs/{env}/bin/nnUNet_predict']
+        files += ['@convert_masks_validate_rtstruct.py', f'runtime-envs/{env}/bin/nnUNet_predict']
         files += [f'sources/{model}/{name}' for name in (
             'nnUNetTrainerV2_focalLoss.py', 'nnUNetTrainerV2_Loss_CE_checkpoints.py',
             'nnUNetTrainerV2_Loss_FL_and_CE.py')]
     else:
         files += [f'@labels/{model}.json']
         if model == 'umu_prostate_zones':
-            files += [f'envs/{env}/bin/nnUNetv2_predict_from_modelfolder']
+            files += [f'runtime-envs/{env}/bin/nnUNetv2_predict_from_modelfolder']
     return files
 
 
@@ -223,7 +223,7 @@ def run_task(task, job, app_root, model_root, runtime_root, worker_python, run):
     context = {'input_roles': metadata.get('input_roles', {}), 'warnings': warnings,
                'channel_order': list(dirs), 'reference_role': 't2w'}
     (work / 'context.json').write_text(json.dumps(context, indent=2) + '\n')
-    run([str(runtime_root / 'envs' / environment / 'bin/python'), str(app_root / script),
+    run([str(model_root / 'runtime-envs' / environment / 'bin/python'), str(app_root / script),
          '--task', task, '--work', str(work), '--model-root', str(model_root), '--output', str(output)])
     result = json.loads((work / 'result.json').read_text())
     if result['empty']:

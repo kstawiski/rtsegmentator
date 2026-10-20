@@ -60,9 +60,9 @@ sources/picai_supervised/
 sources/picai_semi_supervised/
 sources/umu_prostate_zones/
 sources/prostate158_tumor/
-envs/picai/
-envs/umu-nnunetv2/
-envs/prostate158/
+runtime-envs/picai/
+runtime-envs/umu-nnunetv2/
+runtime-envs/prostate158/
 ```
 
 Keep the source licences, the PI-CAI weight licence and the full acquisition manifests with the bundles. Extract the Umeå native export under its weight directory, preserving its internal paths. The structure generator reads the Umeå `dataset.json` at the final path; it never reads checkpoint tensors. `model_preflight.py` requires each task's existing-style `validation/<task>.json` and reports orientation validation separately. This implementation creates neither acceptance record.
