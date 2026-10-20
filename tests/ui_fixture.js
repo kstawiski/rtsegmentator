@@ -34,6 +34,10 @@ window.fetch=async (input,options={})=>{
   if(!path.startsWith('/api/'))return originalFetch(input,options);
   let body={},status=200;
   if(path==='/api/v1/models'){
+    if(new URLSearchParams(location.search).has('nodal')&&!fixtureModels.some(t=>t.name==='hnlnl_2d3d')){
+      const [nodal,details]=await Promise.all(['/tests/nodal_catalog_fixture.json','/catalog/nodal-models.json'].map(p=>originalFetch(p).then(r=>r.json())));
+      fixtureModels.push(...nodal.map(t=>model(t.name,{...t,...details[t.name]})));
+    }
     const contracts=await originalFetch('/catalog/structures.json').then(r=>r.json());
     body={tasks:fixtureModels.map(task=>{
       const c=contracts[task.name];

@@ -413,3 +413,21 @@ h1[tabindex="-1"]:focus,h2[tabindex="-1"]:focus{outline:none}
 /* Slice and contour loading never covers the displayed image. */
 .viewer-loading{position:absolute;right:.65rem;bottom:.65rem;max-width:calc(100% - 1.3rem);padding:.3rem .55rem;border-radius:.3rem;background:rgba(0,0,0,.78);color:#fff;font-size:.8rem;pointer-events:none;z-index:2}
 .viewer-loading[hidden]{display:none}
+
+/* Regional nodal navigation follows the portal's existing controls. */
+.nodal-regions { padding: 1rem; border-bottom: 1px solid var(--line); }
+.nodal-regions button[aria-pressed="true"] { background: var(--teal-deep); color: white; }
+.nodal-intro { padding: 0 1rem 1rem; }
+.nodal-intro h3 { margin-bottom: .5rem; }
+.nodal-section > h4 { margin: 0; padding: .85rem 1rem; background: var(--paper); }
+.nodal-note { padding: 0 1rem; }
+.preset-notice:empty { display: none; }
+.preset-notice { font-weight: 600; }
+.nodal-prompt-help { margin: 1rem 0; }
+.nodal-prompt-help select { max-width: 24rem; }
+.prompt-suggestions { display: flex; flex-wrap: wrap; gap: .6rem; }
+.prompt-suggestion { display: flex; flex-direction: column; align-items: flex-start; gap: .2rem; max-width: 100%; }
+.prompt-suggestion button { white-space: normal; text-align: left; }
+.prompt-suggestion span { max-width: 22rem; }
+.nodal-picker .model-purpose { white-space: normal; overflow: visible; }
+.nodal-intro > button { margin-bottom: .4rem; }

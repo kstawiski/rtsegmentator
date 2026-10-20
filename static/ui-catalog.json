@@ -105,17 +105,17 @@
     "hnlnl_2d3d": {
       "title": "Head and neck elective nodal levels",
       "group": "ctv",
-      "purpose": "Nodal level regions, distinct from visible lymph-node candidates."
+      "purpose": "20 exported elective structures: V combines Va/Vb/Vc; Ia, VIa, VIb and VIIa are unsided."
     },
     "choi_tmli": {
       "title": "Lymphatic target regions · TMLI",
       "group": "ctv",
-      "purpose": "Regional lymphatic volumes for total marrow and lymphoid irradiation research."
+      "purpose": "18 TMLI regions; numeric labels and preprocessing remain unresolved. Disabled."
     },
     "clnet_235": {
-      "title": "Multi-organ and nodal regions · CLNet",
+      "title": "Nodal regions · CL-Net (decoders unavailable)",
       "group": "whole",
-      "purpose": "235 reported classes; the public lymph-node station map is incomplete."
+      "purpose": "18 neck + 15 chest configuration entries. The released archive has no nodal decoders."
     },
     "cads_open_551_organs": {
       "title": "Abdominal organs and lung lobes · CADS",
@@ -289,57 +289,57 @@
     "isrt_ct_resunet": {
       "title": "Hodgkin lymphoma CTV · CT · ResUNet",
       "group": "ctv",
-      "purpose": "Paediatric involved-site radiotherapy CTV. PET1 variants require co-referenced CT."
+      "purpose": "Paediatric Hodgkin lymphoma ISRT CTV from planning CT."
     },
     "isrt_ct_segresnet": {
       "title": "Hodgkin lymphoma CTV · CT · SegResNet",
       "group": "ctv",
-      "purpose": "Paediatric involved-site radiotherapy CTV. PET1 variants require co-referenced CT."
+      "purpose": "Paediatric Hodgkin lymphoma ISRT CTV from planning CT."
     },
     "isrt_ct_swinunetr": {
       "title": "Hodgkin lymphoma CTV · CT · Swin UNETR",
       "group": "ctv",
-      "purpose": "Paediatric involved-site radiotherapy CTV. PET1 variants require co-referenced CT."
+      "purpose": "Paediatric Hodgkin lymphoma ISRT CTV from planning CT."
     },
     "isrt_pet1_early_deform": {
       "title": "Hodgkin lymphoma CTV · PET/CT · early fusion, deformable weights",
       "group": "ctv",
-      "purpose": "Paediatric involved-site radiotherapy CTV. PET1 variants require co-referenced CT."
+      "purpose": "Paediatric Hodgkin ISRT CTV. Planning/acquisition CT channels and PET registration remain unresolved; excluded from presets."
     },
     "isrt_pet1_early_rigid": {
       "title": "Hodgkin lymphoma CTV · PET/CT · early fusion, rigid weights",
       "group": "ctv",
-      "purpose": "Paediatric involved-site radiotherapy CTV. PET1 variants require co-referenced CT."
+      "purpose": "Paediatric Hodgkin ISRT CTV. Planning/acquisition CT channels and PET registration remain unresolved; excluded from presets."
     },
     "isrt_pet1_late_deform": {
       "title": "Hodgkin lymphoma CTV · PET/CT · late fusion, deformable weights",
       "group": "ctv",
-      "purpose": "Paediatric involved-site radiotherapy CTV. PET1 variants require co-referenced CT."
+      "purpose": "Paediatric Hodgkin ISRT CTV. Planning/acquisition CT channels and PET registration remain unresolved; excluded from presets."
     },
     "isrt_pet1_late_rigid": {
       "title": "Hodgkin lymphoma CTV · PET/CT · late fusion, rigid weights",
       "group": "ctv",
-      "purpose": "Paediatric involved-site radiotherapy CTV. PET1 variants require co-referenced CT."
+      "purpose": "Paediatric Hodgkin ISRT CTV. Planning/acquisition CT channels and PET registration remain unresolved; excluded from presets."
     },
     "lnsegfm_nnunet": {
       "title": "Head and neck lymph-node candidates · nnU-Net",
       "group": "tumour",
-      "purpose": "Visible or pathologic nodes, not elective nodal levels."
+      "purpose": "Visible head-and-neck node candidates. The mask does not determine malignancy."
     },
     "lnsegfm_resenc_m": {
       "title": "Head and neck lymph-node candidates · ResEnc M",
       "group": "tumour",
-      "purpose": "Visible or pathologic nodes, not elective nodal levels."
+      "purpose": "Visible head-and-neck node candidates. The mask does not determine malignancy."
     },
     "lnsegfm_resenc_l": {
       "title": "Head and neck lymph-node candidates · ResEnc L",
       "group": "tumour",
-      "purpose": "Visible or pathologic nodes, not elective nodal levels."
+      "purpose": "Visible head-and-neck node candidates. The mask does not determine malignancy."
     },
     "lnsegfm_swinunetr": {
       "title": "Head and neck lymph-node candidates · Swin UNETR",
       "group": "tumour",
-      "purpose": "Visible or pathologic nodes, not elective nodal levels."
+      "purpose": "Visible head-and-neck node candidates. The mask does not determine malignancy."
     },
     "hip_implant": {
       "title": "Hip implant",
@@ -473,6 +473,482 @@
     "pycad_vertebrae_ct": {},
     "pycad_skull_ct": {},
     "pycad_cardiac_mr": {},
-    "sct_spine": {}
+    "sct_spine": {},
+    "lnctvseg_nnunet_v1": {
+      "title": "NPC grouped nodal CTVs · LNCTVSeg nnU-Net v1",
+      "group": "ctv",
+      "purpose": "Six bilateral unions: II–III–Va, IV–Vb and Ib. Undocumented checkpoint class 7 is omitted from nnU-Net export."
+    },
+    "lnctvseg_swinunetr": {
+      "title": "NPC grouped nodal CTVs · LNCTVSeg SwinUNETR",
+      "group": "ctv",
+      "purpose": "Intended six NPC nodal unions. Inference contract unresolved; checkpoint class 7 is undocumented."
+    },
+    "lnctvseg_3duxnet": {
+      "title": "NPC grouped nodal CTVs · LNCTVSeg 3D UXNet",
+      "group": "ctv",
+      "purpose": "Intended six NPC nodal unions. Inference contract unresolved; checkpoint class 7 is undocumented."
+    },
+    "lnctvseg_repuxnet": {
+      "title": "NPC grouped nodal CTVs · LNCTVSeg RepUXNet",
+      "group": "ctv",
+      "purpose": "Intended six NPC nodal unions. Inference contract unresolved; checkpoint class 7 is undocumented."
+    }
+  },
+  "nodal": {
+    "title": "Lymph-node regions",
+    "preset_basis": "Selected from published results; not validated on your data.",
+    "preset_action": "Replace segmentation selection with regional defaults; keep an AI report if already selected.",
+    "regions": [
+      {
+        "id": "head_neck",
+        "title": "Head and neck",
+        "preset": [
+          "hnlnl_2d3d",
+          "lnsegfm_resenc_l"
+        ],
+        "note": "HNLNL supplies elective levels; LN-Seg-FM supplies visible-node candidates. Published internal Dice favours ResEnc-L among the installed LN-Seg-FM variants (83.55%).",
+        "prompt_note": "VoxTell has exact cervical strings, but the right-level series is not a bilateral atlas. Text does not establish malignancy.",
+        "sections": [
+          {
+            "id": "elective",
+            "title": "Elective nodal levels/regions",
+            "models": [
+              "hnlnl_2d3d",
+              "lnctvseg_nnunet_v1",
+              "lnctvseg_swinunetr",
+              "lnctvseg_3duxnet",
+              "lnctvseg_repuxnet",
+              "clnet_235",
+              "choi_tmli"
+            ],
+            "note": ""
+          },
+          {
+            "id": "candidates",
+            "title": "Visible node candidates",
+            "models": [
+              "lnsegfm_resenc_l",
+              "lnsegfm_nnunet",
+              "lnsegfm_resenc_m",
+              "lnsegfm_swinunetr"
+            ],
+            "note": ""
+          },
+          {
+            "id": "gtv",
+            "title": "Nodal GTV",
+            "models": [
+              "uwlair_hntsmrg_pre_t2",
+              "segrap2023_gtv",
+              "stunet_hntsmrg_pre"
+            ],
+            "note": "UWLAIR requires pre-treatment T2 MRI. SegRap requires paired noncontrast and contrast CT."
+          },
+          {
+            "id": "interactive",
+            "title": "Interactive / prompted",
+            "models": [
+              "voxtell_v1_1_text_prompted",
+              "nninteractive_v1_prompted",
+              "segvol_prompted_ct",
+              "medical_sam3_3d_prompted",
+              "pam_prompted",
+              "sat3d_prompted",
+              "vista3d_prompted_ct",
+              "sam_med3d_turbo_prompted",
+              "medsam2_ct_lesion_prompted",
+              "medical_sam2_prompted_ct",
+              "sam_med2d_prompted",
+              "medsam_vit_b_box_2d",
+              "biomedparse_prompted"
+            ],
+            "note": "One target per prompt. Visible nodes and elective regions are different targets."
+          }
+        ]
+      },
+      {
+        "id": "mediastinum",
+        "title": "Mediastinum",
+        "preset": [
+          "compai_lnq",
+          "lnq_mediastinal_v1"
+        ],
+        "note": "CompAI Model 7 reports LNQ test Dice 0.663 and ASSD 3.97 mm. LNQ mediastinal supplies a second candidate detector; neither assigns stations.",
+        "prompt_note": "VoxTell station-name strings are experimental; cached wording does not establish separate station masks.",
+        "sections": [
+          {
+            "id": "elective",
+            "title": "Elective nodal levels/regions",
+            "models": [
+              "clnet_235",
+              "choi_tmli"
+            ],
+            "note": "No published model with released weights segments IASLC stations: CL-Net's nodal decoders were not released, and Choi's region map and preprocessing are unconfirmed."
+          },
+          {
+            "id": "candidates",
+            "title": "Visible node candidates",
+            "models": [
+              "compai_lnq",
+              "lnq_mediastinal_v1",
+              "dbdmp_lnq",
+              "raidionics_mediastinal_lymphnodes",
+              "lnq_atlas",
+              "wcode_pia"
+            ],
+            "note": ""
+          },
+          {
+            "id": "gtv",
+            "title": "Nodal GTV",
+            "models": [
+              "pediatric_thoracic_lymphoma"
+            ],
+            "note": "Paediatric lymphoma mass on contrast CT; no separate general nodal GTV model was identified."
+          },
+          {
+            "id": "isrt",
+            "title": "Lymphoma ISRT CTV",
+            "models": [
+              "isrt_ct_resunet",
+              "isrt_ct_segresnet",
+              "isrt_ct_swinunetr",
+              "isrt_pet1_early_deform",
+              "isrt_pet1_early_rigid",
+              "isrt_pet1_late_deform",
+              "isrt_pet1_late_rigid"
+            ],
+            "note": "Paediatric Hodgkin lymphoma. PET variants are excluded from presets because channel semantics and registration remain unresolved."
+          },
+          {
+            "id": "interactive",
+            "title": "Interactive / prompted",
+            "models": [
+              "voxtell_v1_1_text_prompted",
+              "nninteractive_v1_prompted",
+              "segvol_prompted_ct",
+              "medical_sam3_3d_prompted",
+              "pam_prompted",
+              "sat3d_prompted",
+              "vista3d_prompted_ct",
+              "sam_med3d_turbo_prompted",
+              "medsam2_ct_lesion_prompted",
+              "medical_sam2_prompted_ct",
+              "sam_med2d_prompted",
+              "medsam_vit_b_box_2d",
+              "biomedparse_prompted"
+            ],
+            "note": "One target per prompt. Visible nodes and elective regions are different targets."
+          }
+        ]
+      },
+      {
+        "id": "abdomen",
+        "title": "Abdomen",
+        "preset": [
+          "lnq_abdominopelvic_v1"
+        ],
+        "note": "LNQ abdominopelvic fold 0 supplies pooled node candidates. Held-out accuracy is not documented in the inspected release.",
+        "prompt_note": "No verified abdominal nodal-region text strings. Use a spatial prompt for one visible node; vessel names are not nodal regions.",
+        "sections": [
+          {
+            "id": "elective",
+            "title": "Elective nodal levels/regions",
+            "models": [
+              "choi_tmli"
+            ],
+            "note": "No enabled abdominal nodal-region model. Choi preprocessing and the 18-ID map remain unresolved."
+          },
+          {
+            "id": "candidates",
+            "title": "Visible node candidates",
+            "models": [
+              "lnq_abdominopelvic_v1"
+            ],
+            "note": ""
+          },
+          {
+            "id": "gtv",
+            "title": "Nodal GTV",
+            "models": [],
+            "note": "No published abdominal nodal GTV model with released weights was found."
+          },
+          {
+            "id": "interactive",
+            "title": "Interactive / prompted",
+            "models": [
+              "voxtell_v1_1_text_prompted",
+              "nninteractive_v1_prompted",
+              "segvol_prompted_ct",
+              "medical_sam3_3d_prompted",
+              "pam_prompted",
+              "sat3d_prompted",
+              "vista3d_prompted_ct",
+              "sam_med3d_turbo_prompted",
+              "medsam2_ct_lesion_prompted",
+              "medical_sam2_prompted_ct",
+              "sam_med2d_prompted",
+              "medsam_vit_b_box_2d",
+              "biomedparse_prompted"
+            ],
+            "note": "One target per prompt. Visible nodes and elective regions are different targets."
+          }
+        ]
+      },
+      {
+        "id": "pelvis",
+        "title": "Pelvis",
+        "preset": [
+          "lnq_abdominopelvic_v1",
+          "lnq_inguinal_v1"
+        ],
+        "note": "LNQ abdominopelvic and inguinal fold 0 produce separate node-candidate outputs. Neither defines an elective pelvic or inguinal CTV.",
+        "prompt_note": "No verified pelvic nodal-region text strings. Use a spatial prompt for one visible node; iliac vessels and obturator muscles are not substitutes.",
+        "sections": [
+          {
+            "id": "elective",
+            "title": "Elective nodal levels/regions",
+            "models": [
+              "choi_tmli"
+            ],
+            "note": "No enabled pelvic nodal-region model. Choi preprocessing and the 18-ID map remain unresolved."
+          },
+          {
+            "id": "candidates",
+            "title": "Visible node candidates",
+            "models": [
+              "lnq_abdominopelvic_v1",
+              "lnq_inguinal_v1"
+            ],
+            "note": ""
+          },
+          {
+            "id": "gtv",
+            "title": "Nodal GTV",
+            "models": [],
+            "note": "No published pelvic nodal GTV model with released weights was found."
+          },
+          {
+            "id": "interactive",
+            "title": "Interactive / prompted",
+            "models": [
+              "voxtell_v1_1_text_prompted",
+              "nninteractive_v1_prompted",
+              "segvol_prompted_ct",
+              "medical_sam3_3d_prompted",
+              "pam_prompted",
+              "sat3d_prompted",
+              "vista3d_prompted_ct",
+              "sam_med3d_turbo_prompted",
+              "medsam2_ct_lesion_prompted",
+              "medical_sam2_prompted_ct",
+              "sam_med2d_prompted",
+              "medsam_vit_b_box_2d",
+              "biomedparse_prompted"
+            ],
+            "note": "One target per prompt. Visible nodes and elective regions are different targets."
+          }
+        ]
+      }
+    ],
+    "chips": {
+      "head_neck": [
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "cervical lymph node",
+          "experimental": false,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "head neck metastatic lymph nodes",
+          "experimental": false,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "nodal gross tumor volume head neck",
+          "experimental": false,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "right level i cervical lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "right level ia cervical lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "right level ib cervical lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "right level ii cervical lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "right level iia cervical lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "right level iib cervical lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "right level iii cervical lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "right level iv cervical lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "right level v cervical lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "right level va cervical lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "right level vb cervical lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "right level vi cervical lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "right level vii cervical lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        }
+      ],
+      "mediastinum": [
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "mediastinal lymph nodes",
+          "experimental": false,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "paratracheal lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "lower paratracheal lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "prevascular lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "retrotracheal lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "aortopulmonary window lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "subaortic lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "subcarinal lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "paraesophageal lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "pulmonary ligament lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "hilar lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "interlobar lymph nodes",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        },
+        {
+          "model": "voxtell_v1_1_text_prompted",
+          "text": "iaslc lymph node stations",
+          "experimental": true,
+          "source": "catalog/voxtell-nodal-vocabulary.json"
+        }
+      ],
+      "abdomen": [],
+      "pelvis": []
+    },
+    "experimental_label": "experimental: no published accuracy for this term",
+    "guidance": {
+      "nninteractive_v1_prompted": "nnInteractive: place a positive point inside one node; use negatives to exclude adjacent vessels. One structure per prompt; repeat for other nodes.",
+      "segvol_prompted_ct": "SegVol: use points or a tight 3D box around one node. Do not combine points and a box. No verified nodal text vocabulary.",
+      "voxtell_v1_1_text_prompted": "VoxTell: one text target per job. Points and boxes are ignored. Cached terms do not prove elective-region accuracy.",
+      "medical_sam3_3d_prompted": "Medical-SAM3: text and one box; eight adjacent axial slices only, with zero output outside the window. Points are ignored. Exact nodal training wording is unverified.",
+      "pam_prompted": "PAM: one seed slice. Positive points become disks and a box becomes a filled rectangle; negative points are ignored. Mask/scribble input and the published Box2Mask workflow are not implemented.",
+      "sat3d_prompted": "SAT3D: points select one local object within a 128³ native-voxel crop; output outside the crop is zero.",
+      "vista3d_prompted_ct": "VISTA3D: at least one positive CT point; negatives can exclude adjacent tissue. No text contract.",
+      "sam_med3d_turbo_prompted": "SAM-Med3D Turbo: points select one local object; a box becomes its centre point. The crop is 128³ at 1.5 mm.",
+      "medsam2_ct_lesion_prompted": "MedSAM2: points or a box on one axial slice. A box overrides points; only the largest 3D component is retained.",
+      "medical_sam2_prompted_ct": "Medical-SAM2: points or a box on one axial slice; box overrides points. Only the largest 3D component is retained. The checkpoint was trained on organs.",
+      "sam_med2d_prompted": "SAM-Med2D: prompt every intended slice; no propagation to other slices.",
+      "medsam_vit_b_box_2d": "MedSAM ViT-B: one box on one slice; no volume propagation.",
+      "biomedparse_prompted": "BiomedParse: checkpoint access is blocked; no active text suggestions."
+    }
   }
 }

@@ -2,6 +2,7 @@
 
 // Presentation never grants availability. The live catalog and selected series do.
 const GROUPS = [
+  ['nodal', 'Lymph-node regions'],
   ['whole', 'Whole-body organs'], ['oar', 'Organs at risk by site'],
   ['tumour', 'Tumours and lymph nodes'], ['ctv', 'Target volumes (CTV)'],
   ['brain', 'Brain and head'], ['spine', 'Spine'],
@@ -10,13 +11,13 @@ const GROUPS = [
 ];
 const TERMINAL = new Set(['complete', 'failed', 'cancelled']);
 const PROMPT_HELP = {
-  pam_prompted: 'PAM: place a positive point or a tight box on one slice. The seed propagates through the volume.',
+  pam_prompted: 'PAM: one seed slice; points become disks and a box becomes a filled rectangle. Negatives are ignored. Mask/scribble input and the published Box2Mask workflow are not implemented.',
   sat3d_prompted: 'SAT3D: at least one positive point is required. Negative points exclude adjacent structures within the prompt-centred 128-voxel region.',
   sam_med2d_prompted: 'SAM-Med2D: prompt every intended slice. It does not propagate to unprompted slices.',
   medsam_vit_b_box_2d: 'MedSAM ViT-B: draw a tight box on one slice. Only that slice is segmented.',
   medical_sam3_3d_prompted: 'Medical-SAM3: a box and a medical concept in Target description are required. Output covers the publisher’s eight-slice window.',
   sam_med3d_turbo_prompted: 'SAM-Med3D Turbo: place a positive point inside the 3D object. A box is interpreted as its centre point.',
-  medsam2_ct_lesion_prompted: 'MedSAM2: place points or a tight box on one axial lesion slice. The CT-lesion model propagates in both directions.',
+  medsam2_ct_lesion_prompted: 'MedSAM2: points or a tight box on one axial lesion slice; a box overrides points. Propagates in both directions and retains only the largest 3D component.',
   medical_sam2_prompted_ct: 'Medical-SAM2 (ImprintLab): place points or a box on one axial slice. This is a distinct model from MedSAM2.',
   nninteractive_v1_prompted: 'nnInteractive: place a positive point or an axial box. Negative points can exclude adjacent structures.',
   vista3d_prompted_ct: 'VISTA3D: at least one positive point is required. Negative points can exclude adjacent structures.',
@@ -45,8 +46,33 @@ function presentation(task, metadata = {overrides:{}}) {
     else group = 'other'; // Explicit fallback for future worker-discovered tasks.
   }
   const purpose = override.purpose || task.description || 'Task-specific anatomy; inspect the output details.';
-  return { ...override, group, title: override.title || humanize(task.name), purpose };
+  const nodalRegions = (metadata.nodal?.regions || []).filter(r => r.sections.some(s => s.models.includes(task.name))).map(r => r.id);
+  return { ...override, group, title: override.title || humanize(task.name), purpose, nodalRegions };
 }
+function nodalSections(catalog, regionId, metadata) {
+  const region = metadata.nodal?.regions.find(r => r.id === regionId);
+  return (region?.sections || []).map(section => ({...section,
+    tasks: section.models.map(name => catalog.find(t => t.name === name)).filter(Boolean)}));
+}
+function regionPreset(catalog, regionId, metadata, series, selected = new Set(), allSeries = series) {
+  const region = metadata.nodal?.regions.find(r => r.id === regionId), added = [], skipped = [];
+  for (const name of region?.preset || []) {
+    const task = catalog.find(t => t.name === name);
+    const reason = task ? batchBlockedReason(task, series, allSeries) : 'Not in the live catalogue';
+    if (reason) skipped.push({name, reason}); else added.push(name);
+  }
+  // An unavailable preset must not erase a usable existing selection.
+  const next = added.length ? new Set([...selected].filter(name => catalog.find(t => t.name === name)?.output === 'report')) : new Set(selected);
+  added.forEach(name => next.add(name));
+  return {selected:next, added, skipped};
+}
+function promptSuggestions(catalog, selected, regionId, metadata, series, allSeries = series) {
+  return (metadata.nodal?.chips[regionId] || []).filter(chip => {
+    const task = catalog.find(t => t.name === chip.model);
+    return selected.has(chip.model) && task?.prompt && !batchBlockedReason(task, series, allSeries);
+  });
+}
+function insertPromptSuggestion(prompt, chip) { return {...prompt, text:chip.text}; }
 function supports(task, series) { return !!series && (task.modalities || [task.modality]).includes(series.modality); }
 function pairedCT(series, allSeries) {
   return allSeries.find(s => s.modality === 'CT' && series?.study_uid && series?.frame_uid && s.study_uid === series.study_uid && s.frame_uid === series.frame_uid);
@@ -123,7 +149,8 @@ function groupBatchJobs(jobs) {
 function canDeleteJob(job) { return !!job && TERMINAL.has(job.status); }
 // Catalog flags describe separate licence requirements; descriptive text is not a flag.
 function licenceBadges(task) {
-  return [task.licensed ? 'Licence key required' : '', task.noncommercial ? 'Non-commercial weights' : ''].filter(Boolean);
+  return [task.licensed ? 'Licence key required' : '', task.noncommercial ? 'Non-commercial weights' : '',
+    task.weights_license_unresolved ? 'Checkpoint licence unresolved' : '', task.code_noncommercial ? 'Non-commercial code' : ''].filter(Boolean);
 }
 function counted(count, noun, plural = noun + 's') { return `${count} ${Number(count) === 1 ? noun : plural}`; }
 function reportStatusText(job, reportName = 'nv_reason_ct_report') {
@@ -287,7 +314,7 @@ async function request(url, options={}) {
 
 if (typeof document !== 'undefined') {
   const $ = id => document.getElementById(id);
-  const state = {step:0,upload:null,series:null,seriesKeys:[],modelsEdited:false,catalog:[],metadata:{overrides:{}},selected:new Set(),config:null,health:null,catalogReady:false,starting:false};
+  const state = {step:0,upload:null,series:null,seriesKeys:[],modelsEdited:false,catalog:[],metadata:{overrides:{}},nodalRegion:'head_neck',nodalContext:false,presetNotice:'',selected:new Set(),config:null,health:null,catalogReady:false,starting:false};
   let seriesViewer=null, jobViewer=null, detailId=null, detailToken=0, detailLoaded=false, detailInfo=null, detailReport=null, detailLoading=false;
   const stepPanels=[$('uploadStep'),$('seriesStep'),$('modelsStep'),$('reviewStep')];
   const stepTitles=[$('uploadTitle'),$('seriesTitle'),$('modelsTitle'),$('reviewTitle')];
@@ -482,7 +509,15 @@ if (typeof document !== 'undefined') {
     const m=meta(t),blocked=reason(t),structures=structureInfo(t),reference=safeReference(t.reference);
     const applies=selectedSeries().filter(s=>supports(t,s)&&!((t.output==='report'||t.name===reportTask())&&s.cbct));
     const scope=new Set(selectedSeries().map(s=>s.modality)).size>1?[...new Set(applies.map(s=>s.modality))].map(mod=>`${applies.filter(s=>s.modality===mod).length} ${modalityName(mod)} series`).join(' · '):'';
-    return `<article class="model-row ${blocked?'is-unavailable':''}"><input type="checkbox" name="models" value="${esc(t.name)}" aria-label="Select ${esc(m.title)}" ${state.selected.has(t.name)?'checked':''} ${blocked?'disabled':''}><div><label class="model-title" data-toggle-model="${esc(t.name)}">${esc(m.title)}</label><p class="model-purpose">${esc(m.purpose)}</p><div class="badges">${badges(t)}${scope?`<span class="badge">${esc(scope)}</span>`:''}</div>${availabilityNote(t,blocked)}<details class="model-details"><summary>${esc(structures.label)}</summary><div class="detail-body"><p><strong>Output:</strong> <span class="structures">${esc(structures.text)}</span></p>${structures.note?`<p class="structure-note">${esc(structures.note)}</p>`:''}${structures.extraNote?`<p>${esc(structures.extraNote)}</p>`:''}<p>${esc(t.description || '')}</p>${t.limitations?`<p><strong>Limitations:</strong> ${esc(t.limitations)}</p>`:''}${t.license||t.license_note?`<p><strong>Licence:</strong> ${esc([t.license,t.license_note].filter(Boolean).join(' · '))}</p>`:''}<p><strong>Task:</strong> <code>${esc(t.name)}</code> · <strong>Catalog status:</strong> ${esc(t.status||'available')}</p>${t.clinical_tags?.length?`<p><strong>Clinical tags:</strong> ${esc(t.clinical_tags.map(x=>x.label).join(', '))}</p>`:''}${reference?`<a href="${esc(reference)}" target="_blank" rel="noopener noreferrer">Model reference (external)</a>`:''}</div></details></div></article>`;
+    return `<article class="model-row ${blocked?'is-unavailable':''}"><input type="checkbox" name="models" value="${esc(t.name)}" aria-label="Select ${esc(m.title)}" ${state.selected.has(t.name)?'checked':''} ${blocked?'disabled':''}><div><label class="model-title" data-toggle-model="${esc(t.name)}">${esc(m.title)}</label><p class="model-purpose">${esc(m.purpose)}</p><div class="badges">${badges(t)}${scope?`<span class="badge">${esc(scope)}</span>`:''}</div>${availabilityNote(t,blocked)}<details class="model-details"><summary>${esc(structures.label)}</summary><div class="detail-body"><p><strong>Output:</strong> <span class="structures">${esc(structures.text)}</span></p>${structures.note?`<p class="structure-note">${esc(structures.note)}</p>`:''}${structures.extraNote?`<p>${esc(structures.extraNote)}</p>`:''}<p>${esc(t.description || '')}</p>${t.limitations?`<p><strong>Limitations:</strong> ${esc(t.limitations)}</p>`:''}${t.code_license?`<p><strong>Code licence:</strong> ${esc(t.code_license)}</p><p><strong>Checkpoint licence:</strong> ${esc(t.weights_license)}</p>`:''}${t.evidence_note?`<p><strong>Evidence:</strong> ${esc(t.evidence_note)}</p>`:''}${!t.code_license&&(t.license||t.license_note)?`<p><strong>Licence:</strong> ${esc([t.license,t.license_note].filter(Boolean).join(' · '))}</p>`:''}<p><strong>Task:</strong> <code>${esc(t.name)}</code> · <strong>Catalog status:</strong> ${esc(t.status||'available')}</p>${t.clinical_tags?.length?`<p><strong>Clinical tags:</strong> ${esc(t.clinical_tags.map(x=>x.label).join(', '))}</p>`:''}${reference?`<a href="${esc(reference)}" target="_blank" rel="noopener noreferrer">Model reference (external)</a>`:''}</div></details></div></article>`;
+  }
+  function nodalMarkup(catalog){
+    const data=state.metadata.nodal,region=data?.regions.find(r=>r.id===state.nodalRegion);
+    if(!region)return '';
+    const sections=nodalSections(catalog,region.id,state.metadata);
+    return `<div class="nodal-picker"><div class="nodal-regions button-row" role="group" aria-label="Lymph-node region">${data.regions.map(r=>`<button type="button" data-nodal-region="${esc(r.id)}" aria-pressed="${r.id===region.id}">${esc(r.title)}</button>`).join('')}</div>
+      <div class="nodal-intro"><h3>${esc(region.title)}</h3><p>${esc(region.note)}</p><button type="button" data-nodal-preset="${esc(region.id)}">Select ${esc(region.title.toLowerCase())} defaults</button><p class="small">${esc(data.preset_basis)}</p><p class="small muted">${esc(data.preset_action)}</p><p class="small muted">All modalities and unavailable models remain visible here; selection follows the chosen series.</p><p class="preset-notice" role="status">${esc(state.presetNotice)}</p></div>
+      ${sections.map(section=>`<section class="nodal-section" data-nodal-section="${esc(section.id)}"><h4>${esc(section.title)}</h4>${section.note?`<p class="nodal-note">${esc(section.note)}</p>`:''}${section.id==='interactive'?`<p class="nodal-note">${esc(region.prompt_note)}</p><p class="nodal-note">${esc(data.guidance.nninteractive_v1_prompted)}</p><p class="nodal-note">${esc(data.guidance.segvol_prompted_ct)}</p>`:''}${section.tasks.map(modelRow).join('')}${!section.tasks.length&&!section.note?'<p class="nodal-note">No models match the current filters.</p>':''}</section>`).join('')}</div>`;
   }
   function renderCatalog(){
     if(!state.seriesKeys.length)return;
@@ -492,15 +527,29 @@ if (typeof document !== 'undefined') {
     const compatible=state.catalog.filter(t=>selectedSeries().some(s=>supports(t,s))),available=compatible.filter(t=>!reason(t));
     const visible=compatible.filter(t=>(show||t.enabled!==false)&&(!site||(t.clinical_tags||[]).some(x=>x.id===site))&&(!q||[t.name,meta(t).title,meta(t).purpose,t.description,t.structures,...(t.structure_names||[]),...(t.clinical_tags||[]).map(x=>x.label)].join(' ').toLowerCase().includes(q)));
     const closed=new Set([...$('modelGroups').querySelectorAll('details[data-group]:not([open])')].map(el=>el.dataset.group));
-    const groups=GROUPS.map(([id,title])=>({id,title,tasks:visible.filter(t=>meta(t).group===id)})).filter(g=>g.tasks.length);
-    $('modelResults').textContent=state.catalogReady?`${counted(visible.length,'model')} shown · ${available.length} available for selected series · ${compatible.length-available.length} unavailable`:'';
-    $('modelGroups').innerHTML=groups.map((g,i)=>`<details class="model-group" data-group="${g.id}" ${q||site||!closed.has(g.id)?'open':''}><summary>${g.title}<span class="group-count">${counted(g.tasks.length,'model')}</span></summary>${g.tasks.map(modelRow).join('')}</details>`).join('')||(state.catalogReady?'<p class="empty">No models match these filters. Change the search or show unavailable models.</p>':'');
+    const nodalCatalog=state.catalog.filter(t=>meta(t).nodalRegions.length&&(!site||(t.clinical_tags||[]).some(x=>x.id===site))&&(!q||[t.name,meta(t).title,meta(t).purpose,t.description,...(t.structure_names||[])].join(' ').toLowerCase().includes(q)));
+    const regionalTasks=nodalCatalog.filter(t=>meta(t).nodalRegions.includes(state.nodalRegion));
+    const groups=GROUPS.map(([id,title])=>({id,title,tasks:id==='nodal'?regionalTasks:visible.filter(t=>meta(t).group===id)})).filter(g=>g.tasks.length||(g.id==='nodal'&&nodalCatalog.length));
+    $('modelResults').textContent=state.catalogReady?`${counted(new Set([...visible,...regionalTasks].map(t=>t.name)).size,'model')} shown · ${available.length} available for selected series · ${compatible.length-available.length} unavailable`:'';
+    $('modelGroups').innerHTML=groups.map((g,i)=>`<details class="model-group" data-group="${g.id}" ${q||site||!closed.has(g.id)?'open':''}><summary>${g.title}<span class="group-count">${counted(g.tasks.length,'model')}</span></summary>${g.id==='nodal'?nodalMarkup(g.tasks):g.tasks.map(modelRow).join('')}</details>`).join('')||(state.catalogReady?'<p class="empty">No models match these filters. Change the search or show unavailable models.</p>':'');
     renderSelection();
   }
   function toggleModel(name){const task=state.catalog.find(t=>t.name===name);if(!task||reason(task))return;state.modelsEdited=true;if(state.selected.has(name))state.selected.delete(name);else state.selected.add(name);showError($('modelError'),'');syncModelInputs();renderSelection();}
   function syncModelInputs(){document.querySelectorAll('[name=models]').forEach(i=>i.checked=state.selected.has(i.value));}
   $('modelGroups').addEventListener('change',e=>{if(e.target.name==='models')toggleModel(e.target.value);});
-  $('modelGroups').addEventListener('click',e=>{const label=e.target.closest('[data-toggle-model]');if(label)toggleModel(label.dataset.toggleModel);});
+  $('modelGroups').addEventListener('click',e=>{
+    if(e.target.closest('.nodal-picker'))state.nodalContext=true;
+    const region=e.target.closest('[data-nodal-region]');
+    if(region){state.nodalRegion=region.dataset.nodalRegion;state.presetNotice='';renderCatalog();$('modelGroups').querySelector(`[data-nodal-region="${state.nodalRegion}"]`)?.focus({preventScroll:true});return;}
+    const preset=e.target.closest('[data-nodal-preset]');
+    if(preset){
+      const result=regionPreset(state.catalog,preset.dataset.nodalPreset,state.metadata,selectedSeries(),state.selected,state.upload?.series||[]);
+      state.selected=result.selected;state.modelsEdited=true;
+      state.presetNotice=(result.added.length?`Selected ${result.added.map(name=>meta(state.catalog.find(t=>t.name===name)).title).join(' and ')}.`:'No regional defaults are available for the selected series. Selection kept.')+(result.skipped.length?' Skipped: '+result.skipped.map(t=>`${t.name}: ${t.reason}`).join(' · '):'');
+      showError($('modelError'),'');renderCatalog();$('modelGroups').querySelector('[data-nodal-preset]')?.focus({preventScroll:true});return;
+    }
+    const label=e.target.closest('[data-toggle-model]');if(label)toggleModel(label.dataset.toggleModel);
+  });
   $('selectedChips').addEventListener('click',e=>{const b=e.target.closest('[data-remove]');if(b){state.modelsEdited=true;state.selected.delete(b.dataset.remove);syncModelInputs();renderSelection();}});
   $('clearModels').onclick=()=>{state.modelsEdited=true;state.selected.clear();syncModelInputs();renderSelection();};
   $('modelSearch').oninput=renderCatalog;$('clinicalFilter').onchange=renderCatalog;$('showUnavailable').onchange=renderCatalog;
@@ -558,16 +607,36 @@ if (typeof document !== 'undefined') {
     showError($('startError'),invalid.map(t=>`${meta(t).title}: ${reason(t)}`).join(' · '));
     const crop=cropAvailable();$('postprocessPanel').hidden=!crop;if(!crop)$('prostatePostprocess').checked=false;
     $('promptPanel').hidden=!prompted().length;
-    if(prompted().length){$('promptGuidance').innerHTML=prompted().map(t=>`<p>${esc(PROMPT_HELP[t.name]||`${meta(t).title}: ${t.prompt}. ${t.limitations||t.description||''}`)}</p>`).join('');loadPromptSlice();}
+    if(prompted().length){renderNodalPromptGuidance();loadPromptSlice();}
     const warnings=[];if(tasks.some(t=>t.output==='report'))warnings.push('AI output is a research draft requiring radiologist review. Diagnostic chest/abdomen CT only; coverage, HU or resource checks can refuse generation. Reports run after segmentation.');
     if(tasks.some(t=>t.licensed))warnings.push('Selected models require a licence key. See the licence terms in model details.');
     if(tasks.some(t=>t.noncommercial))warnings.push('Selected models have non-commercial weights. See the licence terms in model details.');
+    if(tasks.some(t=>t.weights_license_unresolved))warnings.push('Selected models have unresolved checkpoint terms; see model details.');
     if(tasks.some(t=>t.requires_ct))warnings.push('The matching CT is paired by Study and Frame of Reference. This does not establish registration.');
     $('reviewWarnings').textContent=warnings.join(' ');$('reviewWarnings').hidden=!warnings.length;
     const runs=plans.reduce((n,p)=>n+p.models.length,0);
     $('startJob').textContent=`Start ${counted(plans.length,'job')} · ${counted(runs,plans.length===1?'model':'model run')}`;
     $('startJob').disabled=state.starting||!plans.length||plans.some(p=>p.reason||!p.models.length)||invalid.length>0;
   }
+  function renderNodalPromptGuidance(){
+    const data=state.metadata.nodal,region=state.nodalContext?data?.regions.find(r=>r.id===state.nodalRegion):null;
+    $('promptRegion').innerHTML='<option value="">General target</option>'+(data?.regions||[]).map(r=>`<option value="${esc(r.id)}">${esc(r.title)}</option>`).join('');
+    $('promptRegion').value=region?.id||'';
+    $('nodalPromptHelp').hidden=!data||!prompted().some(t=>meta(t).nodalRegions.length);
+    $('promptRegionNote').textContent=region?.prompt_note||'Select a lymph-node region for optional guidance.';
+    $('promptGuidance').innerHTML=prompted().map(t=>`<p>${esc((region&&data?.guidance[t.name])||PROMPT_HELP[t.name]||`${meta(t).title}: ${t.prompt}. ${t.limitations||t.description||''}`)}</p>`).join('');
+    const chips=promptSuggestions(state.catalog,state.selected,region?.id||'',state.metadata,selectedSeries(),state.upload?.series||[]);
+    $('promptSuggestions').innerHTML=chips.map((chip,i)=>`<div class="prompt-suggestion"><button type="button" data-prompt-chip="${i}" title="${esc('Exact VoxTell v1.1 string · '+chip.source)}">${esc(chip.text)}</button>${chip.experimental?`<span class="small">${esc(data.experimental_label)}</span>`:''}</div>`).join('');
+    $('promptSuggestionsNote').textContent=chips.length?'Exact VoxTell v1.1 strings. A chip replaces Target description in the shared prompt; all selected prompted models receive that text.':'No verified text chips for the selected models and region.';
+  }
+  $('promptRegion').onchange=()=>{state.nodalContext=!!$('promptRegion').value;if(state.nodalContext)state.nodalRegion=$('promptRegion').value;state.presetNotice='';renderNodalPromptGuidance();};
+  $('promptSuggestions').onclick=e=>{
+    const button=e.target.closest('[data-prompt-chip]');if(!button)return;
+    const chip=promptSuggestions(state.catalog,state.selected,state.nodalRegion,state.metadata,selectedSeries(),state.upload?.series||[])[Number(button.dataset.promptChip)];
+    if(!chip)return;
+    try{prompt=insertPromptSuggestion(readPrompt(),chip);writePrompt();showError($('promptError'),'');$('promptText').focus();}
+    catch(error){showError($('promptError'),error.message);}
+  };
   function resetPrompt(){prompt={positive_points:[],negative_points:[],box:null,text:''};boxCorner=null;$('promptText').value='';writePrompt();showError($('promptError'),'');}
   function writePrompt(){ $('promptJson').value=JSON.stringify(prompt,null,2);$('promptText').value=prompt.text||'';drawPrompt(); }
   function readPrompt(){try{const p=JSON.parse($('promptJson').value);if(!p||typeof p!=='object'||Array.isArray(p))throw Error();return p;}catch(_){throw Error('Prompt JSON must be a valid JSON object.');}}
@@ -849,4 +918,4 @@ if (typeof document !== 'undefined') {
   }
   initialize();setInterval(pollJobs,4000);setInterval(refreshHealth,30000);
 }
-if(typeof module!=='undefined'&&module.exports)module.exports={jobProgress,modelChecklist,preselectSeries,defaultSelection,seriesPlan,batchBlockedReason,jobTitle,groupBatchJobs,DEFAULT_MODELS,presentation,executesRemotely,supports,pairedCT,blockedReason,cropSupported,validatePrompt,structureInfo,humanize,safeReference,primarySelection,canDeleteJob,reportMarkdown,reportMarkup,licenceBadges,counted,reportStatusText,isReportSection,GROUPS};
+if(typeof module!=='undefined'&&module.exports)module.exports={nodalSections,regionPreset,promptSuggestions,insertPromptSuggestion,jobProgress,modelChecklist,preselectSeries,defaultSelection,seriesPlan,batchBlockedReason,jobTitle,groupBatchJobs,DEFAULT_MODELS,presentation,executesRemotely,supports,pairedCT,blockedReason,cropSupported,validatePrompt,structureInfo,humanize,safeReference,primarySelection,canDeleteJob,reportMarkdown,reportMarkup,licenceBadges,counted,reportStatusText,isReportSection,GROUPS};

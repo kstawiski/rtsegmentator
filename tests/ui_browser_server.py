@@ -14,7 +14,7 @@ class Handler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
     def do_GET(self):
-        if self.path == "/__qa":
+        if self.path in {"/__qa", "/__nodal_qa"}:
             body = '''<!doctype html><meta charset="utf-8"><title>Synthetic UI checks</title>
 <style>body{margin:0;font:14px system-ui}iframe{display:block;width:1280px;height:800px;border:0}#result{white-space:pre-wrap}</style>
 <button id="run">Run checks</button><span>Synthetic UI fixtures; no patient images or inference.</span>
@@ -27,7 +27,11 @@ document.getElementById('run').onclick=async()=>{
   try{output.textContent=JSON.stringify(await runUiBrowserChecks(frame),null,2);}
   catch(error){output.textContent=error.stack;}
 };</script>'''
-        elif self.path == "/__ui_fixture":
+            if self.path == "/__nodal_qa":
+                body = body.replace('/__ui_fixture', '/__ui_fixture?nodal')
+                body = body.replace('/tests/ui_browser_checks.js', '/tests/nodal_browser_checks.js')
+                body = body.replace('runUiBrowserChecks(frame)', 'runNodalBrowserChecks(frame)')
+        elif self.path.split("?")[0] == "/__ui_fixture":
             body = (ROOT / "static/index.html").read_text().replace(
                 "<head>", '<head><script src="/tests/ui_fixture.js"></script>'
             )
@@ -37,6 +41,8 @@ document.getElementById('run').onclick=async()=>{
             "/static/fonts/open-sans-latin-wght-normal.woff2",
             "/static/fonts/open-sans-latin-ext-wght-normal.woff2",
             "/tests/ui_fixture.js", "/tests/ui_browser_checks.js",
+            "/tests/nodal_catalog_fixture.json", "/tests/nodal_browser_checks.js",
+            "/catalog/nodal-models.json",
         }:
             return super().do_GET()
         else:

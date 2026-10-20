@@ -1,0 +1,553 @@
+{
+  "hnlnl_2d3d": {
+    "code_license": "CC0 model-release repository",
+    "weights_license": "CC0",
+    "description": "HNLNL: 20 elective head-and-neck structures; Level_V_L/R combine Va/Vb/Vc. Ia, VIa, VIb and VIIa are unsided.",
+    "limitations": "No separate Va/Vb/Vc, IX or Xa/Xb outputs. Published manual coverage selection and removal of table/immobilisation material are not reproduced by the full-series runner.",
+    "evidence_note": "Published mean per-level Dice 0.76; intraobserver 0.77 (p=0.307), volume-weighted Dice 0.78. The mirror-TTA change requires technical rechecking; earlier serialization Dice 1.0 is not contour accuracy.",
+    "evidence_sources": [
+      "hnlnl-labels.json",
+      "EXTERNAL_MODELS.md",
+      "https://doi.org/10.3389/fonc.2023.1115258"
+    ],
+    "weights_license_unresolved": false
+  },
+  "clnet_235": {
+    "code_license": "Apache-2.0",
+    "weights_license": "Apache-2.0 archive metadata; nodal weights absent",
+    "description": "CL-Net configuration has 33 nodal entries: 18 neck and 15 chest. The released archive contains seven decoders with no nodal labels; Task1007/1008 are absent.",
+    "limitations": "Chest stations 8 and 9 are unsided; no station 11 entry. Configuration labels are not available predictions.",
+    "evidence_note": "No nodal accuracy can be assigned to missing decoders.",
+    "evidence_sources": [
+      "https://github.com/alibaba-damo-academy/clNet/blob/main/clnet/data_prep/DatasetOrganIdxList.py",
+      "EXTERNAL_MODELS.md"
+    ],
+    "weights_license_unresolved": false
+  },
+  "choi_tmli": {
+    "code_license": "Unverified in the inspected release",
+    "weights_license": "CC BY 4.0 (Zenodo release)",
+    "description": "Choi TMLI: 18 broad lymphatic regions. Numeric-to-anatomical mapping and storage/preprocessing remain unresolved.",
+    "limitations": "Disabled. A label-sheet approval alone cannot resolve preprocessing. The default axis variant is unconfirmed.",
+    "evidence_note": "Paper: median Dice 0.79; precision 0.83; recall 0.76; HD95 2.63 pixels (IQR 2.00–4.58), not millimetres. Composite TMLI ontology, not a pelvic cancer-specific atlas.",
+    "evidence_sources": [
+      "choi_ontology.py",
+      "docs/CHOI_LABEL_REVIEW.md",
+      "https://doi.org/10.1371/journal.pone.0299448",
+      "https://zenodo.org/records/7839889"
+    ],
+    "weights_license_unresolved": false
+  },
+  "lnctvseg_nnunet_v1": {
+    "code_license": "GPL-3.0",
+    "weights_license": "Separate checkpoint licence not supplied; dataset CC BY 4.0 is distinct",
+    "description": "LNCTVSeg: six NPC-specific unions, bilateral II–III–Va, IV–Vb and Ib. These cannot be separated into generic nodal levels.",
+    "limitations": "Eight checkpoint channels: background, IDs 1–6 and undocumented ID 7. nnU-Net exports 1–6 unchanged, omits 7 and logs its volume; other architectures remain inference-contract blocked.",
+    "evidence_note": "The nnU-Net technical acceptance metadata match the pinned manifest; its pending descriptive status is stale. This does not establish independent accuracy. The manifest is hash-guarded.",
+    "evidence_sources": [
+      "catalog/lnctvseg.json",
+      "labels/lnctvseg.json",
+      "models/manifests/lnctvseg.json",
+      "https://doi.org/10.1038/s41597-024-03890-0"
+    ],
+    "weights_license_unresolved": true
+  },
+  "lnctvseg_swinunetr": {
+    "code_license": "GPL-3.0",
+    "weights_license": "Separate checkpoint licence not supplied; dataset CC BY 4.0 is distinct",
+    "description": "LNCTVSeg SwinUNETR: intended six NPC nodal unions, bilateral II–III–Va, IV–Vb and Ib; no accepted runnable export.",
+    "limitations": "Release-specific ROI size, spacing, orientation and intensity transforms are missing. Checkpoint class 7 is undocumented. The nnU-Net omission policy is not an accepted inference contract for this architecture.",
+    "evidence_note": "Published internal mean Dice 83.49%; no accuracy is assigned to an unimplemented local export.",
+    "evidence_sources": [
+      "catalog/lnctvseg.json",
+      "labels/lnctvseg.json",
+      "models/manifests/lnctvseg.json",
+      "https://doi.org/10.1038/s41597-024-03890-0"
+    ],
+    "weights_license_unresolved": true
+  },
+  "lnctvseg_3duxnet": {
+    "code_license": "GPL-3.0",
+    "weights_license": "Separate checkpoint licence not supplied; dataset CC BY 4.0 is distinct",
+    "description": "LNCTVSeg 3D UXNet: intended six NPC nodal unions, bilateral II–III–Va, IV–Vb and Ib; no accepted runnable export.",
+    "limitations": "Release-matched architecture implementation and preprocessing are missing; strict loading is unexecuted. Checkpoint class 7 is undocumented. The nnU-Net omission policy is not an accepted inference contract for this architecture.",
+    "evidence_note": "Published internal mean Dice 83.43%; no accuracy is assigned to an unimplemented local export.",
+    "evidence_sources": [
+      "catalog/lnctvseg.json",
+      "labels/lnctvseg.json",
+      "models/manifests/lnctvseg.json",
+      "https://doi.org/10.1038/s41597-024-03890-0"
+    ],
+    "weights_license_unresolved": true
+  },
+  "lnctvseg_repuxnet": {
+    "code_license": "GPL-3.0",
+    "weights_license": "Separate checkpoint licence not supplied; dataset CC BY 4.0 is distinct",
+    "description": "LNCTVSeg RepUXNet: intended six NPC nodal unions, bilateral II–III–Va, IV–Vb and Ib; no accepted runnable export.",
+    "limitations": "Release-matched architecture implementation and preprocessing are missing; strict loading is unexecuted. Checkpoint class 7 is undocumented. The nnU-Net omission policy is not an accepted inference contract for this architecture.",
+    "evidence_note": "Published internal mean Dice 83.75%; no accuracy is assigned to an unimplemented local export.",
+    "evidence_sources": [
+      "catalog/lnctvseg.json",
+      "labels/lnctvseg.json",
+      "models/manifests/lnctvseg.json",
+      "https://doi.org/10.1038/s41597-024-03890-0"
+    ],
+    "weights_license_unresolved": true
+  },
+  "lnsegfm_nnunet": {
+    "code_license": "No top-level licence found",
+    "weights_license": "Checkpoint permission unresolved",
+    "description": "LN-Seg-FM: pooled Visible_HN_Lymph_Nodes on head-and-neck CT. Visible nodes are not synonymous with malignant nodes.",
+    "limitations": "No elective levels or per-node identities.",
+    "evidence_note": "Published internal Dice 81.72%; 36,106 annotated visible nodes on 3,346 RADCURE CT scans. Historical execution/export checks are not independent accuracy.",
+    "evidence_sources": [
+      "https://github.com/HiLab-git/LN-Seg-FM",
+      "EXTERNAL_MODELS.md"
+    ],
+    "weights_license_unresolved": true
+  },
+  "lnsegfm_resenc_m": {
+    "code_license": "No top-level licence found",
+    "weights_license": "Checkpoint permission unresolved",
+    "description": "LN-Seg-FM: pooled Visible_HN_Lymph_Nodes on head-and-neck CT. Visible nodes are not synonymous with malignant nodes.",
+    "limitations": "No elective levels or per-node identities.",
+    "evidence_note": "Published internal Dice 81.44%; 36,106 annotated visible nodes on 3,346 RADCURE CT scans. Historical execution/export checks are not independent accuracy.",
+    "evidence_sources": [
+      "https://github.com/HiLab-git/LN-Seg-FM",
+      "EXTERNAL_MODELS.md"
+    ],
+    "weights_license_unresolved": true
+  },
+  "lnsegfm_resenc_l": {
+    "code_license": "No top-level licence found",
+    "weights_license": "Checkpoint permission unresolved",
+    "description": "LN-Seg-FM: pooled Visible_HN_Lymph_Nodes on head-and-neck CT. Visible nodes are not synonymous with malignant nodes.",
+    "limitations": "No elective levels or per-node identities.",
+    "evidence_note": "Published internal Dice 83.55%; 36,106 annotated visible nodes on 3,346 RADCURE CT scans. Historical execution/export checks are not independent accuracy.",
+    "evidence_sources": [
+      "https://github.com/HiLab-git/LN-Seg-FM",
+      "EXTERNAL_MODELS.md"
+    ],
+    "weights_license_unresolved": true
+  },
+  "lnsegfm_swinunetr": {
+    "code_license": "No top-level licence found",
+    "weights_license": "Checkpoint permission unresolved",
+    "description": "LN-Seg-FM: pooled Visible_HN_Lymph_Nodes on head-and-neck CT. Visible nodes are not synonymous with malignant nodes.",
+    "limitations": "No elective levels or per-node identities.",
+    "evidence_note": "Published internal Dice 80.52%; 36,106 annotated visible nodes on 3,346 RADCURE CT scans. Historical execution/export checks are not independent accuracy.",
+    "evidence_sources": [
+      "https://github.com/HiLab-git/LN-Seg-FM",
+      "EXTERNAL_MODELS.md"
+    ],
+    "weights_license_unresolved": true
+  },
+  "lnq_mediastinal_v1": {
+    "code_license": "Unverified in the inspected release",
+    "weights_license": "CC BY-NC 4.0",
+    "description": "LNQ mediastinal: pooled node candidates from CT; no elective regions or malignancy classification.",
+    "limitations": "Five-fold inference.",
+    "evidence_note": "Inspected registry: 120 training scans; held-out accuracy and protocol mix not documented. Historical nonempty outputs establish execution only.",
+    "evidence_sources": [
+      "https://github.com/pieper/lnq-segmenter/blob/main/src/lnq_segmenter/_registry.json",
+      "EXTERNAL_MODELS.md"
+    ],
+    "noncommercial": true,
+    "weights_license_unresolved": false
+  },
+  "lnq_abdominopelvic_v1": {
+    "code_license": "Unverified in the inspected release",
+    "weights_license": "CC BY-NC 4.0",
+    "description": "LNQ abdominopelvic: pooled node candidates from CT; no elective regions or malignancy classification.",
+    "limitations": "Fold-0 inference. All detected nodes share one aggregate ROI.",
+    "evidence_note": "Inspected registry: 69 training scans; held-out accuracy and protocol mix not documented. Historical nonempty outputs establish execution only.",
+    "evidence_sources": [
+      "https://github.com/pieper/lnq-segmenter/blob/main/src/lnq_segmenter/_registry.json",
+      "EXTERNAL_MODELS.md"
+    ],
+    "noncommercial": true,
+    "weights_license_unresolved": false
+  },
+  "lnq_inguinal_v1": {
+    "code_license": "Unverified in the inspected release",
+    "weights_license": "CC BY 4.0",
+    "description": "LNQ inguinal: pooled node candidates from CT; no elective regions or malignancy classification.",
+    "limitations": "Fold-0 inference. All detected nodes share one aggregate ROI.",
+    "evidence_note": "Inspected registry: 20 training scans; held-out accuracy and protocol mix not documented. Historical nonempty outputs establish execution only.",
+    "evidence_sources": [
+      "https://github.com/pieper/lnq-segmenter/blob/main/src/lnq_segmenter/_registry.json",
+      "EXTERNAL_MODELS.md"
+    ],
+    "weights_license_unresolved": false
+  },
+  "lnq_axillary_v1": {
+    "code_license": "Unverified in the inspected release",
+    "weights_license": "CC BY-NC 4.0",
+    "description": "LNQ axillary: pooled node candidates from CT; no elective regions or malignancy classification.",
+    "limitations": "Fold-0 inference. All detected nodes share one aggregate ROI.",
+    "evidence_note": "Inspected registry: 20 training scans; held-out accuracy and protocol mix not documented. Historical nonempty outputs establish execution only.",
+    "evidence_sources": [
+      "https://github.com/pieper/lnq-segmenter/blob/main/src/lnq_segmenter/_registry.json",
+      "EXTERNAL_MODELS.md"
+    ],
+    "noncommercial": true,
+    "weights_license_unresolved": false
+  },
+  "compai_lnq": {
+    "code_license": "Apache-2.0",
+    "weights_license": "Apache-2.0 release",
+    "description": "CompAI Model 7: mediastinal node candidates on CT. No IASLC station regions or malignancy classification.",
+    "limitations": "LNQ targets clinically relevant enlarged nodes; this is not a complete inventory of normal-sized nodes.",
+    "evidence_note": "Published Model 7 LNQ test Dice 0.663 and ASSD 3.97 mm; original challenge 0.628/5.8 mm is a different configuration.",
+    "evidence_sources": [
+      "https://gitlab.lrz.de/compai/MediastinalLymphNodeSegmentation",
+      "EXTERNAL_MODELS.md"
+    ],
+    "weights_license_unresolved": false
+  },
+  "dbdmp_lnq": {
+    "code_license": "No top-level licence found",
+    "weights_license": "Checkpoint permission unresolved",
+    "description": "DBDMP: mediastinal node candidates on CT; no elective station regions.",
+    "limitations": "Portal repairs crop geometry and uses a documented compatible trainer; accuracy reproduction is unresolved.",
+    "evidence_note": "Published validation DSC 54.10%/ASSD 8.72 mm; test 55.44%/9.35 mm; best test configuration 57.36%/9.85 mm. These are distinct configurations.",
+    "evidence_sources": [
+      "https://www.melba-journal.org/papers/2024:017.html",
+      "EXTERNAL_MODELS.md"
+    ],
+    "weights_license_unresolved": true
+  },
+  "raidionics_mediastinal_lymphnodes": {
+    "code_license": "BSD-2-Clause",
+    "weights_license": "Separate ONNX weight terms unverified",
+    "description": "Raidionics/Bouget: binary mediastinal node candidates on contrast CT.",
+    "limitations": "Training station assignments do not turn the binary output into station-region contours.",
+    "evidence_note": "Exact ONNX-release accuracy was not verified.",
+    "evidence_sources": [
+      "https://github.com/dbouget/ct_mediastinal_structures_segmentation",
+      "EXTERNAL_MODELS.md"
+    ],
+    "weights_license_unresolved": true
+  },
+  "lnq_atlas": {
+    "code_license": "CC BY-NC-ND 4.0",
+    "weights_license": "Archive-specific terms unverified",
+    "description": "LNQ atlas model: binary mediastinal node candidates with probabilistic-atlas context. No station-region outputs.",
+    "limitations": "Disabled: complete archive/fold verification, runtime and technical checks remain pending. The upstream archive was reachable on 2026-10-18 (HTTP 200), so the earlier access failure no longer applies.",
+    "evidence_note": "Published ensemble Dice 0.6033 and detection of 57% of reference nodes versus 27% with CT-only training.",
+    "evidence_sources": [
+      "https://www.melba-journal.org/papers/2024:009.html",
+      "EXTERNAL_MODELS.md"
+    ],
+    "noncommercial": false,
+    "weights_license_unresolved": true,
+    "code_noncommercial": true
+  },
+  "wcode_pia": {
+    "code_license": "Unverified in the inspected release",
+    "weights_license": "Checkpoint permission unresolved",
+    "description": "WCODE-PIA: intended mediastinal node candidates; Baidu-hosted release access is the recorded blocker.",
+    "limitations": "The checkpoint must be obtained, licensed and pinned before integration.",
+    "evidence_note": "Current source reports DSC 57.97±15.90%, ASSD 10.88±11.40 mm and instance F1 31.66±14.83%; no reproduced local checkpoint pairing.",
+    "evidence_sources": [
+      "https://github.com/HiLab-git/WCODE-PIA"
+    ],
+    "weights_license_unresolved": true
+  },
+  "uwlair_hntsmrg_pre_t2": {
+    "code_license": "Unverified in the inspected release",
+    "weights_license": "Separate checkpoint licence unverified",
+    "description": "UWLAIR pre-RT: GTVp and GTVn from one pre-treatment T2 head-and-neck MRI; ten-model ensemble.",
+    "limitations": "The mid-treatment model requires a registered prior image/mask and is a different input contract.",
+    "evidence_note": "Upstream pre-RT GTVp/GTVn DSC 0.745/0.844. Historical geometry/export checks are not independent patient-level nodal Dice.",
+    "evidence_sources": [
+      "https://github.com/xtie97/HNTS-MRG24-UWLAIR",
+      "labels/hntsmrg-gtv.json"
+    ],
+    "weights_license_unresolved": true
+  },
+  "stunet_hntsmrg_pre": {
+    "code_license": "Unverified in the inspected release",
+    "weights_license": "Checkpoint licence unverified",
+    "description": "STU-Net: intended pre-RT T2 MRI GTVp/GTVn.",
+    "limitations": "Disabled: preprocessing plans/properties, fold/export metadata and wrapper are absent. Raw checkpoints cannot establish this contract.",
+    "evidence_note": "No accuracy transferred to the unimplemented runner.",
+    "evidence_sources": [
+      "EXTERNAL_MODELS.md"
+    ],
+    "weights_license_unresolved": true
+  },
+  "segrap2023_gtv": {
+    "code_license": "Unverified in the inspected release",
+    "weights_license": "Selected-release checkpoint licence unverified",
+    "description": "SegRap2023: NPC primary GTVp and nodal GTVnd from paired registered noncontrast and contrast CT.",
+    "limitations": "Disabled: two-series selection, registration and channel ordering are not implemented.",
+    "evidence_note": "Historical use of one CT duplicated into both channels establishes execution only.",
+    "evidence_sources": [
+      "https://github.com/Astarakee/segrap2023",
+      "EXTERNAL_MODELS.md"
+    ],
+    "weights_license_unresolved": true
+  },
+  "isrt_ct_resunet": {
+    "code_license": "Unverified in the inspected release",
+    "weights_license": "Separate checkpoint licence not found",
+    "description": "Paediatric high-risk Hodgkin lymphoma ISRT CTV; planning-CT-only three-checkpoint ensemble.",
+    "limitations": "This is an involved-site target, not an elective station atlas.",
+    "evidence_note": "AHOD1331: 288 patients (230 development, 58 external). Best published DSC 0.72/HD95 34.43 mm uses CT + PET1 + PET2 and must not be assigned to this variant.",
+    "evidence_sources": [
+      "https://github.com/xtie97/ISRT-CTV-AutoSeg",
+      "run_task.py"
+    ],
+    "weights_license_unresolved": true
+  },
+  "isrt_ct_segresnet": {
+    "code_license": "Unverified in the inspected release",
+    "weights_license": "Separate checkpoint licence not found",
+    "description": "Paediatric high-risk Hodgkin lymphoma ISRT CTV; planning-CT-only three-checkpoint ensemble.",
+    "limitations": "This is an involved-site target, not an elective station atlas.",
+    "evidence_note": "AHOD1331: 288 patients (230 development, 58 external). Best published DSC 0.72/HD95 34.43 mm uses CT + PET1 + PET2 and must not be assigned to this variant.",
+    "evidence_sources": [
+      "https://github.com/xtie97/ISRT-CTV-AutoSeg",
+      "run_task.py"
+    ],
+    "weights_license_unresolved": true
+  },
+  "isrt_ct_swinunetr": {
+    "code_license": "Unverified in the inspected release",
+    "weights_license": "Separate checkpoint licence not found",
+    "description": "Paediatric high-risk Hodgkin lymphoma ISRT CTV; planning-CT-only three-checkpoint ensemble.",
+    "limitations": "This is an involved-site target, not an elective station atlas.",
+    "evidence_note": "AHOD1331: 288 patients (230 development, 58 external). Best published DSC 0.72/HD95 34.43 mm uses CT + PET1 + PET2 and must not be assigned to this variant.",
+    "evidence_sources": [
+      "https://github.com/xtie97/ISRT-CTV-AutoSeg",
+      "run_task.py"
+    ],
+    "weights_license_unresolved": true
+  },
+  "isrt_pet1_early_deform": {
+    "code_license": "Unverified in the inspected release",
+    "weights_license": "Separate checkpoint licence not found",
+    "description": "Paediatric high-risk Hodgkin lymphoma ISRT CTV; PET1 fusion variant.",
+    "limitations": "Runner duplicates the selected CT into planning/acquisition CT channels and resamples PET without registration. Rigid/deformable names describe weights, not performed registration. Excluded from regional presets.",
+    "evidence_note": "AHOD1331: 288 patients (230 development, 58 external). Best published DSC 0.72/HD95 34.43 mm uses CT + PET1 + PET2 and must not be assigned to this variant.",
+    "evidence_sources": [
+      "https://github.com/xtie97/ISRT-CTV-AutoSeg",
+      "run_task.py"
+    ],
+    "weights_license_unresolved": true
+  },
+  "isrt_pet1_early_rigid": {
+    "code_license": "Unverified in the inspected release",
+    "weights_license": "Separate checkpoint licence not found",
+    "description": "Paediatric high-risk Hodgkin lymphoma ISRT CTV; PET1 fusion variant.",
+    "limitations": "Runner duplicates the selected CT into planning/acquisition CT channels and resamples PET without registration. Rigid/deformable names describe weights, not performed registration. Excluded from regional presets.",
+    "evidence_note": "AHOD1331: 288 patients (230 development, 58 external). Best published DSC 0.72/HD95 34.43 mm uses CT + PET1 + PET2 and must not be assigned to this variant.",
+    "evidence_sources": [
+      "https://github.com/xtie97/ISRT-CTV-AutoSeg",
+      "run_task.py"
+    ],
+    "weights_license_unresolved": true
+  },
+  "isrt_pet1_late_deform": {
+    "code_license": "Unverified in the inspected release",
+    "weights_license": "Separate checkpoint licence not found",
+    "description": "Paediatric high-risk Hodgkin lymphoma ISRT CTV; PET1 fusion variant.",
+    "limitations": "Runner duplicates the selected CT into planning/acquisition CT channels and resamples PET without registration. Rigid/deformable names describe weights, not performed registration. Excluded from regional presets.",
+    "evidence_note": "AHOD1331: 288 patients (230 development, 58 external). Best published DSC 0.72/HD95 34.43 mm uses CT + PET1 + PET2 and must not be assigned to this variant.",
+    "evidence_sources": [
+      "https://github.com/xtie97/ISRT-CTV-AutoSeg",
+      "run_task.py"
+    ],
+    "weights_license_unresolved": true
+  },
+  "isrt_pet1_late_rigid": {
+    "code_license": "Unverified in the inspected release",
+    "weights_license": "Separate checkpoint licence not found",
+    "description": "Paediatric high-risk Hodgkin lymphoma ISRT CTV; PET1 fusion variant.",
+    "limitations": "Runner duplicates the selected CT into planning/acquisition CT channels and resamples PET without registration. Rigid/deformable names describe weights, not performed registration. Excluded from regional presets.",
+    "evidence_note": "AHOD1331: 288 patients (230 development, 58 external). Best published DSC 0.72/HD95 34.43 mm uses CT + PET1 + PET2 and must not be assigned to this variant.",
+    "evidence_sources": [
+      "https://github.com/xtie97/ISRT-CTV-AutoSeg",
+      "run_task.py"
+    ],
+    "weights_license_unresolved": true
+  },
+  "pediatric_thoracic_lymphoma": {
+    "code_license": "MIT",
+    "weights_license": "CC BY 4.0",
+    "description": "Paediatric thoracic lymphoma mass candidates on portal-venous contrast CT.",
+    "limitations": "Not an ISRT CTV or elective nodal station model. Historical local input was low-dose attenuation-correction CT.",
+    "evidence_note": "Paper: 30 children aged 2–17; 25 development/five test cases; test Dice 0.81±0.17, selected 3D model CV Dice 0.7262.",
+    "evidence_sources": [
+      "https://doi.org/10.3390/jpm13020184",
+      "https://zenodo.org/records/7243636"
+    ],
+    "weights_license_unresolved": false
+  },
+  "voxtell_v1_1_text_prompted": {
+    "code_license": "Apache-2.0",
+    "weights_license": "CC BY-NC-SA 4.0",
+    "description": "VoxTell: one text target per job. Points and boxes are ignored. Cached terms do not prove elective-region accuracy.",
+    "limitations": "One binary Prompted_Target ROI. No verified elective nodal atlas contract. VoxTell v1.1 includes the paper test sets in training. Cached synonyms do not establish separate trained level/station masks.",
+    "evidence_note": "No nodal-region accuracy established by the historical local object/geometry checks.",
+    "evidence_sources": [
+      "models/manifests/voxtell.json",
+      "prompted-target-label.json"
+    ],
+    "noncommercial": true,
+    "weights_license_unresolved": false
+  },
+  "nninteractive_v1_prompted": {
+    "code_license": "Apache-2.0",
+    "weights_license": "CC BY-NC-SA 4.0",
+    "description": "nnInteractive: place a positive point inside one node; use negatives to exclude adjacent vessels. One structure per prompt; repeat for other nodes.",
+    "limitations": "One binary Prompted_Target ROI. No verified elective nodal atlas contract.",
+    "evidence_note": "No nodal-region accuracy established by the historical local object/geometry checks.",
+    "evidence_sources": [
+      "models/manifests/nninteractive.json",
+      "prompted-target-label.json"
+    ],
+    "noncommercial": true,
+    "weights_license_unresolved": false
+  },
+  "segvol_prompted_ct": {
+    "code_license": "MIT",
+    "weights_license": "MIT",
+    "description": "SegVol: use points or a tight 3D box around one node. Do not combine points and a box. No verified nodal text vocabulary.",
+    "limitations": "One binary Prompted_Target ROI. No verified elective nodal atlas contract.",
+    "evidence_note": "Historical spleen Dice: text 0.9801, point 0.9756, box 0.9791; no nodal accuracy was measured.",
+    "evidence_sources": [
+      "models/manifests/segvol.json",
+      "prompted-target-label.json",
+      "models/validation/segvol_prompted_ct.json"
+    ],
+    "weights_license_unresolved": false
+  },
+  "medical_sam3_3d_prompted": {
+    "code_license": "SAM licence in source; Hugging Face metadata says MIT",
+    "weights_license": "Scope across base model and fine-tuned weights unresolved",
+    "description": "Medical-SAM3: text and one box; eight adjacent axial slices only, with zero output outside the window. Points are ignored. Exact nodal training wording is unverified.",
+    "limitations": "One binary Prompted_Target ROI. No verified elective nodal atlas contract.",
+    "evidence_note": "Historical spleen Dice 0.9674 across the eight-slice output; this is not nodal accuracy.",
+    "evidence_sources": [
+      "models/manifests/medical-sam3.json",
+      "prompted-target-label.json",
+      "models/validation/medical_sam3_3d_prompted.json"
+    ],
+    "weights_license_unresolved": true
+  },
+  "pam_prompted": {
+    "code_license": "No top-level licence found",
+    "weights_license": "Checkpoint permission unresolved",
+    "description": "PAM: one seed slice. Positive points become disks and a box becomes a filled rectangle; negative points are ignored. Mask/scribble input and the published Box2Mask workflow are not implemented.",
+    "limitations": "One binary Prompted_Target ROI. No verified elective nodal atlas contract.",
+    "evidence_note": "No nodal-region accuracy established by the historical local object/geometry checks.",
+    "evidence_sources": [
+      "EXTERNAL_MODELS.md",
+      "prompted-target-label.json"
+    ],
+    "weights_license_unresolved": true
+  },
+  "sat3d_prompted": {
+    "code_license": "Apache-2.0",
+    "weights_license": "Separate checkpoint terms unverified",
+    "description": "SAT3D: points select one local object within a 128³ native-voxel crop; output outside the crop is zero.",
+    "limitations": "One binary Prompted_Target ROI. No verified elective nodal atlas contract.",
+    "evidence_note": "No nodal-region accuracy established by the historical local object/geometry checks.",
+    "evidence_sources": [
+      "EXTERNAL_MODELS.md",
+      "prompted-target-label.json"
+    ],
+    "weights_license_unresolved": true
+  },
+  "vista3d_prompted_ct": {
+    "code_license": "Apache-2.0",
+    "weights_license": "NVIDIA Open Model License (NV-Segment-CT checkpoint)",
+    "description": "VISTA3D: at least one positive CT point; negatives can exclude adjacent tissue. No text contract.",
+    "limitations": "One binary Prompted_Target ROI. No verified elective nodal atlas contract.",
+    "evidence_note": "No nodal-region accuracy established by the historical local object/geometry checks.",
+    "evidence_sources": [
+      "models/manifests/vista3d.json",
+      "prompted-target-label.json"
+    ],
+    "weights_license_unresolved": false
+  },
+  "sam_med3d_turbo_prompted": {
+    "code_license": "Apache-2.0",
+    "weights_license": "Separate checkpoint terms unverified",
+    "description": "SAM-Med3D Turbo: points select one local object; a box becomes its centre point. The crop is 128³ at 1.5 mm.",
+    "limitations": "One binary Prompted_Target ROI. No verified elective nodal atlas contract.",
+    "evidence_note": "No nodal-region accuracy established by the historical local object/geometry checks.",
+    "evidence_sources": [
+      "models/manifests/sam-med3d.json",
+      "prompted-target-label.json"
+    ],
+    "weights_license_unresolved": true
+  },
+  "medsam2_ct_lesion_prompted": {
+    "code_license": "Unverified in the inspected release",
+    "weights_license": "CC BY-SA 4.0; model card adds research/education wording",
+    "description": "MedSAM2: points or a box on one axial slice. A box overrides points; only the largest 3D component is retained.",
+    "limitations": "One binary Prompted_Target ROI. No verified elective nodal atlas contract.",
+    "evidence_note": "Historical publisher-lesion Dice 0.90983 (box) and 0.90727 (points); these are not nodal-region results. The portal uses the FLARE25 RECIST checkpoint.",
+    "evidence_sources": [
+      "models/manifests/medsam2.json",
+      "prompted-target-label.json",
+      "models/validation/medsam2_ct_lesion_prompted.json"
+    ],
+    "weights_license_unresolved": false
+  },
+  "medical_sam2_prompted_ct": {
+    "code_license": "Conflict: manifest GPL-3.0; inspected source Apache-2.0",
+    "weights_license": "Checkpoint terms unresolved",
+    "description": "Medical-SAM2: points or a box on one axial slice; box overrides points. Only the largest 3D component is retained. The checkpoint was trained on organs.",
+    "limitations": "One binary Prompted_Target ROI. No verified elective nodal atlas contract.",
+    "evidence_note": "Historical out-of-domain lesion Dice 0.46129; this is not nodal accuracy. Source/checkpoint licence scope remains unresolved.",
+    "evidence_sources": [
+      "models/manifests/medical-sam2.json",
+      "prompted-target-label.json",
+      "models/validation/medical_sam2_prompted_ct.json"
+    ],
+    "weights_license_unresolved": true,
+    "noncommercial": false
+  },
+  "sam_med2d_prompted": {
+    "code_license": "Apache-2.0",
+    "weights_license": "Separate checkpoint terms unverified",
+    "description": "SAM-Med2D: prompt every intended slice; no propagation to other slices.",
+    "limitations": "One binary Prompted_Target ROI. No verified elective nodal atlas contract.",
+    "evidence_note": "No nodal-region accuracy established by the historical local object/geometry checks.",
+    "evidence_sources": [
+      "EXTERNAL_MODELS.md",
+      "prompted-target-label.json"
+    ],
+    "weights_license_unresolved": true
+  },
+  "medsam_vit_b_box_2d": {
+    "code_license": "Apache-2.0",
+    "weights_license": "CC BY 4.0",
+    "description": "MedSAM ViT-B: one box on one slice; no volume propagation.",
+    "limitations": "One binary Prompted_Target ROI. No verified elective nodal atlas contract.",
+    "evidence_note": "Historical spleen-slice Dice 0.954; this is not nodal accuracy.",
+    "evidence_sources": [
+      "models/manifests/medsam.json",
+      "prompted-target-label.json",
+      "models/validation/medsam_vit_b_box_2d.json"
+    ],
+    "weights_license_unresolved": false
+  },
+  "biomedparse_prompted": {
+    "code_license": "Unverified in the inspected release",
+    "weights_license": "CC BY-NC-SA 4.0",
+    "description": "BiomedParse: checkpoint access is blocked; no active text suggestions.",
+    "limitations": "One binary Prompted_Target ROI. No verified elective nodal atlas contract.",
+    "evidence_note": "No nodal-region accuracy established by the historical local object/geometry checks.",
+    "evidence_sources": [
+      "https://github.com/microsoft/BiomedParse",
+      "prompted-target-label.json"
+    ],
+    "noncommercial": true,
+    "weights_license_unresolved": false
+  }
+}

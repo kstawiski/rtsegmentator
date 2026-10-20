@@ -109,7 +109,7 @@
         <div id="reviewContent" class="review-grid"></div>
         <section id="postprocessPanel" class="option-panel" hidden><h3>Optional prostate SBRT crop</h3><label class="check-label"><input id="prostatePostprocess" type="checkbox"> Add a CT + RTSTRUCT crop to prostate ±15 cm</label><p class="small muted">Uses the prostate contour from TotalSegmentator total. The full RTSTRUCT is retained. Available with local total inference.</p><p id="postprocessError" class="error" role="alert" hidden></p></section>
         <section id="promptPanel" class="prompt-panel" aria-labelledby="promptTitle" hidden>
-          <h3 id="promptTitle">Add the interactive prompt</h3><div id="promptGuidance" class="notice"></div>
+          <h3 id="promptTitle">Add the interactive prompt</h3><div id="nodalPromptHelp" class="nodal-prompt-help" hidden><label for="promptRegion">Lymph-node prompt region</label><select id="promptRegion"></select><p id="promptRegionNote" class="small"></p><div id="promptSuggestions" class="prompt-suggestions"></div><p id="promptSuggestionsNote" class="small muted"></p></div><div id="promptGuidance" class="notice"></div>
           <p>Choose a slice and click inside the target. A box needs two corners. Coordinates are [column, row, slice], starting at zero.</p>
           <div class="prompt-layout"><div>
             <label for="promptSlice">Image slice <span id="promptSliceLabel"></span></label><input id="promptSlice" type="range" min="0" max="0" value="0">

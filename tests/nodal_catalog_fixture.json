@@ -1,0 +1,324 @@
+[
+  {
+    "name": "hnlnl_2d3d",
+    "enabled": true,
+    "modality": "CT",
+    "status": "validated"
+  },
+  {
+    "name": "clnet_235",
+    "enabled": false,
+    "modality": "CT",
+    "status": "nodal_decoders_unavailable"
+  },
+  {
+    "name": "choi_tmli",
+    "enabled": false,
+    "modality": "CT",
+    "status": "ontology_review_required"
+  },
+  {
+    "name": "lnctvseg_nnunet_v1",
+    "enabled": true,
+    "modality": "CT"
+  },
+  {
+    "name": "lnctvseg_swinunetr",
+    "enabled": false,
+    "modality": "CT",
+    "status": "inference_contract_unresolved"
+  },
+  {
+    "name": "lnctvseg_3duxnet",
+    "enabled": false,
+    "modality": "CT",
+    "status": "inference_contract_unresolved"
+  },
+  {
+    "name": "lnctvseg_repuxnet",
+    "enabled": false,
+    "modality": "CT",
+    "status": "inference_contract_unresolved"
+  },
+  {
+    "name": "lnsegfm_nnunet",
+    "enabled": true,
+    "modality": "CT"
+  },
+  {
+    "name": "lnsegfm_resenc_m",
+    "enabled": true,
+    "modality": "CT"
+  },
+  {
+    "name": "lnsegfm_resenc_l",
+    "enabled": true,
+    "modality": "CT"
+  },
+  {
+    "name": "lnsegfm_swinunetr",
+    "enabled": true,
+    "modality": "CT"
+  },
+  {
+    "name": "lnq_mediastinal_v1",
+    "enabled": true,
+    "modality": "CT",
+    "status": "validated",
+    "noncommercial": true
+  },
+  {
+    "name": "lnq_abdominopelvic_v1",
+    "enabled": true,
+    "modality": "CT",
+    "status": "validated_fold0",
+    "noncommercial": true
+  },
+  {
+    "name": "lnq_inguinal_v1",
+    "enabled": true,
+    "modality": "CT",
+    "status": "validated_fold0"
+  },
+  {
+    "name": "lnq_axillary_v1",
+    "enabled": true,
+    "modality": "CT",
+    "status": "validated_fold0",
+    "noncommercial": true
+  },
+  {
+    "name": "compai_lnq",
+    "enabled": true,
+    "modality": "CT",
+    "status": "validated"
+  },
+  {
+    "name": "dbdmp_lnq",
+    "enabled": true,
+    "modality": "CT",
+    "status": "validated"
+  },
+  {
+    "name": "raidionics_mediastinal_lymphnodes",
+    "enabled": true,
+    "modality": "CT"
+  },
+  {
+    "name": "lnq_atlas",
+    "enabled": false,
+    "modality": "CT",
+    "noncommercial": true,
+    "status": "public_weights_download_pending"
+  },
+  {
+    "name": "wcode_pia",
+    "enabled": false,
+    "modality": "CT",
+    "status": "weights_unavailable"
+  },
+  {
+    "name": "uwlair_hntsmrg_pre_t2",
+    "enabled": true,
+    "modality": "MR"
+  },
+  {
+    "name": "stunet_hntsmrg_pre",
+    "enabled": false,
+    "modality": "MR",
+    "status": "packaging_blocked"
+  },
+  {
+    "name": "segrap2023_gtv",
+    "enabled": false,
+    "modality": "CT",
+    "status": "requires_paired_ct"
+  },
+  {
+    "name": "isrt_ct_resunet",
+    "enabled": true,
+    "modality": "CT"
+  },
+  {
+    "name": "isrt_ct_segresnet",
+    "enabled": true,
+    "modality": "CT"
+  },
+  {
+    "name": "isrt_ct_swinunetr",
+    "enabled": true,
+    "modality": "CT"
+  },
+  {
+    "name": "isrt_pet1_early_deform",
+    "enabled": false,
+    "modality": "PT",
+    "requires_ct": true,
+    "status": "not_enabled_on_this_server"
+  },
+  {
+    "name": "isrt_pet1_early_rigid",
+    "enabled": false,
+    "modality": "PT",
+    "requires_ct": true,
+    "status": "not_enabled_on_this_server"
+  },
+  {
+    "name": "isrt_pet1_late_deform",
+    "enabled": true,
+    "modality": "PT",
+    "requires_ct": true
+  },
+  {
+    "name": "isrt_pet1_late_rigid",
+    "enabled": true,
+    "modality": "PT",
+    "requires_ct": true
+  },
+  {
+    "name": "pediatric_thoracic_lymphoma",
+    "enabled": true,
+    "modality": "CT"
+  },
+  {
+    "name": "voxtell_v1_1_text_prompted",
+    "enabled": true,
+    "modality": "CT",
+    "modalities": [
+      "CT",
+      "MR",
+      "PT"
+    ],
+    "prompt": "text",
+    "status": "validated",
+    "noncommercial": true
+  },
+  {
+    "name": "nninteractive_v1_prompted",
+    "enabled": true,
+    "modality": "CT",
+    "modalities": [
+      "CT",
+      "MR",
+      "PT"
+    ],
+    "prompt": "points_or_box",
+    "noncommercial": true,
+    "status": "validated"
+  },
+  {
+    "name": "segvol_prompted_ct",
+    "enabled": true,
+    "modality": "CT",
+    "prompt": "text_points_or_box",
+    "status": "validated"
+  },
+  {
+    "name": "medical_sam3_3d_prompted",
+    "enabled": true,
+    "modality": "CT",
+    "modalities": [
+      "CT",
+      "MR",
+      "PT"
+    ],
+    "prompt": "text_and_box",
+    "status": "validated_research"
+  },
+  {
+    "name": "pam_prompted",
+    "enabled": true,
+    "modality": "CT",
+    "modalities": [
+      "CT",
+      "MR",
+      "PT"
+    ],
+    "prompt": "mask_or_slice",
+    "status": "validated"
+  },
+  {
+    "name": "sat3d_prompted",
+    "enabled": true,
+    "modality": "CT",
+    "modalities": [
+      "CT",
+      "MR",
+      "PT"
+    ],
+    "prompt": "points",
+    "status": "validated"
+  },
+  {
+    "name": "vista3d_prompted_ct",
+    "enabled": true,
+    "modality": "CT",
+    "prompt": "points",
+    "status": "validated"
+  },
+  {
+    "name": "sam_med3d_turbo_prompted",
+    "enabled": true,
+    "modality": "CT",
+    "modalities": [
+      "CT",
+      "MR",
+      "PT"
+    ],
+    "prompt": "points_or_box",
+    "status": "validated_research"
+  },
+  {
+    "name": "medsam2_ct_lesion_prompted",
+    "enabled": true,
+    "modality": "CT",
+    "prompt": "points_or_box",
+    "noncommercial": true,
+    "status": "validated_research"
+  },
+  {
+    "name": "medical_sam2_prompted_ct",
+    "enabled": true,
+    "modality": "CT",
+    "prompt": "points_or_box",
+    "noncommercial": true,
+    "status": "validated_research"
+  },
+  {
+    "name": "sam_med2d_prompted",
+    "enabled": true,
+    "modality": "CT",
+    "modalities": [
+      "CT",
+      "MR",
+      "PT"
+    ],
+    "prompt": "points_or_box",
+    "status": "validated_slice_wise"
+  },
+  {
+    "name": "medsam_vit_b_box_2d",
+    "enabled": true,
+    "modality": "CT",
+    "modalities": [
+      "CT",
+      "MR",
+      "PT"
+    ],
+    "prompt": "box",
+    "status": "validated_slice_wise"
+  },
+  {
+    "name": "biomedparse_prompted",
+    "enabled": false,
+    "modality": "CT",
+    "modalities": [
+      "CT",
+      "MR",
+      "PT"
+    ],
+    "prompt": "text",
+    "status": "weights_unavailable",
+    "noncommercial": true
+  }
+]

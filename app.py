@@ -81,6 +81,7 @@ BASE.mkdir(parents=True, exist_ok=True)
 app = FastAPI(title="DICOM RT Segmentation Portal", version="1.0.0",
               docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json")
 STRUCTURE_CATALOG = json.loads((Path(__file__).resolve().parent / "catalog/structures.json").read_text())
+NODAL_MODEL_DETAILS = json.loads((Path(__file__).resolve().parent / "catalog/nodal-models.json").read_text())
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -1986,7 +1987,7 @@ def build_catalog():
         item={"name":name,"licensed":False,"enabled":True,**details}
         apply_model_gates(item, preflight.get(name), enabled)
         if name.startswith("lnsegfm_"):
-            item.update(structures="Visible/pathologic head-and-neck lymph-node candidate mask (not elective nodal levels)", reference="https://github.com/HiLab-git/LN-Seg-FM")
+            item.update(structures="Visible head-and-neck lymph-node candidate mask; no malignancy classification or elective levels", reference="https://github.com/HiLab-git/LN-Seg-FM")
         elif name.startswith("isrt_"):
             item.update(structures="Pediatric Hodgkin lymphoma involved-site radiotherapy clinical target volume (CTV)", reference="https://github.com/xtie97/ISRT-CTV-AutoSeg")
         elif name == "raidionics_mediastinal_lymphnodes":
@@ -2001,6 +2002,15 @@ def build_catalog():
         apply_model_gates(item, preflight.get(name), enabled)
         catalog.append(item)
     for item in catalog:
+        nodal = NODAL_MODEL_DETAILS.get(item["name"])
+        if nodal:
+            # Descriptions never grant availability or replace a gate's blocker.
+            item.update(nodal)
+            item["license"] = f"Code: {nodal['code_license']}; checkpoints: {nodal['weights_license']}"
+            item.pop("license_note", None)
+            if item.get("enabled") and item.get("status", "").startswith("validated"):
+                item["status"] = ("technical_review_required" if item["name"] == "hnlnl_2d3d"
+                                  else "technical_checks_recorded")
         if task_uses_remote(item["name"]):
             item["execution_backend"] = "ssh"
             check = routed_preflight.get(item["name"])
