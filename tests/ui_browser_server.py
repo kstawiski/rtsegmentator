@@ -33,7 +33,7 @@ document.getElementById('run').onclick=async()=>{
             )
         elif self.path.split("?")[0] in {
             "/static/index.html", "/static/app.js", "/static/app.css",
-            "/static/viewer.js", "/static/ui-catalog.json",
+            "/static/viewer.js", "/static/ui-catalog.json", "/catalog/structures.json",
             "/static/fonts/open-sans-latin-wght-normal.woff2",
             "/static/fonts/open-sans-latin-ext-wght-normal.woff2",
             "/tests/ui_fixture.js", "/tests/ui_browser_checks.js",

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Run one MOOSE model and export its checkpoint-owned label mapping."""
 
+from structure_labels import dataset_labels
+
 import argparse
 import json
 from pathlib import Path
@@ -33,16 +35,7 @@ def main() -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     produced.replace(destination)
 
-    raw = used_models[0].dataset.get("labels", {})
-    labels = {}
-    for name, value in raw.items():
-        if name.lower() == "background":
-            continue
-        if isinstance(value, list):
-            raise SystemExit(f"MOOSE region label {name!r} is not a scalar class: {value!r}")
-        labels[str(int(value))] = str(name)
-    if not labels:
-        raise SystemExit("MOOSE checkpoint contains no foreground label mapping")
+    labels = dataset_labels(used_models[0].dataset.get("labels", {}))
     Path(args.labels).write_text(json.dumps(labels, indent=2, sort_keys=True) + "\n")
 
 

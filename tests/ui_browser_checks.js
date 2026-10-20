@@ -41,6 +41,7 @@ async function runUiBrowserChecks(frame) {
   $('toReview').click();await settle();
   assert(doc.querySelectorAll('[data-plan-series]').length===2,'Review shows one plan per selected series');
   assert([...doc.querySelectorAll('[data-plan-series]')].every(card=>card.querySelectorAll('li').length===2),'Each default plan contains two compatible models');
+  assert($('reviewContent').textContent.includes('117 structures'),'Review uses the same derived structure count as the model cards');
   assert($('startJob').textContent==='Start 2 jobs · 4 model runs'&&!$('startJob').disabled,'Start names job and model-run counts');
   doc.querySelector('[data-back="2"]').click();await settle();
   doc.querySelector('input[value="heart_key_task"]').click();
@@ -69,6 +70,12 @@ async function runUiBrowserChecks(frame) {
   assert($('modelGroups').textContent.includes('Licence key required'),'Commercial TotalSegmentator flag shows licence key badge');
   $('modelSearch').value='nv_segment';$('modelSearch').dispatchEvent(new win.Event('input'));await settle();
   const row=name=>doc.querySelector(`input[value="${name}"]`).closest('.model-row');
+  assert(row('nv_segment_ct_auto').querySelector('summary').textContent==='117 structures · details','Model card uses the derived structure count');
+  const details=row('nv_segment_ctmr_ct_body').querySelector('details');details.open=true;
+  assert(details.querySelector('.structures').textContent.split(', ').length===117,'Expanded card contains the full generated structure list');
+  assert(details.querySelector('.structure-note').textContent==='Only structures found in the scan are written to the RTSTRUCT.','Expanded card explains scan-dependent omissions');
+  details.open=false;
+
   assert(!row('nv_segment_ct_auto').querySelector('.badge.license'),'NV-Segment-CT has no restriction badge');
   assert(row('nv_segment_ct_auto').textContent.includes('NVIDIA Open Model License.'),'Permissive licence note remains in details');
   assert(row('nv_segment_ctmr_ct_body').querySelector('.badge.license').textContent==='Non-commercial weights','CTMR has non-commercial badge');

@@ -1,5 +1,6 @@
 """Combine SCT's one-or-many output masks into one RTSTRUCT label volume."""
-import argparse, json, re
+import argparse, json
+from structure_labels import sct_output_name
 from pathlib import Path
 import nibabel as nib
 import numpy as np
@@ -23,12 +24,7 @@ if len(imgs)==1 and multiclass:
 else:
     data=np.zeros(shape, dtype=np.uint16); labels={}
     for idx,(f,img) in enumerate(zip(files,imgs),1):
-        key=re.sub(r"\.nii(?:\.gz)?$", "", f.name)
-        key=re.sub(r"^prediction_?", "", key).strip("_")
-        label=next((v for k,v in names.items() if k.lower() in key.lower()), None)
-        if label is None and len(files)==1 and len(set(names.values()))==1:
-            label=next(iter(names.values()))
-        label=label or key or f"SCT_Label_{idx}"
+        label=sct_output_name(f.name, names, single=len(files)==1, index=idx)
         mask=np.asanyarray(img.dataobj)>0
         if mask.any(): data[mask]=idx
         labels[str(idx)]=label

@@ -13,6 +13,7 @@ from pathlib import Path
 import pydicom
 from nv_segment_logic import MODES as NV_SEGMENT_MODES
 import lnctvseg_bundle
+from structure_labels import spec_labels, repo_label_path, INLINE_LABELS, sct_matched_name
 from monai_bundle import compatible_config, bundle_command
 from task_progress import Progress, command_stage
 progress = Progress()
@@ -256,7 +257,7 @@ try:
         work = job / "external" / task
         work.mkdir(parents=True, exist_ok=True)
         model_input, prediction, labels = work / "input.nii.gz", work / "prediction.nii.gz", work / "labels.json"
-        labels.write_text(json.dumps(spec["labels"], indent=2, sort_keys=True) + "\n")
+        labels.write_text(json.dumps(spec_labels(spec, APP_ROOT, MODEL_ROOT), indent=2, sort_keys=True) + "\n")
         run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"),
              str(job / "input"), str(model_input)])
         if spec["runner"] == "smit":
@@ -312,7 +313,7 @@ try:
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),
-             "--labels", str(APP_ROOT / "labels/hippunfold-bigbrain.json")])
+             "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
     elif task == "siam_v3_head_mr_ct":
         work=job/"external"/task; input_dir,output_dir=work/"input",work/"output"
@@ -328,7 +329,7 @@ try:
         if not prediction.is_file(): raise SystemExit(f"SIAM did not create {prediction}")
         run([sys.executable,str(APP_ROOT/"convert_validate_rtstruct.py"),"--prediction",str(prediction),
              "--model-input",str(nifti),"--dicom",str(job/"input"),"--output",str(output),
-             "--labels",str(APP_ROOT/"labels/siam-v3.json")])
+             "--labels",str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work,ignore_errors=True)
     elif task in FASTSURFER_TASKS:
         work = job / "external" / task
@@ -394,10 +395,7 @@ try:
         if spec.get("preserve_overlaps"):
             masks = {}
             for native in sorted(work.glob(spec.get("output_glob", "prediction*.nii.gz"))):
-                key = re.sub(r"\.nii(?:\.gz)?$", "", native.name)
-                key = re.sub(r"^prediction_?", "", key).strip("_")
-                name = next((value for token, value in spec.get("output_names", {}).items()
-                             if token.lower() in key.lower()), None)
+                name = sct_matched_name(native.name, spec.get("output_names", {}))
                 if name and native.is_file():
                     masks[name] = str(native)
             if not masks:
@@ -411,7 +409,7 @@ try:
         else:
             multiclass_labels = spec.get("multiclass_labels", {})
             if spec.get("labels_file"):
-                multiclass_labels = json.loads((APP_ROOT / spec["labels_file"]).read_text())
+                multiclass_labels = spec_labels(spec, APP_ROOT, MODEL_ROOT)
             native_glob = spec.get("output_glob", "prediction*.nii.gz")
             run([sys.executable, str(APP_ROOT / "combine_sct_outputs.py"),
                  "--glob", str(work / native_glob), "--output", str(prediction),
@@ -428,8 +426,7 @@ try:
         model_input = work / "input.nii.gz"
         prediction = work / "prediction.nii.gz"
         labels = work / "labels.json"
-        label_map = (json.loads((APP_ROOT / spec["labels_file"]).read_text())
-                     if "labels_file" in spec else spec["labels"])
+        label_map = spec_labels(spec, APP_ROOT, MODEL_ROOT)
         labels.write_text(json.dumps(label_map, indent=2, sort_keys=True) + "\n")
         run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"), str(job / "input"), str(model_input)])
         run([str(RUNTIME_ROOT / "envs/antspynet/bin/python"), str(APP_ROOT / "run_antspynet.py"),
@@ -460,7 +457,7 @@ try:
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),
-             "--labels", str(APP_ROOT / "labels/lung-tumor.json")])
+             "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
     elif task == "synthseg_v1_brain":
         work = job / "external" / task
@@ -479,7 +476,7 @@ try:
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(restored), "--model-input", str(model_input),
              "--dicom", str(job / "input"), "--output", str(output),
-             "--labels", str(APP_ROOT / "labels/synthseg-v1.json")])
+             "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
     elif task in PYCAD_TASKS:
         spec = PYCAD_TASKS[task]
@@ -489,7 +486,7 @@ try:
         prediction_dir.mkdir(parents=True, exist_ok=True)
         model_input = input_dir / "case_0000.nii.gz"
         labels = work / "labels.json"
-        labels.write_text(json.dumps(spec["labels"], indent=2, sort_keys=True) + "\n")
+        labels.write_text(json.dumps(spec_labels(spec, APP_ROOT, MODEL_ROOT), indent=2, sort_keys=True) + "\n")
         run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"), str(job / "input"), str(model_input)])
         run([str(RUNTIME_ROOT / "envs/cads/bin/nnUNetv2_predict_from_modelfolder"),
              "-i", str(input_dir), "-o", str(prediction_dir),
@@ -509,7 +506,7 @@ try:
         model_input = input_dir / "case_0000.nii.gz"
         labels = work / "labels.json"
         restored = work / "restored.nii.gz"
-        labels.write_text(json.dumps(spec["labels"], indent=2, sort_keys=True) + "\n")
+        labels.write_text(json.dumps(spec_labels(spec, APP_ROOT, MODEL_ROOT), indent=2, sort_keys=True) + "\n")
         run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"), str(job / "input"), str(original)])
         run([sys.executable, str(APP_ROOT / "reorient_nifti.py"), str(original), str(model_input), "LAS"])
         run([str(RUNTIME_ROOT / "envs/cads/bin/nnUNetv2_predict_from_modelfolder"),
@@ -544,7 +541,7 @@ try:
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),
-             "--labels", str(APP_ROOT / "labels/universal-model.json")])
+             "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
     elif task in CADS_OPEN_TASKS:
         spec = CADS_OPEN_TASKS[task]
@@ -553,7 +550,7 @@ try:
         nifti = work / "input.nii.gz"
         segmentation_dir = work / "segmentation"
         labels = work / "labels.json"
-        labels.write_text(json.dumps(spec["labels"], indent=2, sort_keys=True) + "\n")
+        labels.write_text(json.dumps(spec_labels(spec, APP_ROOT, MODEL_ROOT), indent=2, sort_keys=True) + "\n")
         run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"),
              str(job / "input"), str(nifti)])
         env = os.environ.copy()
@@ -588,7 +585,7 @@ try:
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),
-             "--labels", str(APP_ROOT / labels)])
+             "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
     elif task == lnctvseg_bundle.TASK:
         if not NODAL_AUDIT:
@@ -616,7 +613,7 @@ try:
         run([sys.executable, str(APP_ROOT / 'convert_validate_rtstruct.py'),
              '--prediction', str(exported), '--model-input', str(nifti),
              '--dicom', str(job / 'input'), '--output', str(output),
-             '--labels', str(APP_ROOT / 'labels/lnctvseg.json')])
+             '--labels', str(repo_label_path(task, APP_ROOT))])
         if not NODAL_AUDIT:
             shutil.rmtree(work, ignore_errors=True)
     elif task in NNUNET_V1_TASKS:
@@ -627,7 +624,7 @@ try:
         prediction_dir.mkdir(parents=True, exist_ok=True)
         nifti = input_dir / "case_0000.nii.gz"
         labels = work / "labels.json"
-        labels.write_text(json.dumps(spec["labels"], indent=2, sort_keys=True) + "\n")
+        labels.write_text(json.dumps(spec_labels(spec, APP_ROOT, MODEL_ROOT), indent=2, sort_keys=True) + "\n")
         run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"),
              str(job / "input"), str(nifti)])
         env = os.environ.copy()
@@ -669,12 +666,7 @@ try:
         run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"),
              str(job / "input"), str(nifti)])
         bundle = MODEL_ROOT / "weights/monai-bundles" / spec["bundle"]
-        if spec.get("labels_from_metadata"):
-            metadata = json.loads((bundle / "configs/metadata.json").read_text())
-            channel_def = metadata["network_data_format"]["outputs"]["pred"]["channel_def"]
-            label_map = {str(k): v for k, v in channel_def.items() if str(k) != "0"}
-        else:
-            label_map = spec["labels"]
+        label_map = spec_labels(spec, APP_ROOT, MODEL_ROOT)
         labels.write_text(json.dumps(label_map, indent=2, sort_keys=True) + "\n")
         bundle_config = compatible_config(bundle, spec, work)
         model_input = nifti
@@ -716,7 +708,7 @@ try:
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),
-             "--labels", str(APP_ROOT / "labels/hd-bet.json")])
+             "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
     elif task == "hd_ctbet_ct":
         work = job / "external" / task
@@ -741,7 +733,7 @@ try:
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),
-             "--labels", str(APP_ROOT / "labels/hd-bet.json")])
+             "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
     elif task == "rano2_assist_t1c_mr":
         work = job / "external" / task
@@ -749,8 +741,7 @@ try:
         nifti = work / "input.nii.gz"
         prediction = work / "prediction.nii.gz"
         labels = work / "labels.json"
-        labels.write_text(json.dumps({"1": "Nonenhancing_Tumor_Core", "2": "Peritumoral_Edema",
-                                      "3": "Enhancing_Tumor_Core", "4": "Resection_Cavity"}, indent=2) + "\n")
+        labels.write_text(json.dumps(INLINE_LABELS[task], indent=2) + "\n")
         run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"), str(job / "input"), str(nifti)])
         source = MODEL_ROOT / "sources/rano2.0-assist/dynunet_pipeline"
         task_dir = MODEL_ROOT / "weights/rano2-assist/rano2.0-assist/dynunet_pipeline/data/tasks/task4000_brats24"
@@ -768,7 +759,7 @@ try:
         nifti = work / "input.nii.gz"
         prediction = work / "prediction.nii.gz"
         labels = work / "labels.json"
-        labels.write_text(json.dumps({"1": "DOTATATE_Avid_Lesion"}, indent=2) + "\n")
+        labels.write_text(json.dumps(INLINE_LABELS[task], indent=2) + "\n")
         run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"), str(job / "input"), str(nifti)])
         run([str(RUNTIME_ROOT / "envs/dotatate/bin/python"), str(APP_ROOT / "run_dotatate_onnx.py"),
              "--input", str(nifti), "--output", str(prediction),
@@ -882,7 +873,7 @@ try:
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(predictions[0]), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),
-             "--labels", str(APP_ROOT / "labels/totalspineseg.json")])
+             "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
     elif task == "vibesegmentator":
         work = job / "external" / task
@@ -913,7 +904,7 @@ try:
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),
-             "--labels", str(APP_ROOT / "labels/mrisegmentator.json")])
+             "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
     elif task in {"mrsegmentator", "mrsegmentator_body_comp"}:
         work = job / "external" / task
@@ -933,8 +924,7 @@ try:
         predictions = list(prediction_dir.glob("*.nii")) + list(prediction_dir.glob("*.nii.gz"))
         if len(predictions) != 1:
             raise SystemExit(f"MRSegmentator created {len(predictions)} prediction files; expected one")
-        labels = APP_ROOT / ("labels/mrsegmentator-body-comp.json" if task.endswith("body_comp")
-                             else "labels/mrsegmentator.json")
+        labels = repo_label_path(task, APP_ROOT)
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(predictions[0]), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),
@@ -956,7 +946,7 @@ try:
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),
-             "--labels", str(APP_ROOT / "labels/medlsam-structseg-han.json")])
+             "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
     elif task in {"pam_prompted", "sam_med2d_prompted", "sam_med3d_turbo_prompted", "medsam_vit_b_box_2d", "medical_sam3_3d_prompted", "medsam2_ct_lesion_prompted", "medical_sam2_prompted_ct", "sat3d_prompted", "nninteractive_v1_prompted", "vista3d_prompted_ct", "voxtell_v1_1_text_prompted", "segvol_prompted_ct"}:
         root = MODEL_ROOT
@@ -1058,7 +1048,7 @@ try:
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),
-             "--labels", str(APP_ROOT / "prompted-target-label.json")])
+             "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
     elif task == "lnq_atlas":
         from run_lnq_atlas import total_python as lnq_total_python
@@ -1076,7 +1066,7 @@ try:
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),
-             "--labels", str(APP_ROOT / "labels/lnq-atlas.json")])
+             "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
     elif task == "choi_tmli":
         from choi_ontology import confirmed_labels
@@ -1132,7 +1122,7 @@ try:
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),
-             "--labels", str(APP_ROOT / "hnlnl-labels.json")])
+             "--labels", str(repo_label_path(task, APP_ROOT))])
         if not NODAL_AUDIT:
             shutil.rmtree(work, ignore_errors=True)
     elif task == "dbdmp_lnq":
@@ -1150,7 +1140,7 @@ try:
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),
-             "--labels", str(APP_ROOT / "mediastinal-node-label.json")])
+             "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
     elif task == "compai_lnq":
         root = MODEL_ROOT
@@ -1188,7 +1178,7 @@ try:
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(full_nifti),
              "--dicom", str(job / "input"), "--output", str(output),
-             "--labels", str(APP_ROOT / "mediastinal-node-label.json")])
+             "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
     elif task in lnq_tasks:
         root = MODEL_ROOT
@@ -1209,7 +1199,7 @@ try:
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),
-             "--labels", str(APP_ROOT / f"lnq-{region}-label.json")])
+             "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
     elif task in pet_tasks:
         root = MODEL_ROOT
@@ -1268,7 +1258,7 @@ try:
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(ct),
              "--dicom", str(job / "input_ct"), "--output", str(output),
-             "--labels", str(APP_ROOT / "labels/isrt-ctv.json")])
+             "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
     elif task == "uwlair_hntsmrg_pre_t2":
         root = MODEL_ROOT
@@ -1282,7 +1272,7 @@ try:
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),
-             "--labels", str(APP_ROOT / "labels/hntsmrg-gtv.json")])
+             "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
     elif task in lnsegfm_tasks:
         root = MODEL_ROOT
@@ -1355,7 +1345,7 @@ test_time_augmentation_iteration=0
             prediction = nodes_dir / "labels_LymphNodes.nii.gz"
             if not prediction.exists():
                 raise SystemExit("Raidionics lymph-node inference did not create its expected mask")
-            labels = APP_ROOT / "labels/raidionics-mediastinal-lymphnodes.json"
+            labels = repo_label_path(task, APP_ROOT)
         elif task == "pediatric_thoracic_lymphoma":
             cropped_input = work / "lymphoma-input" / "case_0000.nii.gz"
             cropped_output = work / "lymphoma-output"
@@ -1377,7 +1367,7 @@ test_time_augmentation_iteration=0
             prediction = work / "lymphoma-full.nii.gz"
             run([sys.executable, str(APP_ROOT / "resample_label_to_reference.py"),
                  str(cropped_output / "case.nii.gz"), str(nifti), str(prediction)])
-            labels = APP_ROOT / "labels/pediatric-thoracic-lymphoma.json"
+            labels = repo_label_path(task, APP_ROOT)
         else:
             architecture, source_name = isrt_tasks[task]
             cropped_input = work / "isrt-data" / "case.nii.gz"
@@ -1420,7 +1410,7 @@ test_time_augmentation_iteration=0
             prediction = work / "ensemble-full.nii.gz"
             run([sys.executable, str(APP_ROOT / "resample_label_to_reference.py"),
                  str(cropped_label), str(nifti), str(prediction)])
-            labels = APP_ROOT / "labels/isrt-ctv.json"
+            labels = repo_label_path(task, APP_ROOT)
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),

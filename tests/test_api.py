@@ -60,6 +60,16 @@ def test_versioned_api_catalog(tmp_path):
         catalog = client.get("/api/v1/models").json()["tasks"]
         assert catalog
         assert all(item.get("description") and item.get("structures") and item.get("reference") for item in catalog)
+        import json
+        contracts = json.loads((Path(__file__).parents[1] / "catalog/structures.json").read_text())
+        for item in catalog:
+            contract = contracts[item["name"]]
+            assert item["structure_kind"] == contract["kind"]
+            assert item["structure_names"] == contract["names"]
+            assert item["structure_count"] == contract["count"]
+            assert item["structure_note"] == contract["note"]
+            assert not item["enabled"] or item["structure_kind"] != "unresolved"
+
         assert client.get("/api/openapi.json").status_code == 200
 
 

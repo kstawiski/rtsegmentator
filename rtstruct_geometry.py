@@ -19,6 +19,7 @@ from rt_utils import RTStructBuilder, ds_helper
 from rt_utils.utils import ROIData
 
 from dicom_series import ordered_dicom_files
+from structure_labels import roi_name, unique_roi_names
 
 
 def slice_geometry(ds):
@@ -92,31 +93,6 @@ def create_rtstruct(source, model_input):
     rt.series_data = slices
     return rt
 
-
-
-def roi_name(name) -> str:
-    """ROI name as DICOM stores and returns it (LO: no padding, at most 64 characters).
-
-    Model label files sometimes pad names (e.g. "CTVT "); DICOM drops trailing spaces on
-    read, so the converter must write and compare the stripped form.
-    """
-    text = str(name).strip()
-    if not text:
-        raise SystemExit("empty ROI name in the label map")
-    if len(text) > 64:
-        raise SystemExit(f"ROI name longer than 64 characters: {text!r}")
-    return text
-
-
-def unique_roi_names(names):
-    """Normalise names and refuse duplicates, which would merge distinct structures."""
-    normalised = [roi_name(name) for name in names]
-    seen = set()
-    for name in normalised:
-        if name in seen:
-            raise SystemExit(f"duplicate ROI name after normalisation: {name!r}")
-        seen.add(name)
-    return normalised
 
 
 def add_roi(rt, mask, name, color, *, offset=(0, 0, 0), bounds_out=None, plane_geometry=None):

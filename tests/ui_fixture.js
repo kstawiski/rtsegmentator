@@ -4,11 +4,11 @@ window.uiFixtureErrors=[];
 window.addEventListener('error',e=>window.uiFixtureErrors.push(e.message));
 window.addEventListener('unhandledrejection',e=>window.uiFixtureErrors.push(String(e.reason)));
 const reportName='nv_reason_ct_report';
-const model=(name,extra={})=>({name,modality:'CT',enabled:true,status:'available',structures:['Synthetic structure'],...extra});
+const model=(name,extra={})=>({name,modality:'CT',enabled:true,status:'available',structures:'Synthetic structure',structure_kind:'fixed',structure_names:['Synthetic structure'],structure_count:1,...extra});
 const fixtureModels=[model('total'),model('nv_segment_ct_auto',{licensed:false,license_note:'NVIDIA Open Model License.'}),
   model('nv_segment_ctmr_ct_body',{licensed:false,noncommercial:true,license_note:'NVIDIA OneWay Noncommercial weight licence.'}),
   model('total_mr',{modality:'MR'}),model('nv_segment_ctmr_mri_body',{modality:'MR',noncommercial:true}),
-  model('synthetic_prompt',{prompt:'points'}),model('synthetic_unavailable',{enabled:false,status:'checkpoint_unavailable'}),model('heart_key_task',{licensed:true}),model(reportName,{output:'report',license:'OpenMDW-1.1'}),
+  model('synthetic_prompt',{prompt:'points',structure_kind:'prompted',structure_count:null}),model('synthetic_unavailable',{enabled:false,status:'checkpoint_unavailable'}),model('heart_key_task',{licensed:true}),model(reportName,{output:'report',structure_kind:'report',structure_names:[],structure_count:null,license:'OpenMDW-1.1'}),
   ...Array.from({length:14},(_,i)=>model('synthetic_anatomy_model_with_long_name_'+i))];
 const fixtureReport={status:'generated',regions:[{region:'chest',sections:{technique:['Synthetic UI fixture. No patient images.'],findings:[
   {heading:'CHEST',text:'',organ_status:'unmapped'},
@@ -33,7 +33,13 @@ window.fetch=async (input,options={})=>{
   const url=new URL(typeof input==='string'?input:input.url,location.href),path=url.pathname;
   if(!path.startsWith('/api/'))return originalFetch(input,options);
   let body={},status=200;
-  if(path==='/api/v1/models')body={tasks:fixtureModels,clinical_tags:[]};
+  if(path==='/api/v1/models'){
+    const contracts=await originalFetch('/catalog/structures.json').then(r=>r.json());
+    body={tasks:fixtureModels.map(task=>{
+      const c=contracts[task.name];
+      return c?{...task,structure_kind:c.kind,structure_names:c.names,structure_count:c.count,structure_note:c.note}:task;
+    }),clinical_tags:[]};
+  }
   else if(path==='/api/v1/config')body={worker_mode:'local',report_task:reportName};
   else if(path.includes('health'))body={worker_mode:'local',worker_reachable:false};
   else if(path==='/api/v1/jobs')body={jobs:url.searchParams.get('batch_id')==='qa-archived-batch'?archivedBatchJobs:fixtureJobs};

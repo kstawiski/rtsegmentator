@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Run a standardized single-channel nnU-Net v2 model folder."""
 
+from structure_labels import dataset_json, dataset_labels, kept_label
+
 import argparse
 import json
 import nibabel as nib
@@ -8,13 +10,6 @@ import numpy as np
 import subprocess
 import sys
 from pathlib import Path
-
-
-def dataset_json(model_folder: Path) -> Path:
-    for candidate in (model_folder / "dataset.json", *(p / "dataset.json" for p in model_folder.parents)):
-        if candidate.is_file():
-            return candidate
-    raise FileNotFoundError(f"No dataset.json found for {model_folder}")
 
 
 def main() -> None:
@@ -58,19 +53,10 @@ def main() -> None:
         image = nib.load(outputs[0])
         mask = (np.asanyarray(image.dataobj) == args.keep_label).astype(np.uint8)
         nib.save(nib.Nifti1Image(mask, image.affine, image.header), outputs[0])
-        Path(args.labels).write_text(json.dumps({"1": args.keep_name or f"label_{args.keep_label}"}, indent=2) + "\n")
+        Path(args.labels).write_text(json.dumps(kept_label(args.keep_label, args.keep_name), indent=2) + "\n")
         return
 
-    raw = json.loads(dataset_json(model_folder).read_text()).get("labels", {})
-    labels = {}
-    for name, value in raw.items():
-        if str(name).lower() == "background":
-            continue
-        if isinstance(value, list):
-            raise SystemExit(f"Overlapping region label {name!r} requires a dedicated exporter")
-        labels[str(int(value))] = str(name)
-    if not labels:
-        raise SystemExit("dataset.json contains no scalar foreground labels")
+    labels = dataset_labels(json.loads(dataset_json(model_folder).read_text()).get("labels", {}))
     Path(args.labels).write_text(json.dumps(labels, indent=2, sort_keys=True) + "\n")
 
 

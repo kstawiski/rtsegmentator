@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
+from structure_labels import repo_label_path
 from test_backend_defects import catalog_with, expose, submit
 from test_readonly_bundle import mirror_function
 from test_remote_gpu_tasks import job_at
@@ -151,7 +152,7 @@ def test_hd_ctbet_dispatch_writes_training_log_in_job_mirror(tmp_path):
             (job / "external/hd_ctbet_ct/brain_mask.nii.gz").touch()
     namespace = dict(job=job, task="hd_ctbet_ct", output=output, APP_ROOT=ROOT, MODEL_ROOT=bundle,
                      RUNTIME_ROOT=tmp_path / "runtime", os=os, sys=sys, shutil=shutil,
-                     run=run, writable_mirror=mirror_function())
+                     run=run, writable_mirror=mirror_function(), repo_label_path=repo_label_path)
     try:
         exec(compile(ast.Module(body=branch.body, type_ignores=[]), "run_task.py", "exec"), namespace)
         assert len(calls) == 3

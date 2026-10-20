@@ -1,7 +1,7 @@
 """Create label JSON for only integer labels present in a segmentation."""
 import argparse
 import json
-import re
+from structure_labels import lut_labels
 from pathlib import Path
 
 import nibabel as nib
@@ -13,11 +13,7 @@ p.add_argument("lut")
 p.add_argument("output")
 a = p.parse_args()
 
-names = {}
-for line in Path(a.lut).read_text(errors="replace").splitlines():
-    match = re.match(r"^\s*(\d+)\s+([^\s#]+)", line)
-    if match:
-        names[int(match.group(1))] = match.group(2)
+names = {int(k): v for k, v in lut_labels(Path(a.lut), freesurfer=True).items()}
 present = sorted(int(v) for v in np.unique(np.asanyarray(nib.load(a.segmentation).dataobj)) if v)
 missing = [value for value in present if value not in names]
 if missing:

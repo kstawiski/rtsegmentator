@@ -79,13 +79,26 @@ test('point, box and text validation follows each model input contract',()=>{
   assert.match(validate({positive_points:null,text:'spleen'},['segvol_prompted_ct']),/lists/);
 });
 
-test('counts use label maps and runtime lists without counting commas in prose',()=>{
-  const nv=task('nv_segment_ct_auto',{structures:'117 foreground labels; organs and anatomical structures'});
-  assert.match(ui.structureInfo(nv,ui.presentation(nv,metadata)).label,/^117 structures/);
-  const total=task('total',{description:'TotalSegmentator CT segmentation',structures:'liver, spleen, kidney_left'});
-  assert.equal(ui.structureInfo(total,{}).label,'3 structures · details');
-  assert.match(ui.structureInfo(task('unknown',{structures:'Paired organs, vessels and tissue groups'}),{}).label,/count not supplied/);
-  assert.match(ui.structureInfo(task('report',{output:'report'}),{}).label,/Report formats/);
+test('structure labels use only the derived contract for every output kind',()=>{
+  const fixed={structure_kind:'fixed',structure_names:['Liver','Spleen'],structure_count:2};
+  for(const structures of ['999 foreground labels, an invented total',['A','B','C'],'liver, spleen, kidney_left']){
+    const result=ui.structureInfo(task('total',{...fixed,description:'TotalSegmentator CT segmentation',structures}),{count:88,structures:['Wrong']});
+    assert.equal(result.label,'2 structures · details');
+    assert.equal(result.text,'Liver, Spleen');
+    assert.equal(result.note,'Only structures found in the scan are written to the RTSTRUCT.');
+  }
+  assert.equal(ui.structureInfo({...fixed,structure_note:'All detections share one aggregate ROI.'}).extraNote,
+    'All detections share one aggregate ROI.');
+  assert.equal(ui.structureInfo({structure_kind:'variable',structure_names:['Node'],structure_count:null,
+    structure_note:'one ROI per detected node'}).label,'Variable count · one ROI per detected node');
+  const prompted=ui.structureInfo({structure_kind:'prompted',structure_names:['Prompted_Target'],structure_count:null,
+    structure_note:'One selected target.'});
+  assert.equal(prompted.label,'One structure per prompt');
+  assert.equal(prompted.text,'Prompted_Target');
+  assert.match(ui.structureInfo({structure_kind:'report',structures:'JSON, Markdown and HTML; no RTSTRUCT'}).label,/Report formats/);
+  assert.equal(ui.structureInfo({structure_kind:'unresolved',structure_note:'Checkpoint metadata absent.'}).label,
+    'Structure list unavailable: Checkpoint metadata absent.');
+  assert.match(ui.structureInfo({structures:'117 foreground labels'},{count:117}).label,/^Structure list unavailable:/);
 });
 
 test('references permit only explicit web links, never executable URLs',()=>{
@@ -206,8 +219,8 @@ test('counts distinguish zero, one and multiple models and structures',()=>{
     assert.equal(ui.counted(1,noun),`1 ${noun}`);
     assert.equal(ui.counted(2,noun),`2 ${noun}s`);
   }
-  assert.equal(ui.structureInfo(task('one',{structures:['Heart']}),{}).label,'1 structure · details');
-  assert.equal(ui.structureInfo(task('one',{description:'TotalSegmentator task',structures:'Heart'}),{}).label,'1 structure · details');
+  assert.equal(ui.structureInfo(task('one',{structure_kind:'fixed',structure_names:['Heart'],structure_count:1})).label,'1 structure · details');
+  assert.equal(ui.structureInfo(task('one',{structure_kind:'fixed',structure_names:['Heart'],structure_count:1})).label,'1 structure · details');
 });
 
 test('licence badges use explicit catalog flags independently of descriptions',()=>{

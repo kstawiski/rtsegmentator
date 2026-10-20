@@ -223,18 +223,23 @@ function validatePrompt(value, tasks, series) {
   if (box && box[0][2] !== box[1][2] && tasks.some(t => t.name !== 'segvol_prompted_ct')) return 'Both box corners must be on the same slice for these models.';
   return '';
 }
-function structureInfo(task, meta) {
-  if (task.output === 'report') return {label:'Report formats and model details', text:task.structures || 'JSON, Markdown and HTML; no RTSTRUCT'};
-  const structures = task.structures || 'Structure list not supplied by the catalog.';
-  if (Array.isArray(structures)) return {label:`${counted(structures.length,'structure')} · details`, text:structures.join(', ')};
-  // Prefer the runtime label list to a packaged list when TotalSegmentator supplies one.
-  if (String(task.description).startsWith('TotalSegmentator ') && structures !== 'Task-specific TotalSegmentator structures') {
-    const count = structures.split(',').filter(x => x.trim()).length;
-    return {label:`${counted(count,'structure')} · details`, text:structures};
+function structureInfo(task) {
+  const names = task.structure_names || [];
+  const note = task.structure_note || '';
+  const scanNote = 'Only structures found in the scan are written to the RTSTRUCT.';
+  switch (task.structure_kind) {
+    case 'fixed':
+      return {label:`${counted(task.structure_count,'structure')} · details`, text:names.join(', '),
+        note:scanNote, extraNote:note && note!==scanNote ? note : ''};
+    case 'variable':
+      return {label:`Variable count${note ? ' · ' + note : ''}`, text:names.join(', ')};
+    case 'prompted':
+      return {label:'One structure per prompt', text:names.join(', '), note};
+    case 'report':
+      return {label:'Report formats and model details', text:task.structures || 'JSON, Markdown and HTML; no RTSTRUCT'};
+    default:
+      return {label:`Structure list unavailable: ${note || 'Exporter metadata has not been generated.'}`, text:task.structures || ''};
   }
-  if (Number.isInteger(meta.count)) return {label:`${counted(meta.count,'structure')} · details`, text:meta.structures?.join(', ') || structures};
-  const count = structures.match(/^(\d+) (?:foreground labels|organs|major|whole-body|bilateral|head-and-neck|anatomy classes)/);
-  return {label:count ? `${counted(count[1],'structure')} · details` : 'Structures · count not supplied', text:structures};
 }
 function modalityName(m) { return m === 'PT' ? 'PET' : m; }
 function esc(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -474,10 +479,10 @@ if (typeof document !== 'undefined') {
     return `<p class="reason">Unavailable: ${esc(blocked)}</p>`;
   }
   function modelRow(t){
-    const m=meta(t),blocked=reason(t),structures=structureInfo(t,m),reference=safeReference(t.reference);
+    const m=meta(t),blocked=reason(t),structures=structureInfo(t),reference=safeReference(t.reference);
     const applies=selectedSeries().filter(s=>supports(t,s)&&!((t.output==='report'||t.name===reportTask())&&s.cbct));
     const scope=new Set(selectedSeries().map(s=>s.modality)).size>1?[...new Set(applies.map(s=>s.modality))].map(mod=>`${applies.filter(s=>s.modality===mod).length} ${modalityName(mod)} series`).join(' · '):'';
-    return `<article class="model-row ${blocked?'is-unavailable':''}"><input type="checkbox" name="models" value="${esc(t.name)}" aria-label="Select ${esc(m.title)}" ${state.selected.has(t.name)?'checked':''} ${blocked?'disabled':''}><div><label class="model-title" data-toggle-model="${esc(t.name)}">${esc(m.title)}</label><p class="model-purpose">${esc(m.purpose)}</p><div class="badges">${badges(t)}${scope?`<span class="badge">${esc(scope)}</span>`:''}</div>${availabilityNote(t,blocked)}<details class="model-details"><summary>${esc(structures.label)}</summary><div class="detail-body"><p><strong>Output:</strong> <span class="structures">${esc(structures.text)}</span></p><p>${esc(t.description || '')}</p>${t.limitations?`<p><strong>Limitations:</strong> ${esc(t.limitations)}</p>`:''}${t.license||t.license_note?`<p><strong>Licence:</strong> ${esc([t.license,t.license_note].filter(Boolean).join(' · '))}</p>`:''}<p><strong>Task:</strong> <code>${esc(t.name)}</code> · <strong>Catalog status:</strong> ${esc(t.status||'available')}</p>${t.clinical_tags?.length?`<p><strong>Clinical tags:</strong> ${esc(t.clinical_tags.map(x=>x.label).join(', '))}</p>`:''}${reference?`<a href="${esc(reference)}" target="_blank" rel="noopener noreferrer">Model reference (external)</a>`:''}</div></details></div></article>`;
+    return `<article class="model-row ${blocked?'is-unavailable':''}"><input type="checkbox" name="models" value="${esc(t.name)}" aria-label="Select ${esc(m.title)}" ${state.selected.has(t.name)?'checked':''} ${blocked?'disabled':''}><div><label class="model-title" data-toggle-model="${esc(t.name)}">${esc(m.title)}</label><p class="model-purpose">${esc(m.purpose)}</p><div class="badges">${badges(t)}${scope?`<span class="badge">${esc(scope)}</span>`:''}</div>${availabilityNote(t,blocked)}<details class="model-details"><summary>${esc(structures.label)}</summary><div class="detail-body"><p><strong>Output:</strong> <span class="structures">${esc(structures.text)}</span></p>${structures.note?`<p class="structure-note">${esc(structures.note)}</p>`:''}${structures.extraNote?`<p>${esc(structures.extraNote)}</p>`:''}<p>${esc(t.description || '')}</p>${t.limitations?`<p><strong>Limitations:</strong> ${esc(t.limitations)}</p>`:''}${t.license||t.license_note?`<p><strong>Licence:</strong> ${esc([t.license,t.license_note].filter(Boolean).join(' · '))}</p>`:''}<p><strong>Task:</strong> <code>${esc(t.name)}</code> · <strong>Catalog status:</strong> ${esc(t.status||'available')}</p>${t.clinical_tags?.length?`<p><strong>Clinical tags:</strong> ${esc(t.clinical_tags.map(x=>x.label).join(', '))}</p>`:''}${reference?`<a href="${esc(reference)}" target="_blank" rel="noopener noreferrer">Model reference (external)</a>`:''}</div></details></div></article>`;
   }
   function renderCatalog(){
     if(!state.seriesKeys.length)return;
@@ -485,7 +490,7 @@ if (typeof document !== 'undefined') {
     $('modelNote').textContent='Defaults are selected for CT and MR. Review the models for each series before starting.';
     const site=$('clinicalFilter').value,q=$('modelSearch').value.trim().toLowerCase(),show=$('showUnavailable').checked;
     const compatible=state.catalog.filter(t=>selectedSeries().some(s=>supports(t,s))),available=compatible.filter(t=>!reason(t));
-    const visible=compatible.filter(t=>(show||t.enabled!==false)&&(!site||(t.clinical_tags||[]).some(x=>x.id===site))&&(!q||[t.name,meta(t).title,meta(t).purpose,t.description,t.structures,...(t.clinical_tags||[]).map(x=>x.label)].join(' ').toLowerCase().includes(q)));
+    const visible=compatible.filter(t=>(show||t.enabled!==false)&&(!site||(t.clinical_tags||[]).some(x=>x.id===site))&&(!q||[t.name,meta(t).title,meta(t).purpose,t.description,t.structures,...(t.structure_names||[]),...(t.clinical_tags||[]).map(x=>x.label)].join(' ').toLowerCase().includes(q)));
     const closed=new Set([...$('modelGroups').querySelectorAll('details[data-group]:not([open])')].map(el=>el.dataset.group));
     const groups=GROUPS.map(([id,title])=>({id,title,tasks:visible.filter(t=>meta(t).group===id)})).filter(g=>g.tasks.length);
     $('modelResults').textContent=state.catalogReady?`${counted(visible.length,'model')} shown · ${available.length} available for selected series · ${compatible.length-available.length} unavailable`:'';
@@ -548,7 +553,7 @@ if (typeof document !== 'undefined') {
     if(state.seriesKeys.length===1)selectSeries(selectedSeries()[0]);
     const tasks=chosen().sort((a,b)=>Number(a.output==='report')-Number(b.output==='report')),plans=plan();
     const invalid=tasks.filter(t=>reason(t));
-    $('reviewContent').innerHTML=plans.map(p=>`<article class="review-card" data-plan-series="${esc(p.series.key)}"><h3>${esc(p.series.description||'No series description')}</h3><p><span class="pill">${esc(modalityName(p.series.modality))}</span> · ${counted(p.series.slices,'image')}</p><ul>${p.models.map(t=>`<li><strong>${esc(meta(t).title)}</strong><span class="small muted">${t.output==='report'?'AI draft report · JSON, Markdown and HTML':'RTSTRUCT contours'}${isRemote(t)?' · remote GPU':''}${t.requires_ct?' · paired CT included':''}</span><div class="badges">${badges(t)}</div></li>`).join('')}</ul>${p.reason?`<p class="error">${esc(p.reason)}</p>`:''}<button type="button" data-edit-series>Edit series selection</button></article>`).join('');
+    $('reviewContent').innerHTML=plans.map(p=>`<article class="review-card" data-plan-series="${esc(p.series.key)}"><h3>${esc(p.series.description||'No series description')}</h3><p><span class="pill">${esc(modalityName(p.series.modality))}</span> · ${counted(p.series.slices,'image')}</p><ul>${p.models.map(t=>`<li><strong>${esc(meta(t).title)}</strong><span class="small muted">${t.output==='report'?'AI draft report · JSON, Markdown and HTML':`RTSTRUCT contours · ${esc(t.structure_kind==='fixed'?counted(t.structure_count,'structure'):structureInfo(t).label)}`}${isRemote(t)?' · remote GPU':''}${t.requires_ct?' · paired CT included':''}</span><div class="badges">${badges(t)}</div></li>`).join('')}</ul>${p.reason?`<p class="error">${esc(p.reason)}</p>`:''}<button type="button" data-edit-series>Edit series selection</button></article>`).join('');
     $('reviewContent').querySelectorAll('[data-edit-series]').forEach(b=>b.onclick=()=>goStep(1));
     showError($('startError'),invalid.map(t=>`${meta(t).title}: ${reason(t)}`).join(' · '));
     const crop=cropAvailable();$('postprocessPanel').hidden=!crop;if(!crop)$('prostatePostprocess').checked=false;

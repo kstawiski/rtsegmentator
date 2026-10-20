@@ -25,6 +25,19 @@ Other routes:
 - `GET /api/v1/config` (alias `/api/config`) — public configuration, without credentials or storage paths. The response has exactly these fields: `{"retention_hours": 24, "max_upload_bytes": 8589934592, "worker_mode": "local", "remote_gpu_tasks": [], "version": "1.0.0", "report_task": "nv_reason_ct_report"}`. Retention and upload limits are integers reflecting the configured values; mode/version are strings and remote tasks are a sorted list of strings.
 - `GET /api/v1/health` — portal mode, worker reachability, `catalog_built_at` (Unix timestamp of the last successful build, or `null`), `catalog_refreshing` (boolean), and `catalog_error` (`null` or a short failure summary). A refresh error makes health `degraded`; the last good catalog remains available. Errors clear after a successful refresh. The models endpoint returns HTTP `503` if the first build fails.
 - `GET /api/v1/models` — model catalog, modalities, outputs, availability, and curated `clinical_tags` for tumor-site discovery. Tags mean a model may be useful in that planning workflow; they do not imply tumor-segmentation capability or a clinical indication.
+  Each task includes `structure_kind` (`fixed`, `variable`, `prompted`, `report`, or `unresolved`),
+  `structure_names` (exact exported ROI names), and `structure_count` (an integer for `fixed`, null otherwise).
+  `structure_source` and `structure_note` describe the label source and export semantics. `structures` remains
+  the short human-readable output summary. Fixed names follow label-index order after the writer's name
+  normalization; only structures present in a scan are written. Prompted outputs give the target ROI name;
+  variable outputs describe their naming pattern in the note. Disabled tasks with unavailable exporter metadata
+  are `unresolved`. A worker task missing from the generated catalog is disabled as `structure_metadata_unavailable`.
+  The public contract is generated from exporter inputs in `catalog/structures.json`, without loading model weights.
+  Regenerate it with `python scripts/build_structure_catalog.py --bundle-root MODEL_BUNDLE` using the worker's
+  TotalSegmentator installation; add `--totalsegmentator-root PACKAGE_DIR` to select another metadata copy.
+  Use `--check` for a nonzero exit and unified diff on drift. `--resolution-log PRIVATE_LOG.json` writes detailed
+  provenance outside the public repository. This metadata check does not run models or establish clinical readiness.
+
 - `GET /api/v1/jobs` — recent jobs.
 
 ## Viewer

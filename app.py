@@ -80,6 +80,7 @@ BASE.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="DICOM RT Segmentation Portal", version="1.0.0",
               docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json")
+STRUCTURE_CATALOG = json.loads((Path(__file__).resolve().parent / "catalog/structures.json").read_text())
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -148,13 +149,13 @@ EXTERNAL_TASKS = {
     "synthseg_v1_brain": {
         "modality": "MR", "modalities": ["MR", "CT"],
         "description": "SynthSeg 1.0 contrast- and resolution-robust brain segmentation (CPU-isolated legacy runtime)",
-        "structures": "31 bilateral cortical, white-matter, deep-gray, ventricular, cerebellar, hippocampal, amygdala and brainstem labels",
+        "structures": "Bilateral cortical, white-matter, deep-gray, ventricular, cerebellar, hippocampal, amygdala and brainstem labels",
         "reference": "https://github.com/BBillot/SynthSeg",
     },
     "mrsegmentator": {
         "modality": "MR", "modalities": ["MR", "CT"],
         "description": "MRSegmentator v2 broad thoracic, abdominal and pelvic anatomy model",
-        "structures": "40 organs, vessels, bones and muscle groups; validated by upstream for heterogeneous MRI and CT",
+        "structures": "Organs, vessels, bones and muscle groups; validated by upstream for heterogeneous MRI and CT",
         "reference": "https://github.com/hhaentze/MRSegmentator",
     },
     "mrsegmentator_body_comp": {
@@ -330,13 +331,13 @@ for _name, (_model, _structures) in LUNGMASK_TASKS.items():
 EXTERNAL_TASKS["mrisegmentator"] = {
     "modality": "MR",
     "description": "MRISegmentator abdominal and thoracic T1-weighted MRI model",
-    "structures": "62 organs, vessels, muscles, bones and vertebral/rib levels",
+    "structures": "Organs, vessels, muscles, bones and vertebral/rib levels",
     "reference": "https://github.com/rsummers11/MRISegmenter",
 }
 EXTERNAL_TASKS["vibesegmentator"] = {
     "modality": "MR",
     "description": "VIBESegmentator model 100 for broad torso MRI/CT anatomy",
-    "structures": "72 organs, vessels, bones, muscles, body-composition and spine classes",
+    "structures": "Organs, vessels, bones, muscles, body-composition and spine classes",
     "reference": "https://github.com/robert-graf/VIBESegmentator",
 }
 EXTERNAL_TASKS["dentalsegmentator"] = {
@@ -366,7 +367,7 @@ EXTERNAL_TASKS["siam_v3_head_mr_ct"] = {
 EXTERNAL_TASKS["medlsam_structseg_han_oars"] = {
     "modality": "CT",
     "description": "MedLSAM fixed-support StructSeg head-and-neck OAR research pre-contouring; held-out accuracy varied substantially by structure and every contour requires review",
-    "structures": "22 head-and-neck OARs including brainstem, eyes, lenses, optic apparatus, temporal lobes, pituitary, parotids, ears, TMJs, spinal cord and mandible",
+    "structures": "Head-and-neck OARs including brainstem, eyes, lenses, optic apparatus, temporal lobes, pituitary, parotids, ears, TMJs, spinal cord and mandible",
     "reference": "https://github.com/openmedlab/MedLSAM",
     "status": "validated",
     "clinical_tag_ids": ["head_neck_cancer", "brain_metastases", "glioblastoma_glioma"],
@@ -473,7 +474,7 @@ INFORMATIONAL_MODELS = {
     "totalsegmentator2d_projection_ct": {"modality":"CT", "enabled":False,
         "status":"projection_only_no_volumetric_rtstruct",
         "clinical_tag_ids":["lung_cancer","prostate_cancer","bladder_cancer","head_neck_cancer","breast_cancer","liver_cancer","pancreatic_cancer","kidney_cancer","colorectal_cancer","cervical_cancer","lymphoma","spine_tumors","sarcoma_soft_tissue","whole_body_metastatic"],
-        "structures":"117 anatomy classes on a coronal CT intensity projection",
+        "structures":"Anatomy classes on a coronal CT intensity projection",
         "description":"Official TotalSegmentator2D v2 source and all five checkpoint groups (cardiac, muscles, organs, ribs and vertebrae) are installed. Offline composite H100 inference passed on the publisher fixture and produced all 117 segment channels. The result has one voxel across the anterior-posterior axis and encodes projected occupancy, so it cannot be reconstructed into patient-specific 3-D contours or a geometrically valid RTSTRUCT.",
         "reference":"https://github.com/risc-mi/totalsegmentator2D"},
     "brats_toolkit_legacy_ensemble_mr": {"modality":"MR", "enabled":False, "status":"requires_four_registered_preprocessed_mr_series",
@@ -481,7 +482,7 @@ INFORMATIONAL_MODELS = {
         "description":"The official BraTS Toolkit source and its eight downloadable legacy algorithm images are preserved on NFS. Each algorithm expects skull-stripped, co-registered FLAIR, T1, post-contrast T1 and T2 NIfTI volumes in SRI-24 space; the portal currently selects one DICOM series and therefore cannot satisfy or safely reconstruct this input contract.",
         "reference":"https://github.com/BrainLesion/BraTS-Toolkit"},
     "tractseg_dwi_peaks": {"modality":"MR", "enabled":False, "status":"requires_diffusion_peaks_or_dwi_gradients",
-        "structures":"72 white-matter tract bundle masks",
+        "structures":"White-matter tract bundle masks",
         "description":"All nine official TractSeg 2.10 pretrained weight sets and source are installed and the released 9-channel peaks fixture passed all-72-bundle inference. The portal currently selects one scalar 3D DICOM series and cannot safely supply a 4D CSD/bedpostX peaks volume or raw DWI with matched b-values/b-vectors.",
         "reference":"https://github.com/MIC-DKFZ/TractSeg"},
     "sct_tumor_edema_cavity_t1_t2": {"modality":"MR", "enabled":False, "status":"requires_registered_t1_t2_spine_mr",
@@ -573,7 +574,7 @@ INFORMATIONAL_MODELS = {
         "description":"Whole-body lymphatic-region model for total marrow and lymphoid irradiation. Numeric output can be reviewed with the anatomical landmark report and clinician review sheet. Named export requires a confirmed 18-region mapping; the task remains disabled pending review.",
         "reference":"https://zenodo.org/records/7839889"},
     "clnet_235": {"modality":"CT", "enabled":False, "status":"nodal_decoders_unavailable",
-        "structures":"33 reported lymph-node stations; nodal checkpoints absent from the public archive",
+        "structures":"Reported lymph-node stations; nodal checkpoints absent from the public archive",
         "description":"Checked 2026-10-15: Hugging Face revision a18539d2a8473c0eca1b4e6160523b1de12c65f3 still supplies the same 985573570-byte archive. Its seven decoder maps contain no lymph-node labels; Task1007 and Task1008 weights are absent.",
         "reference":"https://github.com/alibaba-damo-academy/clNet"},
     "segrap2023_gtv": {"modality":"CT", "enabled":False, "status":"requires_paired_ct",
@@ -646,7 +647,11 @@ ORIENTATION_VALIDATION = Path(os.environ.get(
 
 def clinical_tags(item: dict) -> list[dict[str, str]]:
     """Return curated disease-site discovery tags; tags describe usefulness, not model indication."""
-    searchable = " ".join(str(item.get(key, "")) for key in ("name", "description", "structures")).lower()
+    fields = [str(item.get(key, "")) for key in ("name", "description", "structures")]
+    if item.get("reference") == "https://github.com/wasserth/TotalSegmentator":
+        # TotalSegmentator formerly supplied the full class list in its prose summary.
+        fields.extend(item.get("structure_names", []))
+    searchable = " ".join(fields).lower()
     explicit = set(item.get("clinical_tag_ids", []))
     return [{"id": tag_id, "label": rule["label"]}
             for tag_id, rule in CLINICAL_TAGS.items()
@@ -1930,7 +1935,7 @@ def apply_model_gates(item, check, enabled):
 def build_catalog():
     # Catalog is sourced from the installed worker package when available.
     enabled = enabled_external_models()
-    code="from totalsegmentator.map_to_binary import class_map,commercial_models; import json, importlib.util; C=__import__('totalsegmentator.map_tasks_config',fromlist=['TASK_CONFIGS']).TASK_CONFIGS if importlib.util.find_spec('totalsegmentator.map_tasks_config') else None; print(json.dumps({'tasks':sorted(t for t in class_map if C is None or t in C),'licensed':list(commercial_models),'structures':{k:list(v.values()) if isinstance(v,dict) else list(v) for k,v in class_map.items()}}))"
+    code="from totalsegmentator.map_to_binary import class_map,commercial_models; import json, importlib.util; C=__import__('totalsegmentator.map_tasks_config',fromlist=['TASK_CONFIGS']).TASK_CONFIGS if importlib.util.find_spec('totalsegmentator.map_tasks_config') else None; print(json.dumps({'tasks':sorted(t for t in class_map if C is None or t in C),'licensed':list(commercial_models)}))"
     try:
         if WORKER_MODE in {"local", "auto"} or (WORKER_MODE == "colab" and COLAB_ORCHESTRATOR == "nfs"):
             cp=subprocess.run([LOCAL_PYTHON,"-c",code],capture_output=True,text=True,timeout=20,check=True)
@@ -1971,12 +1976,11 @@ def build_catalog():
         for name in REMOTE_GPU_TASKS:
             preflight[name] = routed_preflight.get(name, {"ready": False, "missing": ["remote preflight result"],
                                                          "orientation_ready": False, "acceptance_ready": False})
-    structure_map = remote.get("structures",{}) if 'remote' in locals() else {}
     catalog=[{"name":n,"licensed":n in licensed,"modality":task_modality(n),
               "enabled":not (WORKER_MODE == "colab" and n in licensed),
               "status":"license_not_configured_in_colab" if WORKER_MODE == "colab" and n in licensed else "available",
               "description":f"TotalSegmentator {task_modality(n)} segmentation task producing the structures listed below.",
-              "structures":", ".join(structure_map.get(n,[])) or "Task-specific TotalSegmentator structures",
+              "structures":"Task-specific TotalSegmentator structures",
               "reference":"https://github.com/wasserth/TotalSegmentator"} for n in names]
     for name, details in EXTERNAL_TASKS.items():
         item={"name":name,"licensed":False,"enabled":True,**details}
@@ -2007,6 +2011,15 @@ def build_catalog():
                 item.update(enabled=False, status="remote_preflight_missing")
             elif not check.get("ready"):
                 item.update(enabled=False, status="dependencies_missing", missing=check.get("missing", []))
+        contract = STRUCTURE_CATALOG.get(item["name"], {
+            "kind": "unresolved", "names": [], "count": None,
+            "source": "Worker catalog", "note": "This worker task has no generated exporter label contract; rebuild the structure catalog."
+        })
+        item.update(structure_kind=contract["kind"], structure_names=contract["names"],
+                    structure_count=contract["count"], structure_note=contract["note"],
+                    structure_source=contract["source"])
+        if contract["kind"] == "unresolved" and item.get("enabled"):
+            item.update(enabled=False, status="structure_metadata_unavailable")
         item["clinical_tags"] = clinical_tags(item)
     return {"tasks":catalog, "clinical_tags":[{"id": key, "label": value["label"]}
                                                 for key, value in CLINICAL_TAGS.items()]}

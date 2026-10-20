@@ -136,9 +136,7 @@ def test_presentation_metadata_has_no_execution_overrides():
     data = json.loads((STATIC / "ui-catalog.json").read_text())
     assert data["fallback"]
     for name, item in data["overrides"].items():
-        assert set(item) <= {"group", "title", "purpose", "count", "structures"}, name
-        if "structures" in item:
-            assert item["count"] == len(item["structures"]), name
+        assert set(item) <= {"group", "title", "purpose"}, name
 
 
 def test_primary_actions_viewers_results_and_secondary_tools_contract():
