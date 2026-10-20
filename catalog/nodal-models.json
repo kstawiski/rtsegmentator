@@ -4,7 +4,7 @@
     "weights_license": "CC0",
     "description": "HNLNL: 20 elective head-and-neck structures; Level_V_L/R combine Va/Vb/Vc. Ia, VIa, VIb and VIIa are unsided.",
     "limitations": "No separate Va/Vb/Vc, IX or Xa/Xb outputs. Published manual coverage selection and removal of table/immobilisation material are not reproduced by the full-series runner.",
-    "evidence_note": "Published mean per-level Dice 0.76; intraobserver 0.77 (p=0.307), volume-weighted Dice 0.78. The mirror-TTA change requires technical rechecking; earlier serialization Dice 1.0 is not contour accuracy.",
+    "evidence_note": "Published mean volumetric Dice across individual levels was 0.78 in 20 test cases; in the 10-case intraobserver comparison, model Dice was 0.76 versus 0.77 between observers (p=0.307). The mirror-TTA change requires technical rechecking; earlier serialization Dice 1.0 is not contour accuracy.",
     "evidence_sources": [
       "hnlnl-labels.json",
       "EXTERNAL_MODELS.md",
@@ -146,7 +146,7 @@
     "code_license": "Apache-2.0",
     "weights_license": "CC BY 4.0",
     "description": "LNQ mediastinal: pooled node candidates from CT; no elective regions or malignancy classification.",
-    "limitations": "Five-fold inference.",
+    "limitations": "Five-fold inference. The authors describe these as preliminary research models, not for clinical or diagnostic use.",
     "evidence_note": "Inspected registry: 120 training scans; held-out accuracy and protocol mix not documented. Historical nonempty outputs establish execution only. Authors corrected licences on 19 October 2026: code Apache-2.0; all four checkpoints CC BY 4.0. Earlier non-commercial labels in the fixed release archives are stale. Attribution is required; see the cited correction.",
     "evidence_sources": [
       "https://github.com/pieper/lnq-segmenter/commit/fffa35913d9d08234638e482159268fa27322221",
@@ -161,7 +161,7 @@
     "code_license": "Apache-2.0",
     "weights_license": "CC BY 4.0",
     "description": "LNQ abdominopelvic: pooled node candidates from CT; no elective regions or malignancy classification.",
-    "limitations": "Fold-0 inference. All detected nodes share one aggregate ROI.",
+    "limitations": "Fold-0 inference. All detected nodes share one aggregate ROI. The authors describe these as preliminary research models, not for clinical or diagnostic use.",
     "evidence_note": "Inspected registry: 69 training scans; held-out accuracy and protocol mix not documented. Historical nonempty outputs establish execution only. Authors corrected licences on 19 October 2026: code Apache-2.0; all four checkpoints CC BY 4.0. Earlier non-commercial labels in the fixed release archives are stale. Attribution is required; see the cited correction.",
     "evidence_sources": [
       "https://github.com/pieper/lnq-segmenter/commit/fffa35913d9d08234638e482159268fa27322221",
@@ -176,7 +176,7 @@
     "code_license": "Apache-2.0",
     "weights_license": "CC BY 4.0",
     "description": "LNQ inguinal: pooled node candidates from CT; no elective regions or malignancy classification.",
-    "limitations": "Fold-0 inference. All detected nodes share one aggregate ROI.",
+    "limitations": "Fold-0 inference. All detected nodes share one aggregate ROI. The authors describe these as preliminary research models, not for clinical or diagnostic use.",
     "evidence_note": "Inspected registry: 20 training scans; held-out accuracy and protocol mix not documented. Historical nonempty outputs establish execution only. Authors corrected licences on 19 October 2026: code Apache-2.0; all four checkpoints CC BY 4.0. Earlier non-commercial labels in the fixed release archives are stale. Attribution is required; see the cited correction.",
     "evidence_sources": [
       "https://github.com/pieper/lnq-segmenter/commit/fffa35913d9d08234638e482159268fa27322221",
@@ -191,7 +191,7 @@
     "code_license": "Apache-2.0",
     "weights_license": "CC BY 4.0",
     "description": "LNQ axillary: pooled node candidates from CT; no elective regions or malignancy classification.",
-    "limitations": "Fold-0 inference. All detected nodes share one aggregate ROI.",
+    "limitations": "Fold-0 inference. All detected nodes share one aggregate ROI. The authors describe these as preliminary research models, not for clinical or diagnostic use.",
     "evidence_note": "Inspected registry: 20 training scans; held-out accuracy and protocol mix not documented. Historical nonempty outputs establish execution only. Authors corrected licences on 19 October 2026: code Apache-2.0; all four checkpoints CC BY 4.0. Earlier non-commercial labels in the fixed release archives are stale. Attribution is required; see the cited correction.",
     "evidence_sources": [
       "https://github.com/pieper/lnq-segmenter/commit/fffa35913d9d08234638e482159268fa27322221",
