@@ -168,7 +168,7 @@ def test_bundle_resolution_and_check_mode(tmp_path):
     command = [sys.executable, str(ROOT / 'scripts/build_structure_catalog.py'), '--bundle-root', str(bundle), '--check']
     result = subprocess.run(command, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert 'Checked 262 tasks' in result.stdout
+    assert f'Checked {len(CATALOG)} tasks' in result.stdout
     altered = tmp_path / 'structures.json'
     changed = json.loads(json.dumps(catalog))
     changed['total']['names'][0] = 'wrong'

@@ -13,6 +13,7 @@ from pathlib import Path
 import pydicom
 from nv_segment_logic import MODES as NV_SEGMENT_MODES
 import lnctvseg_bundle
+from prostate_models import TASKS as PROSTATE_TASKS, run_task as run_prostate_task
 from structure_labels import spec_labels, repo_label_path, INLINE_LABELS, sct_matched_name
 from monai_bundle import compatible_config, bundle_command
 from task_progress import Progress, command_stage
@@ -199,7 +200,9 @@ try:
         "hippunfold_adni_t1_subfields_mr": "ADNI_T1w_v1",
         "hippunfold_maguire_t2_subfields_mr": "maguire_T2w",
     }
-    if task == "nv_reason_ct_report":
+    if task in PROSTATE_TASKS:
+        run_prostate_task(task, job, APP_ROOT, MODEL_ROOT, RUNTIME_ROOT, sys.executable, run)
+    elif task == "nv_reason_ct_report":
         from model_preflight import nv_reason_python, NV_REASON_REVISION
         env = os.environ.copy()
         cache = Path(os.environ.get("RTSEG_NV_REASON_CT_CACHE", SCRATCH_ROOT / "nv-reason-ct-cache"))

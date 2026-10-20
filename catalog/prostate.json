@@ -1,0 +1,106 @@
+{
+  "picai_nnunet_supervised_bpmri": {
+    "modality": "MR",
+    "description": "PI-CAI supervised baseline checkpoints for clinically significant prostate cancer (ISUP Grade Group \u22652). These are not the final consortium system; the model card lists no performance for these checkpoints. Five folds, T2W/ADC/HBV channels, published voxel crop and dynamic lesion extraction.",
+    "structures": "Up to five csPCa lesion candidates, each with a model likelihood",
+    "reference": "https://github.com/DIAGNijmegen/picai_nnunet_gc_algorithm",
+    "input_roles": [
+      {
+        "role": "t2w",
+        "modality": "MR",
+        "required": true,
+        "label": "Axial T2-weighted"
+      },
+      {
+        "role": "adc",
+        "modality": "MR",
+        "required": true,
+        "label": "ADC map"
+      },
+      {
+        "role": "hbv",
+        "modality": "MR",
+        "required": true,
+        "label": "High b-value DWI (one b-value)"
+      }
+    ],
+    "reference_role": "t2w",
+    "noncommercial": true,
+    "license": "CC BY-NC-SA 4.0",
+    "license_note": "Non-commercial, share-alike weight licence; code Apache-2.0.",
+    "status": "Engineering integration; GPU acceptance pending"
+  },
+  "picai_nnunet_semisupervised_bpmri": {
+    "modality": "MR",
+    "description": "PI-CAI semi-supervised baseline checkpoints for clinically significant prostate cancer (ISUP Grade Group \u22652). These are not the final consortium system; the model card lists no performance for these checkpoints. Five folds, T2W/ADC/HBV channels, published voxel crop and dynamic lesion extraction.",
+    "structures": "Up to five csPCa lesion candidates, each with a model likelihood",
+    "reference": "https://github.com/DIAGNijmegen/picai_nnunet_semi_supervised_gc_algorithm",
+    "input_roles": [
+      {
+        "role": "t2w",
+        "modality": "MR",
+        "required": true,
+        "label": "Axial T2-weighted"
+      },
+      {
+        "role": "adc",
+        "modality": "MR",
+        "required": true,
+        "label": "ADC map"
+      },
+      {
+        "role": "hbv",
+        "modality": "MR",
+        "required": true,
+        "label": "High b-value DWI (one b-value)"
+      }
+    ],
+    "reference_role": "t2w",
+    "noncommercial": true,
+    "license": "CC BY-NC-SA 4.0",
+    "license_note": "Non-commercial, share-alike weight licence; code Apache-2.0.",
+    "status": "Engineering integration; GPU acceptance pending"
+  },
+  "umu_prostate_zones_urethra_t2": {
+    "modality": "MR",
+    "description": "Ume\u00e5 five-fold T2 prostate zone model. Urethra_6mm_model is a constructed 6-mm-diameter structure, not the urethral lumen. Published median centreline distances were 2.8 and 2.9 mm against two raters, compared with 3.6 mm between raters. The study included 40 double-read test cases and 55 external cases. The published circle requires equal in-plane voxel spacing.",
+    "structures": "Peripheral, central, transition and anterior fibromuscular zones; constructed 6-mm urethra",
+    "reference": "https://pubmed.ncbi.nlm.nih.gov/42011184/",
+    "source": "https://github.com/UMU-DDI/prostate-segmentation",
+    "license": "Weight licence not stated",
+    "license_note": "Weight licence not stated by the authors; repository code MIT.",
+    "status": "Engineering integration; GPU acceptance pending"
+  },
+  "prostate158_tumor_bpmri": {
+    "modality": "MR",
+    "description": "Original Prostate158 three-channel tumour UNet. T2W, ADC and DWI are mapped to t2w, adc and hbv roles. The author model description reports tumour Dice 0.453/0.398 against two readers on 19 test cases. Argmax and largest-component postprocessing retain one tumour component; this is not a multifocal detector.",
+    "structures": "Prostate158_Tumour",
+    "reference": "https://prostate158.grand-challenge.org/",
+    "source": "https://github.com/kbressem/prostate158",
+    "weights_reference": "https://zenodo.org/records/7040585",
+    "input_roles": [
+      {
+        "role": "t2w",
+        "modality": "MR",
+        "required": true,
+        "label": "Axial T2-weighted"
+      },
+      {
+        "role": "adc",
+        "modality": "MR",
+        "required": true,
+        "label": "ADC map"
+      },
+      {
+        "role": "hbv",
+        "modality": "MR",
+        "required": true,
+        "label": "High b-value DWI (one b-value)"
+      }
+    ],
+    "reference_role": "t2w",
+    "license": "CC BY 4.0",
+    "license_note": "Weights CC BY 4.0; original source code MIT.",
+    "status": "Engineering integration; GPU acceptance pending"
+  }
+}

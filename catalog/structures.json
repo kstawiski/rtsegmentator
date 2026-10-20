@@ -3776,6 +3776,24 @@
     "source": "Disabled model metadata",
     "note": "No RTSTRUCT exporter label contract is configured; model status: no checkpoint thesis only."
   },
+  "picai_nnunet_semisupervised_bpmri": {
+    "kind": "variable",
+    "names": [
+      "csPCa_L01_p\u2026"
+    ],
+    "count": null,
+    "source": "PI-CAI baseline / RGA 0.2.4 indexed lesion candidates",
+    "note": "Zero to five candidates (maximum 5); names csPCa_L01_p0.73 through csPCa_L05_p\u2026. ROI scores are rounded to two decimals; JSON retains full precision. Empty results are valid."
+  },
+  "picai_nnunet_supervised_bpmri": {
+    "kind": "variable",
+    "names": [
+      "csPCa_L01_p\u2026"
+    ],
+    "count": null,
+    "source": "PI-CAI baseline / RGA 0.2.4 indexed lesion candidates",
+    "note": "Zero to five candidates (maximum 5); names csPCa_L01_p0.73 through csPCa_L05_p\u2026. ROI scores are rounded to two decimals; JSON retains full precision. Empty results are valid."
+  },
   "pleural_pericard_effusion": {
     "kind": "fixed",
     "names": [
@@ -3785,6 +3803,15 @@
     ],
     "count": 3,
     "source": "TotalSegmentator task class map",
+    "note": "Only structures found in the scan are written to the RTSTRUCT."
+  },
+  "prostate158_tumor_bpmri": {
+    "kind": "fixed",
+    "names": [
+      "Prostate158_Tumour"
+    ],
+    "count": 1,
+    "source": "Prostate exporter label map",
     "note": "Only structures found in the scan are written to the RTSTRUCT."
   },
   "pulmonary_artery_landmarks": {
@@ -4802,6 +4829,19 @@
     ],
     "count": 4,
     "source": "TotalSegmentator task class map",
+    "note": "Only structures found in the scan are written to the RTSTRUCT."
+  },
+  "umu_prostate_zones_urethra_t2": {
+    "kind": "fixed",
+    "names": [
+      "Prostate_PZ",
+      "Prostate_CZ",
+      "Prostate_TZ",
+      "Prostate_AFS",
+      "Urethra_6mm_model"
+    ],
+    "count": 5,
+    "source": "Prostate exporter label map",
     "note": "Only structures found in the scan are written to the RTSTRUCT."
   },
   "universal_model_swinunetr_ct": {

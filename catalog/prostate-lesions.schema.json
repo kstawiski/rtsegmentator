@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PI-CAI baseline lesion-candidate result",
+  "type": "object",
+  "required": ["schema_version", "task", "status", "reference_role", "channel_order", "case_likelihood", "lesions", "extraction", "provenance"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "task": {"type": "string", "minLength": 1},
+    "status": {"enum": ["empty", "nonempty"]},
+    "reference_role": {"const": "t2w"},
+    "channel_order": {"const": ["t2w", "adc", "hbv"]},
+    "case_likelihood": {"type": "number", "minimum": 0, "maximum": 1},
+    "lesions": {
+      "type": "array", "maxItems": 5,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["candidate_id", "roi_name", "likelihood", "voxel_count", "volume_mm3", "volume_ml"],
+        "properties": {
+          "candidate_id": {"type": "integer", "minimum": 1, "maximum": 5},
+          "roi_name": {"type": "string", "maxLength": 64, "pattern": "^csPCa_L0[1-5]_p(0\\.[0-9]{2}|1\\.00)$"},
+          "likelihood": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+          "voxel_count": {"type": "integer", "minimum": 11},
+          "volume_mm3": {"type": "number", "exclusiveMinimum": 0},
+          "volume_ml": {"type": "number", "exclusiveMinimum": 0}
+        }
+      }
+    },
+    "extraction": {
+      "type": "object",
+      "required": ["package", "version", "threshold", "num_lesions_to_extract", "crop_pad_shape_zyx", "crop_units"],
+      "properties": {
+        "package": {"const": "report-guided-annotation"}, "version": {"const": "0.2.4"},
+        "threshold": {"const": "dynamic"}, "num_lesions_to_extract": {"const": 5},
+        "crop_pad_shape_zyx": {"const": [20, 384, 384]}, "crop_units": {"const": "voxels"}
+      }
+    },
+    "provenance": {"type": "object"},
+    "artifacts": {"type": "object"}
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {"if": {"properties": {"status": {"const": "empty"}}},
+     "then": {"properties": {"lesions": {"maxItems": 0}, "case_likelihood": {"const": 0}}},
+     "else": {"properties": {"lesions": {"minItems": 1}, "case_likelihood": {"exclusiveMinimum": 0}}}}
+  ]
+}

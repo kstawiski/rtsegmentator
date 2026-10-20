@@ -14,6 +14,7 @@ from run_lnq_atlas import (total_python as lnq_total_python, MODEL_RELATIVE as L
                            ATLAS_FILES as LNQ_ATLAS_FILES, validate_manifest as validate_lnq_manifest)
 from nv_segment_logic import MODES as NV_SEGMENT_MODES, validate_acceptance
 import lnctvseg_bundle
+from prostate_models import TASKS as PROSTATE_TASKS, requirements as prostate_requirements
 
 MODEL_ROOT = Path(os.environ.get("RTSEG_MODEL_ROOT", "/models"))
 RUNTIME_ROOT = Path(os.environ.get("RTSEG_RUNTIME_ROOT", MODEL_ROOT))
@@ -461,6 +462,10 @@ REQUIREMENTS[lnctvseg_bundle.TASK] = [
     "@labels/lnctvseg.json", "envs/nnunet-v1/bin/python",
     *LNCTVSEG_MANIFEST['files'], f"validation/{lnctvseg_bundle.TASK}.json",
 ]
+
+
+for task in PROSTATE_TASKS:
+    REQUIREMENTS[task] = prostate_requirements(task)
 
 
 def audit(tasks=None) -> dict[str, dict]:

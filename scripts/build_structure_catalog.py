@@ -24,6 +24,7 @@ from structure_labels import (INLINE_LABELS, PROMPTED_TASKS, REPO_LABEL_FILES, d
                               repo_label_path, sct_labels, sct_output_name, spec_labels,
                               unique_roi_names)
 from nv_segment_logic import MODES, generate
+from prostate_models import TASKS as PROSTATE_TASKS, model_folder, validate_umu_dataset
 
 INTERNAL_TOTAL = {"test", "total_highres_test", "total_v1", "vertebrae_pp", "vertebrae_pp_refined"}
 
@@ -144,6 +145,21 @@ def fixed(labels, source, note=""):
 
 def resolve(task, details, ns, bundle, maps, map_path, root=ROOT):
     """Return a public contract and private provenance; unavailable metadata raises."""
+    if task in PROSTATE_TASKS:
+        if task.startswith("picai_"):
+            return {"kind": "variable", "names": ["csPCa_L01_p…"], "count": None,
+                    "source": "PI-CAI baseline / RGA 0.2.4 indexed lesion candidates",
+                    "note": "Zero to five candidates (maximum 5); names csPCa_L01_p0.73 through csPCa_L05_p…. "
+                            "ROI scores are rounded to two decimals; JSON retains full precision. Empty results are valid."}, [
+                                str(root / "prostate_postprocess.py") + ": extract_picai / roi_name"]
+        model = PROSTATE_TASKS[task][0]
+        path = root / "labels" / f"{model}.json"
+        provenance = [str(path), "structure_labels.final_roi_names"]
+        if task == "umu_prostate_zones_urethra_t2":
+            metadata = bundle / model_folder(task) / "dataset.json"
+            validate_umu_dataset(json.loads(metadata.read_text()))
+            provenance.append(str(metadata))
+        return fixed(json.loads(path.read_text()), "Prostate exporter label map"), provenance
     if details.get("output") == "report":
         return {"kind": "report", "names": [], "count": None, "source": "Report exporter",
                 "note": "JSON, Markdown and HTML; no RTSTRUCT."}, ["run_task.py: nv_reason_ct_report"]
