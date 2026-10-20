@@ -13,7 +13,7 @@ Every transported job includes `job.json`, including single-series Umeå jobs. T
 
 A series with any rejected image instance is unavailable, including as the reference. Assessment is checked before a manifest is created and again on staged inputs. Automatic ADC selection requires ImageType ADC evidence. Description and protocol matches require an explicit user choice; the role record retains the selection method.
 
-Each role passes through `dicom_series_to_nifti.py`. The adapter undoes that converter's lossless storage permutation before applying the model's preprocessing. ADC values retain DICOM rescale handling; the runner does not infer a change of ADC units. PI-CAI's fixed ADC normalization therefore requires a P3 check of the scanner's stored units. No generic registration is added. Prostate158 rejects inputs whose transformed physical grids do not coincide.
+Each role passes through `dicom_series_to_nifti.py`. The adapter undoes that converter's lossless storage permutation before applying the model's preprocessing. ADC values retain DICOM rescale handling; the runner does not infer a change of ADC units. PI-CAI's fixed ADC normalization therefore requires a P3 check of the scanner's stored units. No generic registration is added. Prostate158 resamples ADC and HBV to the T2 physical grid before its published transforms.
 
 ## PI-CAI baselines
 
@@ -35,7 +35,7 @@ Postprocessing selects background/prostate components, fits probability-weighted
 
 ## Prostate158 tumour
 
-`run_prostate158.py` follows the [original source](https://github.com/kbressem/prostate158/tree/8187638887409c95ba0b091f249a40c0822c89e0): three-channel MONAI UNet, widths 16/32/64/128/256/512, five stride-2 stages, four residual units, PReLU, batch normalization and dropout 0.15. Deterministic transforms are 0.5-mm spacing, RAS orientation, intensity scaling and normalization per channel. Inference uses 96³ windows, batch size 4 and overlap 0.5. Argmax and the largest 26-connected foreground component precede nearest-neighbour restoration to T2. This preserves the release's single-component output.
+`run_prostate158.py` follows the [original source](https://github.com/kbressem/prostate158/tree/8187638887409c95ba0b091f249a40c0822c89e0): three-channel MONAI UNet, widths 16/32/64/128/256/512, five stride-2 stages, four residual units, PReLU, batch normalization and dropout 0.15. The author README states that sequences in each study share orientation, direction and spacing. Before the published transforms, ADC and HBV are resampled onto the T2 grid with SimpleITK, an identity transform, linear interpolation, zero outside the source field of view and float32 output. T2 is unchanged. This reproduces the dataset input convention; it does not estimate registration or correct patient motion. Provenance records the source and output grids, interpolation and transform in `input_grid_resampling`. Deterministic transforms are 0.5-mm spacing, RAS orientation, intensity scaling and normalization per channel. Inference uses 96³ windows, batch size 4 and overlap 0.5. Argmax and the largest 26-connected foreground component precede nearest-neighbour restoration to T2. This preserves the release's single-component output.
 
 The [author model description](https://prostate158.grand-challenge.org/) reports tumour Dice **0.453/0.398** against two readers on **19 test cases**. [Weights and CC BY 4.0 terms](https://zenodo.org/records/7040585).
 

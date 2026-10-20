@@ -369,6 +369,81 @@ def test_commands_require_five_best_checkpoints():
     assert command[command.index('-f') + 1:command.index('-chk')] == ['0', '1', '2', '3', '4']
 
 
+@pytest.mark.parametrize('rotated', [False, True])
+def test_prostate158_resamples_physical_coordinates_before_transforms(tmp_path, monkeypatch, rotated):
+    from types import SimpleNamespace
+    import run_prostate158 as runner
+    reference = sitk.Image([11, 10, 8], sitk.sitkFloat32)
+    reference.SetSpacing((0.5, 0.5, 1))
+    reference.SetOrigin((-3, -2, -1))
+    if rotated:
+        reference.SetDirection((0, -1, 0, 1, 0, 0, 0, 0, 1))
+    paths = {role: tmp_path / f'{role}.nii.gz' for role in models.CHANNEL_ROLES}
+    sitk.WriteImage(reference, str(paths['t2w']))
+    sources = {}
+    for role, spacing in [('adc', (2, 2, 2)), ('hbv', (1, 2, 2))]:
+        source = sitk.Image([3 if role == 'adc' else 6, 6, 5], sitk.sitkInt16)
+        source.SetOrigin((-4, -3, -2))
+        source.SetSpacing(spacing)
+        for z, y, x in np.ndindex(tuple(reversed(source.GetSize()))):
+            px, py, pz = source.TransformIndexToPhysicalPoint((x, y, z))
+            source[x, y, z] = int(100 + px + 3 * py + 5 * pz)
+        if role == 'hbv':
+            source = sitk.Flip(source, [True, False, False])
+        sources[role] = source
+        sitk.WriteImage(source, str(paths[role]))
+    original = {role: path.read_bytes() for role, path in paths.items()}
+    seen = []
+    def published_transforms(aligned):
+        seen.append(aligned)
+        assert aligned['t2w'] == str(paths['t2w'])
+        for role in ('adc', 'hbv'):
+            image = sitk.ReadImage(aligned[role])
+            assert_same_grid(image, reference)
+            assert image.GetPixelID() == sitk.sitkFloat32
+            interior = padding = 0
+            for z, y, x in np.ndindex(tuple(reversed(reference.GetSize()))):
+                point = reference.TransformIndexToPhysicalPoint((x, y, z))
+                index = np.array(sources[role].TransformPhysicalPointToContinuousIndex(point))
+                size = np.array(sources[role].GetSize())
+                if np.all((index >= 0) & (index <= size - 1)):
+                    assert image[x, y, z] == pytest.approx(100 + np.dot((1, 3, 5), point))
+                    interior += 1
+                elif np.any((index < -0.5) | (index >= size - 0.5)):
+                    assert image[x, y, z] == 0
+                    padding += 1
+            assert interior > 0 and padding > 0
+        return {role: SimpleNamespace(shape=(1, 11, 10, 8), affine=np.eye(4)) for role in paths}
+    monkeypatch.setattr(runner, 'preprocessing', lambda: published_transforms)
+    provenance = {}
+    runner.prepare_channels(paths, provenance)
+    assert len(seen) == 1
+    record = provenance['input_grid_resampling']
+    assert record['transform'] == 'identity' and record['registration'] is False
+    assert record['interpolation'] == 'linear' and record['default_value'] == 0
+    assert record['reference_grid']['size_xyz'] == [11, 10, 8]
+    for role in ('adc', 'hbv'):
+        assert record['channels'][role]['output_grid'] == record['reference_grid']
+        assert record['channels'][role]['source_grid'] != record['reference_grid']
+        assert not Path(seen[0][role]).exists()
+    assert original == {role: path.read_bytes() for role, path in paths.items()}
+    assert not list(tmp_path.glob('aligned-*'))
+
+
+def test_prostate158_removes_resampled_intermediates_after_transform_failure(tmp_path, monkeypatch):
+    import run_prostate158 as runner
+    paths = {role: tmp_path / f'{role}.nii.gz' for role in models.CHANNEL_ROLES}
+    for path in paths.values():
+        sitk.WriteImage(sitk.Image([3, 4, 5], sitk.sitkUInt16), str(path))
+    def fail(data):
+        assert all(Path(path).is_file() for path in data.values())
+        raise RuntimeError('synthetic transform failure')
+    monkeypatch.setattr(runner, 'preprocessing', lambda: fail)
+    with pytest.raises(RuntimeError, match='synthetic transform failure'):
+        runner.prepare_channels(paths)
+    assert not list(tmp_path.glob('aligned-*'))
+
+
 def test_dispatch_empty_result_retains_sidecar_and_uses_existing_empty_marker(role_job):
     job, _ = role_job
     task = 'picai_nnunet_supervised_bpmri'

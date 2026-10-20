@@ -6,6 +6,7 @@ import argparse
 from contextlib import nullcontext
 import json
 from pathlib import Path
+import tempfile
 
 import numpy as np
 
@@ -28,14 +29,43 @@ def preprocessing():
                     NormalizeIntensityd(keys), EnsureTyped(keys)])
 
 
-def prepare_channels(paths):
-    """Published independent transforms require physically corresponding grids."""
-    data = preprocessing()({role: str(paths[role]) for role in CHANNEL_ROLES})
+def resample_input_channels(paths, destination):
+    """Reproduce the dataset's common input grid; do not estimate registration."""
+    import SimpleITK as sitk
+
+    def grid(image):
+        return {'size_xyz': list(image.GetSize()), 'spacing_xyz': list(image.GetSpacing()),
+                'origin_xyz': list(image.GetOrigin()), 'direction': list(image.GetDirection())}
+
+    reference = sitk.ReadImage(str(paths['t2w']))
+    aligned = {'t2w': paths['t2w']}
+    record = {'reference_role': 't2w', 'reference_grid': grid(reference),
+              'stage': 'before published MONAI transforms', 'library': 'SimpleITK',
+              'transform': 'identity', 'interpolation': 'linear', 'default_value': 0,
+              'output_pixel_type': 'float32', 'registration': False, 'channels': {}}
+    for role in CHANNEL_ROLES[1:]:
+        source = sitk.ReadImage(str(paths[role]))
+        resampled = sitk.Resample(source, reference, sitk.Transform(3, sitk.sitkIdentity),
+                                 sitk.sitkLinear, 0.0, sitk.sitkFloat32)
+        aligned[role] = Path(destination) / f'{role}.nii.gz'
+        sitk.WriteImage(resampled, str(aligned[role]), True)
+        record['channels'][role] = {'source_grid': grid(source), 'output_grid': grid(resampled)}
+    return aligned, record
+
+
+def prepare_channels(paths, provenance=None):
+    """Match the study grid convention before the published independent transforms."""
+    # Imaging intermediates remain beside the job's native inputs, never in /tmp.
+    with tempfile.TemporaryDirectory(prefix='aligned-', dir=Path(paths['t2w']).parent) as temporary:
+        aligned, record = resample_input_channels(paths, temporary)
+        data = preprocessing()({role: str(aligned[role]) for role in CHANNEL_ROLES})
+    if provenance is not None:
+        provenance['input_grid_resampling'] = record
     reference = data['t2w']
     for role in CHANNEL_ROLES[1:]:
         if (tuple(data[role].shape) != tuple(reference.shape)
                 or not np.allclose(np.asarray(data[role].affine), np.asarray(reference.affine), rtol=0, atol=1e-3)):
-            raise ValueError('Prostate158 requires prealigned T2/ADC/DWI grids after published transforms; no registration is supplied')
+            raise ValueError('Prostate158 channel grids differ after T2-grid resampling and published transforms')
     return data
 
 
@@ -93,7 +123,7 @@ def main():
                                      'policy': 'Author evaluator USE_AMP: torch version >= 1.6',
                                      'aggregation_device': 'input device (cuda)'},
                        'postprocessing': 'argmax then largest foreground component, 26-connectivity; nearest-neighbour restoration'})
-    data = prepare_channels({role: work / 'native' / f'{role}.nii.gz' for role in CHANNEL_ROLES})
+    data = prepare_channels({role: work / 'native' / f'{role}.nii.gz' for role in CHANNEL_ROLES}, provenance)
     image = torch.cat([data[role].as_tensor() for role in CHANNEL_ROLES], dim=0).unsqueeze(0)
     model = UNet(**MODEL_CONFIG).to('cuda').eval()
     checkpoint = torch.load(args.model_root / model_folder(TASK) / 'tumor.pt', map_location='cpu', weights_only=True)
