@@ -87,6 +87,136 @@ def standard_exam(mri, second=False):
     return t2, adc, hbv, t2b, rows
 
 
+@pytest.mark.parametrize('role,name', [('t2w', 'T2 axial'), ('adc', 'Diffusion map'), ('hbv', 'DWI')])
+@pytest.mark.parametrize('slice_index', [0, 1, 2])
+def test_review_h1_rejected_slice_blocks_series_before_manifest(mri, role, name, slice_index):
+    t2, adc, hbv, _, _ = standard_exam(mri)
+    if role == 'hbv':
+        slice_index *= 4  # First, middle and last instance of the mixed-b acquisition.
+    path = mri.root / 'input' / f'{name}-{slice_index}.dcm'
+    ds = pydicom.dcmread(path)
+    ds.NumberOfFrames = 0
+    ds.save_as(path, enforce_file_format=True)
+    rows = mri.assess()
+    response = mri.submit([t2], {t2: {'adc': adc, 'hbv': {'series_key': hbv, 'b_value': 1400}}})
+    assert response.status_code == 400, response.text
+    assert 'assessment' in response.text.lower()
+    assert 'Invalid NumberOfFrames' in response.text
+    assert rows[name]['unavailable_reason']
+    assert not list(mri.portal.BASE.glob('*/job.json'))
+    assert not mri.enqueued
+
+
+@pytest.mark.parametrize('phase', ['before_manifest', 'during_copy'])
+@pytest.mark.parametrize('role,name', [('t2w', 'T2 axial'), ('adc', 'Diffusion map'), ('hbv', 'DWI')])
+@pytest.mark.parametrize('slice_index', [0, 1, 2])
+def test_review_h1_rechecks_sources_and_staged_roles(mri, monkeypatch, phase, role, name, slice_index):
+    t2, _, _, _, _ = standard_exam(mri)
+    if role == 'hbv':
+        slice_index += 6  # First, middle and final slice of the selected b=1400 volume.
+    path = mri.root / 'input' / f'{name}-{slice_index}.dcm'
+    if phase == 'before_manifest':
+        ds = pydicom.dcmread(path)
+        ds.NumberOfFrames = 0
+        ds.save_as(path, enforce_file_format=True)
+    else:
+        # Change a byte without changing size: the existing size manifest cannot detect this.
+        original = mri.portal.shutil.move if role == 't2w' else mri.portal.shutil.copy2
+        def corrupt(source, destination, *args, **kwargs):
+            result = original(source, destination, *args, **kwargs)
+            if source == path:
+                raw = destination.read_bytes()
+                old = b'\x28\x00\x10\x00US\x02\x00\x08\x00'  # Rows = 8
+                assert old in raw
+                destination.write_bytes(raw.replace(old, old[:-2] + b'\x00\x00'))
+            return result
+        monkeypatch.setattr(mri.portal.shutil, 'move' if role == 't2w' else 'copy2', corrupt)
+    try:
+        response = mri.submit([t2])
+        assert response.status_code == 400, response.text
+    except ValueError as exc:
+        assert 'assessment' in str(exc).lower()
+    assert not mri.enqueued
+    assert not list(mri.portal.BASE.glob('*/job.json'))
+
+
+@pytest.mark.parametrize('name,values', [('DWI for ADC calculation', (1400,) * 3),
+                                        ('ADC map', (None,) * 3)])
+@pytest.mark.parametrize('explicit', [False, True])
+def test_review_h2_description_requires_explicit_choice(mri, name, values, explicit):
+    t2 = mri.add('T2 axial')
+    adc = mri.add(name, values)
+    mri.add('High b DWI', (2000,) * 3)
+    mri.assess()
+    response = mri.submit([t2], {t2: {'adc': adc}} if explicit else None)
+    assert response.status_code == (202 if explicit else 400), response.text
+    if explicit:
+        data = mri.portal.metadata(mri.enqueued[0])
+        assert data['input_roles']['adc']['selection_method'] == 'user'
+    else:
+        assert 'ImageType' in response.text
+        assert not list(mri.portal.BASE.glob('*/job.json'))
+
+
+def test_review_h2_image_type_method_is_retained(mri):
+    t2, _, _, _, _ = standard_exam(mri)
+    assert mri.submit([t2]).status_code == 202
+    records = mri.portal.metadata(mri.enqueued[0])['input_roles']
+    assert records['adc']['selection_method'] == 'image_type'
+    assert records['t2w']['selection_method'] == 'user'
+    assert records['hbv']['selection_method'] == 'b_value'
+
+
+@pytest.mark.parametrize('readable_identity', [False, True])
+def test_review_h1_unreadable_instance_cannot_disappear(mri, monkeypatch, readable_identity):
+    t2, adc, _, _, _ = standard_exam(mri)
+    target = mri.root / 'input/Diffusion map-2.dcm'
+    read = mri.portal.pydicom.dcmread
+    def unreadable(path, *args, **kwargs):
+        if path == target and (not readable_identity or not kwargs.get('specific_tags')):
+            raise pydicom.errors.InvalidDicomError('synthetic unreadable metadata')
+        return read(path, *args, **kwargs)
+    monkeypatch.setattr(mri.portal.pydicom, 'dcmread', unreadable)
+    rows = mri.assess()
+    assert rows['Diffusion map']['slices'] == 2
+    assert rows['Diffusion map']['unavailable_reason']
+    assert mri.submit([t2], {t2: {'adc': adc}}).status_code == 400
+    assert not list(mri.portal.BASE.glob('*/job.json'))
+
+
+def test_review_h1_completely_rejected_series_remains_visible(mri):
+    mri.add('Rejected ADC', image_type=['ADC'], NumberOfFrames=0)
+    series = mri.assess()['Rejected ADC']
+    assert series['slices'] == 0 and len(series['assessment_errors']) == 3
+    assert series['unavailable_reason']
+    public = mri.portal.public_assessment({'series': [series]})['series'][0]
+    assert all('file' not in error for error in public['assessment_errors'])
+
+
+@pytest.mark.parametrize('modality', [None, 'OT'])
+def test_review_h1_rejected_modality_remains_attached_to_series_uid(mri, modality):
+    t2, adc, _, _, _ = standard_exam(mri)
+    path = mri.root / 'input/Diffusion map-2.dcm'
+    ds = pydicom.dcmread(path)
+    if modality is None:
+        del ds.Modality
+    else:
+        ds.Modality = modality
+    ds.save_as(path, enforce_file_format=True)
+    mri.assess()
+    response = mri.submit([t2], {t2: {'adc': adc}})
+    assert response.status_code == 400, response.text
+    assert 'assessment' in response.text and 'Modality' in response.text
+    assert not mri.enqueued and not list(mri.portal.BASE.glob('*/job.json'))
+
+
+def test_review_h2_explicit_tagged_adc_override_records_user(mri):
+    t2, adc, hbv, _, _ = standard_exam(mri)
+    assert mri.submit([t2], {t2: {'adc': adc, 'hbv': {'series_key': hbv, 'b_value': 800}}}).status_code == 202
+    records = mri.portal.metadata(mri.enqueued[0])['input_roles']
+    assert records['adc']['selection_method'] == records['hbv']['selection_method'] == 'user'
+
+
 def test_assessment_standard_b_values_adc_geometry_and_public_fields(mri):
     _, _, _, _, rows = standard_exam(mri)
     adc, dwi = rows['Diffusion map'], rows['DWI']

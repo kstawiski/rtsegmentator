@@ -9,7 +9,9 @@ These four integrations use the released inference methods below. GPU inference 
 | `umu_prostate_zones_urethra_t2` | T2W | PZ, CZ, TZ, AFS, constructed 6-mm urethra | Weight licence not stated; repository MIT |
 | `prostate158_tumor_bpmri` | T2W, ADC, DWI (`hbv` role) | Largest tumour component | CC BY 4.0 |
 
-The multi-series tasks require `job.json.input_roles` with `t2w`, `adc` and `hbv`, and a complete `input_manifest`. T2 is in `input/`; ADC and HBV are in `input_adc/` and `input_hbv/`. The runner checks one MR volume per role, matching StudyInstanceUID, selected series identity, slice geometry and recorded HBV b-value. Different frame identifiers are recorded as a warning. The input adapter owns b-value selection and documented vendor-tag decoding. Enhanced MR must first be staged as supported scalar slices.
+Every transported job includes `job.json`, including single-series Umeå jobs. The multi-series tasks require `job.json.input_roles` with `t2w`, `adc` and `hbv`, and a complete `input_manifest`. T2 is in `input/`; ADC and HBV are in `input_adc/` and `input_hbv/`. The runner checks one MR volume per role, matching StudyInstanceUID, selected series identity, slice geometry and recorded HBV b-value. Different frame identifiers are recorded as a warning. The input adapter owns b-value selection and documented vendor-tag decoding. Enhanced MR must first be staged as supported scalar slices.
+
+A series with any rejected image instance is unavailable, including as the reference. Assessment is checked before a manifest is created and again on staged inputs. Automatic ADC selection requires ImageType ADC evidence. Description and protocol matches require an explicit user choice; the role record retains the selection method.
 
 Each role passes through `dicom_series_to_nifti.py`. The adapter undoes that converter's lossless storage permutation before applying the model's preprocessing. ADC values retain DICOM rescale handling; the runner does not infer a change of ADC units. PI-CAI's fixed ADC normalization therefore requires a P3 check of the scanner's stored units. No generic registration is added. Prostate158 rejects inputs whose transformed physical grids do not coincide.
 
@@ -27,7 +29,7 @@ ROI names such as `csPCa_L01_p0.73` contain a rounded likelihood. `<task>_RTSTRU
 
 The [pinned Umeå source](https://github.com/UMU-DDI/prostate-segmentation/tree/eacfe6436635f43b74dadf4d31e8424a856014e5) specifies labels 1=PZ, 2=CZ, 3=TZ, 4=AFS, 5=urethra. `run_umu_prostate.py` checks this mapping against the native Dataset077 export, runs all five `checkpoint_best.pth` folds with nnU-Net v2 2.2, and requests probabilities. It uses the export's NRRD/SimpleITK convention without additional RAS reorientation.
 
-Postprocessing selects background/prostate components, fits probability-weighted quadratic x/y centrelines, draws a 3-mm-radius circle on each slice and clips it to the gland. It retains each zone's largest 18-connected component and fills unassigned gland voxels by physical distance to the remaining zones. The published circle assumes equal in-plane spacing; unequal x/y spacing is rejected. Slice spacing may be anisotropic. Two explicit edge-case guards avoid undefined upstream results: absent zones have infinite fill distance, and a nonempty gland without zone seeds or three nonzero urethra-probability slices raises an error. Empty glands remain empty.
+Postprocessing selects background/prostate components, fits probability-weighted quadratic x/y centrelines, draws a 3-mm-radius circle on each slice and clips it to the gland. It retains each zone's largest 18-connected component and fills unassigned gland voxels by physical distance to the remaining zones. The published circle assumes equal in-plane spacing; unequal x/y spacing is rejected. Slice spacing may be anisotropic. Zone filling calls the unchanged pinned upstream function, including its distance transform for absent zones. A nonempty gland with fewer than three nonzero urethra-probability slices raises an error. Empty glands remain empty.
 
 `Urethra_6mm_model` is a constructed 6-mm-diameter structure, not the lumen. The publication reports median centreline distances of **2.8 and 2.9 mm** against two raters, compared with **3.6 mm** between raters. The study included 40 double-read test cases and 55 external cases. These are published results, not local measurements. [Publication](https://pubmed.ncbi.nlm.nih.gov/42011184/).
 
@@ -37,9 +39,14 @@ Postprocessing selects background/prostate components, fits probability-weighted
 
 The [author model description](https://prostate158.grand-challenge.org/) reports tumour Dice **0.453/0.398** against two readers on **19 test cases**. [Weights and CC BY 4.0 terms](https://zenodo.org/records/7040585).
 
+Inference follows the author's evaluator precision policy: CUDA autocast is enabled
+for Torch ≥1.6, with sliding-window aggregation on the input device. Provenance
+records the policy, autocast state and aggregation device. No local comparison of
+model predictions or GPU memory use has been performed.
+
 ## Bundle installation
 
-Paths below are relative to `RTSEG_MODEL_ROOT`. Runtimes resolve from `RTSEG_RUNTIME_ROOT` when set, otherwise the model root.
+All paths below, including `runtime-envs/`, are relative to `RTSEG_MODEL_ROOT`. These environments are model-bundle assets, as for NV-Segment. `RTSEG_RUNTIME_ROOT` selects the separate worker `envs/` assets for other tasks; it does not relocate prostate environments. Dispatch and preflight use the same model-root paths. The worker runtime image is read-only.
 
 ```text
 weights/picai_supervised/results/nnUNet/3d_fullres/Task2201_picai_baseline/
@@ -73,4 +80,4 @@ The environment lock files and build evidence are delivered with the implementat
 
 Use the author-shipped PI-CAI public example converted to synthetic-identifiable DICOM series, retaining input intensities and physical geometry. Check each role manifest, HBV selector, ADC rescale/units, all five folds, upstream probability/detection results, lesion IDs and full-precision scores, negative results, T2 geometry, and RTSTRUCT SOP/frame references. Run both supported GPUs separately and record device, wheel architecture targets, peak memory and runtime. Use synthetic inputs for Umeå/Prostate158 geometry and preprocessing until an authorised single case is available. No cohort download or accuracy estimate is part of these checks.
 
-The input/transport implementation must retain the `.dcm.lesions.json`, `.dcm.provenance.json` and map artifacts, including on completed empty runs. Their names share the task's RTSTRUCT prefix for task-specific transport. Result packaging and multi-series upload remain owned by the input worker.
+Result downloads retain the `.dcm.lesions.json`, `.dcm.provenance.json` and map artifacts, including on completed empty runs. Their names share the task's RTSTRUCT prefix for task-specific transport. Top-level artifacts use a per-task allowlist; the complete download has a configurable uncompressed size limit (`MAX_RESULT_BYTES`, default 8 GiB).

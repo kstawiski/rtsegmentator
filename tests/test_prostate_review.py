@@ -1,0 +1,305 @@
+"""Review reproductions using synthetic files and mocked inference/transport."""
+import contextlib
+import json
+import os
+from pathlib import Path
+import runpy
+import shutil
+import sys
+import tarfile
+from types import SimpleNamespace
+import zipfile
+
+import numpy as np
+import pytest
+
+import prostate_models
+from prostate_postprocess import fill_umu_zones
+
+
+TASK = 'umu_prostate_zones_urethra_t2'
+SUFFIXES = ('.lesions.json', '.provenance.json', '.probability.nii.gz',
+            '.detection.nii.gz', '.probabilities.npz', '.segmentation.nii.gz')
+
+
+def job_at(portal, models):
+    job = portal.BASE / 'review-job'
+    (job / 'input').mkdir(parents=True)
+    (job / 'output').mkdir()
+    (job / 'input/image.dcm').write_bytes(b'synthetic transport input')
+    (job / 'job.json').write_text(json.dumps({'id': job.name, 'models': models,
+        'status': 'queued', 'input_manifest': portal.job_input_manifest(job)}))
+    return job
+
+
+@pytest.mark.parametrize('mode,routed', [('local', False), ('auto', False),
+                                       ('local', True), ('auto', True), ('ssh', False)])
+@pytest.mark.parametrize('mixed', [False, True, 'positive_first'])
+def test_review_m1_empty_completion_all_backends(portal, monkeypatch, tmp_path, mode, routed, mixed):
+    tasks = [TASK, 'prostate158_tumor_bpmri'] if mixed else [TASK]
+    if mixed == 'positive_first':
+        tasks.reverse()
+    job = job_at(portal, tasks)
+    remote_output = tmp_path / 'remote-output'
+    remote_output.mkdir()
+    events = []
+    monkeypatch.setattr(portal, 'WORKER_MODE', mode)
+    monkeypatch.setattr(portal, 'REMOTE_GPU_TASKS', set(tasks) if routed else set())
+    def inference(job, task, *args):
+        events.append('runner:' + task)
+        root = remote_output if routed or mode == 'ssh' else job / 'output'
+        (root / (task + '_RTSTRUCT.dcm.provenance.json')).write_text('{"status":"empty"}')
+        (root / (task + '_RTSTRUCT.dcm.segmentation.nii.gz')).write_bytes(b'synthetic map')
+        if task == TASK:
+            raise RuntimeError('empty prediction: no RTSTRUCT created')
+        (root / (task + '_RTSTRUCT.dcm')).write_bytes(b'synthetic positive result')
+    def retrieve(job, remote, task=None):
+        events.append('retrieved')
+        for path in remote_output.iterdir():
+            shutil.copy2(path, job / 'output' / path.name)
+    def cleanup(*args, **kwargs):
+        events.append('remote_deleted')
+        for path in remote_output.iterdir():
+            path.unlink()
+    monkeypatch.setattr(portal, 'prepare_worker_job', lambda *a: events.append('staged'))
+    monkeypatch.setattr(portal, 'run_local_task', inference)
+    monkeypatch.setattr(portal, 'run_worker_task', lambda job, remote, task, *a: inference(job, task))
+    monkeypatch.setattr(portal, 'retrieve_worker_results', retrieve)
+    monkeypatch.setattr(portal, 'remove_worker_job', cleanup)
+    portal.process(job)
+    data = portal.metadata(job)
+    assert data['status'] == 'complete', data
+    assert data['no_structures_found'] == [TASK]
+    assert set(data['completed_models']) == set(tasks)
+    with zipfile.ZipFile(job / 'rtstruct-results.zip') as archive:
+        assert 'NO_STRUCTURES_FOUND.txt' in archive.namelist()
+        for task in tasks:
+            assert task + '_RTSTRUCT.dcm.provenance.json' in archive.namelist()
+            assert task + '_RTSTRUCT.dcm.segmentation.nii.gz' in archive.namelist()
+        assert ('prostate158_tumor_bpmri_RTSTRUCT.dcm' in archive.namelist()) is bool(mixed)
+    if routed or mode == 'ssh':
+        assert events.index('retrieved') < events.index('remote_deleted')
+
+
+@pytest.mark.parametrize('mode,routed', [('auto', True), ('ssh', False)])
+def test_review_m1_empty_retrieval_failure_retains_remote(portal, monkeypatch, mode, routed):
+    job = job_at(portal, [TASK])
+    monkeypatch.setattr(portal, 'WORKER_MODE', mode)
+    monkeypatch.setattr(portal, 'REMOTE_GPU_TASKS', {TASK} if routed else set())
+    monkeypatch.setattr(portal, 'prepare_worker_job', lambda *a: None)
+    def empty(*a): raise RuntimeError('empty prediction: no RTSTRUCT created')
+    def fail(*a): raise OSError('retrieval unavailable')
+    monkeypatch.setattr(portal, 'run_worker_task', empty)
+    monkeypatch.setattr(portal, 'retrieve_worker_results', fail)
+    monkeypatch.setattr(portal, 'remove_worker_job', lambda *a: pytest.fail('Unretrieved output deleted'))
+    portal.process(job)
+    data = portal.metadata(job)
+    assert data['status'] == 'failed'
+    assert data['remote_results_retained']
+    assert 'retrieval unavailable' in data['error']
+
+
+def test_review_m2_single_series_remote_payload_reads_runner_metadata(portal, tmp_path):
+    job = job_at(portal, [TASK])
+    (job / 'prompt.json').write_text('{}')
+    archive_path = tmp_path / 'payload.tar'
+    with tarfile.open(archive_path, 'w') as archive:
+        for member in portal.worker_archive_members(job, [TASK]):
+            archive.add(job / member, arcname=member)
+    payload = tmp_path / 'payload'
+    payload.mkdir()
+    with tarfile.open(archive_path) as archive:
+        archive.extractall(payload, filter='data')
+    assert prostate_models.role_directories(payload, multisequence=False) == {'t2w': payload / 'input'}
+    assert json.loads((payload / 'job.json').read_text())['models'] == [TASK]
+    assert (payload / 'prompt.json').is_file()
+
+
+@pytest.mark.parametrize('empty', [False, True])
+def test_review_m3_all_declared_artifacts_are_packaged(portal, empty):
+    tasks = list(prostate_models.TASKS)
+    job = job_at(portal, tasks)
+    expected = set()
+    for task in tasks:
+        suffixes = (('.lesions.json', '.probability.nii.gz', '.detection.nii.gz') if task.startswith('picai_')
+                    else ('.provenance.json', '.segmentation.nii.gz') +
+                         (('.probabilities.npz',) if task == TASK else ()))
+        for suffix in suffixes + (() if empty else ('', '.orientation.json')):
+            name = task + '_RTSTRUCT.dcm' + suffix
+            (job / 'output' / name).write_bytes(b'synthetic artifact')
+            expected.add(name)
+    (job / 'output' / (TASK + '_RTSTRUCT.dcm.undeclared.bin')).write_bytes(b'exclude')
+    (job / 'output/unselected_RTSTRUCT.dcm.provenance.json').write_text('{}')
+    portal.finalize_results(job, tasks if empty else ())
+    with zipfile.ZipFile(job / 'rtstruct-results.zip') as archive:
+        assert set(archive.namelist()) == expected | ({'NO_STRUCTURES_FOUND.txt'} if empty else set())
+
+
+def test_review_m3_download_size_bound(portal, monkeypatch):
+    job = job_at(portal, [TASK])
+    (job / 'output' / (TASK + '_RTSTRUCT.dcm.provenance.json')).write_bytes(b'x' * 32)
+    monkeypatch.setattr(portal, 'MAX_RESULT_BYTES', 16, raising=False)
+    with pytest.raises(ValueError, match='Result artifacts exceed'):
+        portal.finalize_results(job, [TASK])
+    assert not (job / 'rtstruct-results.zip').exists()
+
+
+@pytest.mark.parametrize('seed_labels', [(1,), (1, 2), (2, 4), ()])
+def test_review_m4_absent_zones_match_pinned_upstream(seed_labels):
+    source = os.environ.get('RTSEG_UMU_SOURCE')
+    if not source:
+        pytest.skip('Set RTSEG_UMU_SOURCE to compare the pinned upstream postprocessor')
+    upstream = runpy.run_path(str(Path(source) / 'nnUNet/utils_postprocess_nnUNet.py'))
+    gland = np.ones((9, 9, 3), dtype=bool)
+    labels = np.zeros(gland.shape, np.uint8)
+    for index, label in enumerate(seed_labels):
+        labels[8 - index, 8, 2] = label
+    urethra = np.zeros_like(gland)
+    expected = upstream['fill_empty_voxels'](~gland, *[(labels == k) & gland for k in range(1, 5)],
+                                            urethra, (0.5, 0.5, 3)).argmax(3)
+    actual = fill_umu_zones(gland, labels, urethra, (0.5, 0.5, 3))
+    np.testing.assert_array_equal(actual, expected)
+
+
+def test_review_m4_vendored_source_and_license_are_unchanged():
+    source = os.environ.get('RTSEG_UMU_SOURCE')
+    if not source:
+        pytest.skip('Set RTSEG_UMU_SOURCE to compare the pinned upstream files')
+    source = Path(source)
+    vendor = Path(__file__).resolve().parents[1] / 'third_party/umu_prostate_zones'
+    assert (vendor / 'utils_postprocess_nnUNet.py').read_bytes() == (source / 'nnUNet/utils_postprocess_nnUNet.py').read_bytes()
+    assert (vendor / 'LICENSE').read_bytes() == (source / 'LICENSE').read_bytes()
+
+
+def test_review_l1_prostate158_uses_author_autocast_and_device(monkeypatch):
+    import run_prostate158
+    events = []
+    @contextlib.contextmanager
+    def autocast():
+        events.append('autocast_enter')
+        yield
+        events.append('autocast_exit')
+    fake_torch = SimpleNamespace(no_grad=contextlib.nullcontext,
+                                cuda=SimpleNamespace(amp=SimpleNamespace(autocast=autocast)))
+    def inferer(image, **kwargs):
+        assert events == ['autocast_enter']
+        assert 'device' not in kwargs  # Authors aggregate on the input device.
+        assert kwargs['roi_size'] == (96, 96, 96) and kwargs['sw_batch_size'] == 4
+        assert kwargs['overlap'] == 0.5
+        return 'logits'
+    assert run_prostate158.predict_logits('image', 'model', amp=True,
+        torch_module=fake_torch, inferer=inferer) == 'logits'
+    assert events == ['autocast_enter', 'autocast_exit']
+    events.clear()
+    def full_precision(image, **kwargs):
+        assert events == []
+        return 'legacy logits'
+    assert run_prostate158.predict_logits('image', 'model', amp=False,
+        torch_module=fake_torch, inferer=full_precision) == 'legacy logits'
+
+
+def test_review_l1_main_enters_autocast_before_mocked_inference(tmp_path, monkeypatch):
+    """Exercise the real entry point; no network, checkpoint or GPU is used."""
+    import run_prostate158 as runner
+    if os.environ.get('RTSEG_PROSTATE158_TEST_SOURCE'):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('baseline_prostate158',
+                                                       os.environ['RTSEG_PROSTATE158_TEST_SOURCE'])
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+    active = []
+    @contextlib.contextmanager
+    def autocast():
+        active.append(True)
+        yield
+        active.pop()
+    class Tensor:
+        affine = np.eye(4)
+        def as_tensor(self): return self
+        def unsqueeze(self, *a): return self
+        def to(self, *a): return self
+        def cpu(self): return self
+        def argmax(self, *a): return self
+        def __getitem__(self, key): return self
+        def numpy(self): return np.zeros((3, 3, 3), np.uint8)
+    class Model:
+        def to(self, *a): return self
+        def eval(self): return self
+        def load_state_dict(self, *a, **k): pass
+    tensor = Tensor()
+    calls = []
+    def inferer(image, **kwargs):
+        calls.append(kwargs)
+        assert active, 'Author evaluator autocast is missing'
+        assert 'device' not in kwargs, 'Author evaluator aggregates on the input device'
+        return tensor
+    fake_torch = SimpleNamespace(cat=lambda *a, **k: tensor, load=lambda *a, **k: {},
+        inference_mode=contextlib.nullcontext, no_grad=contextlib.nullcontext,
+        cuda=SimpleNamespace(amp=SimpleNamespace(autocast=autocast)))
+    modules = {
+        'torch': fake_torch,
+        'monai.networks.nets': SimpleNamespace(UNet=lambda **k: Model()),
+        'monai.inferers': SimpleNamespace(sliding_window_inference=inferer),
+        'monai.transforms': SimpleNamespace(KeepLargestConnectedComponent=lambda **k: lambda x: x),
+        'monai.utils': SimpleNamespace(get_torch_version_tuple=lambda: (2, 5)),
+        'SimpleITK': SimpleNamespace(WriteImage=lambda *a: None,
+                                    GetArrayViewFromImage=lambda *a: np.zeros((3, 3, 3))),
+    }
+    for name, module in modules.items():
+        monkeypatch.setitem(sys.modules, name, module)
+    monkeypatch.setattr(runner, 'prepare_channels', lambda *a: dict.fromkeys(('t2w', 'adc', 'hbv'), tensor))
+    monkeypatch.setattr(runner, 'runtime_provenance', lambda *a: {})
+    monkeypatch.setattr(runner, 'restore_segmentation', lambda *a: 'restored')
+    work = tmp_path / 'work'
+    work.mkdir()
+    (work / 'context.json').write_text('{}')
+    output = tmp_path / 'result.dcm'
+    monkeypatch.setattr(sys, 'argv', ['run_prostate158.py', '--task', runner.TASK,
+        '--work', str(work), '--model-root', str(tmp_path / 'unused-models'), '--output', str(output)])
+    runner.main()
+    assert len(calls) == 1
+    precision = json.loads(Path(str(output) + '.provenance.json').read_text())['precision']
+    assert precision['autocast_enabled'] and precision['aggregation_device'] == 'input device (cuda)'
+
+
+@pytest.mark.parametrize('task', list(prostate_models.TASKS))
+def test_review_m5_environments_belong_to_model_root(tmp_path, monkeypatch, task):
+    import inspect
+    import model_preflight
+    root = Path(__file__).resolve().parents[1]
+    model_root, runtime_root = tmp_path / 'models', tmp_path / 'runtime'
+    environment = prostate_models.TASKS[task][1]
+    relative = f'runtime-envs/{environment}/bin/python'
+    interpreter = model_root / relative
+    interpreter.parent.mkdir(parents=True)
+    interpreter.write_text('synthetic interpreter; never executed')
+    runtime_root.mkdir()
+    monkeypatch.setattr(model_preflight, 'MODEL_ROOT', model_root)
+    monkeypatch.setattr(model_preflight, 'RUNTIME_ROOT', runtime_root)
+    monkeypatch.setattr(model_preflight, 'COMMON', [])
+    monkeypatch.setattr(model_preflight, 'REQUIREMENTS', {task: [relative]})
+    assert model_preflight.audit([task])[task]['ready']
+    job = tmp_path / 'job'
+    job.mkdir()
+    (job / 'job.json').write_text('{}')
+    monkeypatch.setattr(prostate_models, 'role_directories', lambda *a, **k: {})
+    monkeypatch.setattr(prostate_models, 'validate_dicom_roles', lambda *a: [])
+    calls = []
+    def run(command):
+        calls.append(command)
+        work = Path(command[command.index('--work') + 1])
+        (work / 'result.json').write_text('{"empty": true}')
+    # Accept either signature while reproducing the misleading contract before the fix.
+    args = [task, job, root, model_root]
+    if 'runtime_root' in inspect.signature(prostate_models.run_task).parameters:
+        args.append(runtime_root)
+    with pytest.raises(SystemExit, match='empty prediction'):
+        prostate_models.run_task(*args, 'worker-python', run)
+    assert calls[0][0] == str(interpreter)
+    assert 'runtime_root' not in inspect.signature(prostate_models.run_task).parameters
+    assert 'Runtimes resolve from `RTSEG_RUNTIME_ROOT`' not in (root / 'docs/PROSTATE_MODELS.md').read_text()
+    interpreter.unlink()
+    other = runtime_root / relative
+    other.parent.mkdir(parents=True)
+    other.write_text('wrong root; never executed')
+    assert relative in model_preflight.audit([task])[task]['missing']

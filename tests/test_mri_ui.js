@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {roleCandidates,reviewedRole,roleOptionLabel,seriesPlan}=require('../static/app.js');
+const {roleCandidates,reviewedRole,roleOptionLabel,seriesPlan,roleChoicesForSubmit}=require('../static/app.js');
 const roles=[{role:'t2w',modality:'MR',label:'T2W',required:true},{role:'adc',modality:'MR',label:'ADC map',required:true},{role:'hbv',modality:'MR',label:'High b-value DWI',required:true}];
 const primary={key:'t2',modality:'MR',study_uid:'study',frame_uid:'frame',description:'T2 axial',rows:8,columns:8,slices:3};
 const adc={...primary,key:'adc',description:'ADC map',is_adc:true};
@@ -66,4 +66,37 @@ test('single-series planning remains independent of companion metadata',()=>{
   assert.deepEqual(plan.models,[single]);
   assert.equal(plan.reason,'');
   assert.deepEqual(plan.skipped,[]);
+});
+
+for (const description of ['DWI for ADC calculation','ADC map']) {
+  test(`description-only ${description} requires a user choice`,()=>{
+    const named={...adc,is_adc:false,description};
+    const rows=[primary,named,dwi];
+    const review=reviewedRole(primary,rows,roles[1]);
+    assert.equal(review.choice,null);
+    assert.match(review.reason,/ImageType/);
+    assert.equal(review.options[0].series.key,'adc');
+    const explicit=reviewedRole(primary,rows,roles[1],{adc:'adc'});
+    assert.deepEqual(explicit.choice,{series_key:'adc'});
+    assert.equal(explicit.reason,'');
+    const [plan]=seriesPlan([primary],new Set([multi.name]),[multi],rows);
+    assert.equal(plan.models.length,0);
+  });
+}
+
+test('assessment failure blocks reference and companion selection with a reason',()=>{
+  const bad={...adc,unavailable_reason:'Series assessment rejected one instance'};
+  assert.equal(reviewedRole(primary,[primary,bad,dwi],roles[1],{adc:'adc'}).choice,null);
+  assert.match(reviewedRole(primary,[primary,bad,dwi],roles[1],{adc:'adc'}).reason,/assessment/);
+  const [plan]=seriesPlan([{...primary,unavailable_reason:bad.unavailable_reason}],
+    new Set([multi.name]),[multi],[primary,adc,dwi]);
+  assert.equal(plan.models.length,0);
+  assert.match(plan.reason,/assessment/);
+});
+
+
+test('submitting suggested roles preserves automatic versus user selection',()=>{
+  assert.deepEqual(roleChoicesForSubmit(roles,{}),{});
+  assert.deepEqual(roleChoicesForSubmit(roles,{adc:{series_key:'adc'}}),{adc:{series_key:'adc'}});
+  assert.deepEqual(roleChoicesForSubmit(roles,{adc:null}),{adc:null});
 });

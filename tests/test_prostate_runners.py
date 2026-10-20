@@ -244,16 +244,17 @@ def test_umu_urethra_radius_with_anisotropic_slice_spacing():
         umu_postprocess(probabilities, (0.5, 0.8, 3))
 
 
-def test_umu_nearest_zone_uses_physical_distance_and_no_missing_zone_seed():
+def test_umu_nearest_zone_uses_physical_distance():
     gland = np.ones((9, 9, 3), bool)
     labels = np.zeros(gland.shape, np.uint8)
     labels[1, 4, 1] = 1  # Three x voxels (6 mm).
     labels[4, 0, 1] = 2  # Four y voxels (4 mm).
     result = fill_umu_zones(gland, labels, np.zeros_like(gland), (2, 1, 3))
     assert result[4, 4, 1] == 2
-    assert set(np.unique(result)) == {1, 2}
-    with pytest.raises(ValueError, match='no zone seed'):
-        fill_umu_zones(gland, labels * 0, np.zeros_like(gland), (2, 1, 3))
+    # The published empty-zone distance transform can assign the absent TZ.
+    assert set(np.unique(result)) == {1, 2, 3}
+    # Upstream assigns ties to PZ even when every zone is absent.
+    assert np.all(fill_umu_zones(gland, labels * 0, np.zeros_like(gland), (2, 1, 3)) == 1)
 
 
 def test_umu_clips_urethra_and_handles_empty_prostate():
@@ -384,7 +385,7 @@ def test_dispatch_empty_result_retains_sidecar_and_uses_existing_empty_marker(ro
             (work / 'result.json').write_text('{"empty": true}')
             Path(str(output) + '.lesions.json').write_text('{"status":"empty","lesions":[]}')
     with pytest.raises(SystemExit, match='empty prediction: no RTSTRUCT created'):
-        models.run_task(task, job, ROOT, Path('/models'), Path('/runtime'), sys.executable, run)
+        models.run_task(task, job, ROOT, Path('/models'), sys.executable, run)
     assert [Path(c[2]).name for c in calls[:3]] == ['input', 'input_adc', 'input_hbv']
     assert not output.exists()
     assert Path(str(output) + '.lesions.json').is_file()
@@ -425,7 +426,7 @@ def test_dispatch_positive_synthetic_result_uses_reference_dicom(role_job, task)
                 (work / 'masks.json').write_text(json.dumps({'csPCa_L01_p0.73': str(prediction)}))
         else:
             subprocess.run(command, check=True)
-    models.run_task(task, job, ROOT, Path('/models'), Path('/runtime'), sys.executable, run)
+    models.run_task(task, job, ROOT, Path('/models'), sys.executable, run)
     output = job / 'output' / f'{task}_RTSTRUCT.dcm'
     assert output.is_file()
     ds = pydicom.dcmread(output)

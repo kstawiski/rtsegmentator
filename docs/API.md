@@ -165,10 +165,15 @@ the review UI warns about this and `input_roles` records both identifiers and
 Unknown primary/companion keys, undeclared roles, wrong modality/study or invalid
 b-value selectors return HTTP 400 before any job is created.
 
-An omitted role uses a suggestion only when the highest rank is unique. ADC
-ImageType evidence ranks above ADC/apparent-diffusion description or protocol text.
+An omitted role uses a suggestion only when the highest rank is unique. Automatic
+ADC selection requires ADC evidence in ImageType. ADC/apparent-diffusion description
+or protocol matches remain candidates but require an explicit choice.
 An explicit ADC choice can select another same-study MR series. HBV candidates
 require a documented b-value of at least 800 s/mm²; the highest b-value ranks first.
+Each `input_roles` record includes `selection_method`: `image_type` for automatic
+ADC, `b_value` for automatic HBV, or `user` for explicit choices and the selected
+reference. The UI submits only choices the user changed; displaying a suggestion
+does not convert it to a user choice.
 A `null` role explicitly leaves that role unselected. Missing or tied required
 roles skip only models requiring them, with reasons in `jobs[].skipped_models`
 and `job.json`. If a primary has no runnable models, the whole batch returns 400
@@ -188,6 +193,11 @@ be selected as HBV: frame extraction is not implemented. Separate single-b Enhan
 MR instances are supported. Known repeated slice positions and inconsistent volume
 geometry are rejected; no frame rewriting, resampling or ADC intensity conversion
 occurs during staging.
+Any rejected or unreadable instance makes its series unavailable for every role,
+including the reference. `assessment_errors` and `unavailable_reason` explain the
+block. An unreadable DICOM whose series cannot be recovered blocks MR selection
+for that upload. Sources are reassessed before manifest creation and staged MRI
+is reassessed before queueing.
 
 Jobs store the reference in `input/`, companions in `input_<role>/`, and the chosen
 series and b-value/source in `input_roles`. For mixed-b series, only whole instances
@@ -195,8 +205,10 @@ matching the selected b-value are copied to `input_hbv/`. Shared companions are
 copied before primary files are moved. `input_manifest` covers every role directory;
 `input_identity` binds that manifest to the role selections. Partial directories or
 changed selectors prevent dispatch, recovery and retry. Retry keeps the original
-choices. SSH transport carries the role directories and job record. Result packages
-retain `<task>_RTSTRUCT.dcm.lesions.json` sidecars. Companions are removed after
+choices. SSH transport carries the role directories and job record, including for
+single-series jobs. Result packages retain declared prostate lesion/provenance JSON
+and spatial maps on positive and empty results. `MAX_RESULT_BYTES` bounds total
+uncompressed result files (default 8 GiB). Companions are removed after
 successful result packaging; reference images remain for the existing viewer until
 deletion or retention expiry.
 

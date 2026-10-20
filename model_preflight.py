@@ -482,6 +482,9 @@ def audit(tasks=None) -> dict[str, dict]:
                 path = APP_ROOT / requirement[1:]
             elif requirement.startswith("envs/"):
                 path = RUNTIME_ROOT / requirement
+            elif requirement.startswith("runtime-envs/"):
+                # Bundle-owned environments (NV-Segment and prostate models).
+                path = MODEL_ROOT / requirement
             else:
                 path = MODEL_ROOT / requirement
             if not path.exists():

@@ -201,7 +201,7 @@ try:
         "hippunfold_maguire_t2_subfields_mr": "maguire_T2w",
     }
     if task in PROSTATE_TASKS:
-        run_prostate_task(task, job, APP_ROOT, MODEL_ROOT, RUNTIME_ROOT, sys.executable, run)
+        run_prostate_task(task, job, APP_ROOT, MODEL_ROOT, sys.executable, run)
     elif task == "nv_reason_ct_report":
         from model_preflight import nv_reason_python, NV_REASON_REVISION
         env = os.environ.copy()

@@ -79,24 +79,10 @@ def largest_component(mask, connectivity=3):
 
 
 def fill_umu_zones(prostate, labels, urethra, spacing_xyz):
-    zones = [largest_component((labels == label) & prostate, connectivity=2) & ~urethra
-             for label in range(1, 5)]
-    holes = prostate & ~urethra & ~np.any(zones, axis=0)
-    if holes.any():
-        if not any(zone.any() for zone in zones):
-            raise ValueError('Umeå postprocessing has no zone seed to fill the prostate')
-        # The upstream EDT on an empty zone measures the array boundary. Exclude
-        # absent seeds, so missing zones cannot acquire invented components.
-        distances = np.stack([ndimage.distance_transform_edt(~zone, sampling=spacing_xyz)
-                              if zone.any() else np.full(zone.shape, np.inf) for zone in zones])
-        nearest = distances.argmin(axis=0)
-        for index, zone in enumerate(zones):
-            zone[holes & (nearest == index)] = True
-    result = np.zeros(labels.shape, dtype=np.uint8)
-    for label, zone in enumerate(zones, 1):
-        result[zone] = label
-    result[urethra] = 5
-    return result
+    """Call the unchanged MIT-licensed, pinned Umeå zone postprocessor."""
+    from third_party.umu_prostate_zones.utils_postprocess_nnUNet import fill_empty_voxels
+    return fill_empty_voxels(~prostate, *[(labels == label) & prostate for label in range(1, 5)],
+                             urethra, spacing_xyz).argmax(axis=3).astype(np.uint8)
 
 
 def umu_postprocess(probabilities_czyx, spacing_xyz):

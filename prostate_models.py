@@ -25,6 +25,17 @@ SOURCE_COMMITS = {
 UMU_LABELS = {'background': 0, 'PZ': 1, 'CZ': 2, 'TZ': 3, 'AFS': 4, 'Urethra': 5}
 
 
+def artifact_names(task):
+    """Finite, task-owned download allowlist; inference work files are excluded."""
+    if task not in TASKS:
+        return []
+    suffixes = ('.lesions.json', '.probability.nii.gz', '.detection.nii.gz') if task.startswith('picai_') else (
+        '.provenance.json', '.segmentation.nii.gz')
+    if task == 'umu_prostate_zones_urethra_t2':
+        suffixes += ('.probabilities.npz',)
+    return [f'{task}_RTSTRUCT.dcm{suffix}' for suffix in suffixes]
+
+
 def model_folder(task):
     model, _, _ = TASKS[task]
     if model.startswith('picai_'):
@@ -59,7 +70,9 @@ def requirements(task):
     else:
         files += [f'@labels/{model}.json']
         if model == 'umu_prostate_zones':
-            files += [f'runtime-envs/{env}/bin/nnUNetv2_predict_from_modelfolder']
+            files += [f'runtime-envs/{env}/bin/nnUNetv2_predict_from_modelfolder',
+                      '@third_party/umu_prostate_zones/utils_postprocess_nnUNet.py',
+                      '@third_party/umu_prostate_zones/LICENSE']
     return files
 
 
@@ -200,8 +213,8 @@ def runtime_provenance(task, root):
     return {'task': task, 'source_commit': SOURCE_COMMITS[model], 'packages': packages, 'weights': weights}
 
 
-def run_task(task, job, app_root, model_root, runtime_root, worker_python, run):
-    """Called by the dispatcher; all writes stay in the job workspace/results."""
+def run_task(task, job, app_root, model_root, worker_python, run):
+    """Use model-root runtime-envs assets; write only to the job workspace/results."""
     model, environment, script = TASKS[task]
     job = Path(job).absolute()
     work = job / 'external' / task

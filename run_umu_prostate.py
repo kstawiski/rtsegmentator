@@ -42,7 +42,8 @@ def main():
                        'urethra_radius_mm': 3.0, 'urethra_is_lumen': False,
                        'postprocessing': 'Probability-weighted quadratic centreline, 18-connected zone components, nearest-zone fill',
                        'inplane_spacing': 'Equal x/y spacing required by published circle construction',
-                       'empty_zone_distance': 'infinity; no boundary-derived seed for absent zones'})
+                       'empty_zone_distance': 'Published SciPy distance transform, including absent zones',
+                       'zone_postprocessor': 'Unchanged fill_empty_voxels from pinned MIT source'})
     reference = sitk.ReadImage(str(work / 'native/t2w.nii.gz'))
     if not np.isclose(*reference.GetSpacing()[:2], rtol=1e-5, atol=1e-6):
         raise ValueError('Published Umeå urethra construction requires equal in-plane spacing')

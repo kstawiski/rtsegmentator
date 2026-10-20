@@ -26,6 +26,20 @@ def batch(portal, monkeypatch):
     monkeypatch.setattr(portal, 'tasks', lambda: {'tasks': catalog})
     enqueued = []
     monkeypatch.setattr(portal, 'enqueue_jobs', lambda jobs, **kwargs: enqueued.extend(jobs))
+    # These planning/rollback cases use text placeholders. Model their assessment
+    # explicitly now that creation reassesses sources and staged MR directories.
+    # Real synthetic DICOM tests still use the production reader.
+    synthetic_rows = {}
+    inspect_upload = portal.inspect_upload
+    def inspect(directory):
+        files = list(directory.iterdir())
+        if files and all(p.name in synthetic_rows and p.read_bytes().startswith(b'SYNTHETIC ') for p in files):
+            rows = {synthetic_rows[p.name]['key']: synthetic_rows[p.name] for p in files}
+            present = {p.name for p in files}
+            return {'series': [{**row, 'files': [name for name in row['files'] if name in present]}
+                               for row in rows.values()], 'ignored': 0}
+        return inspect_upload(directory)
+    monkeypatch.setattr(portal, 'inspect_upload', inspect)
     def stage(rows):
         uid = 'upload-synthetic'
         root = portal.BASE / uid
@@ -33,6 +47,7 @@ def batch(portal, monkeypatch):
         for row in rows:
             for name in row['files']:
                 (root / 'input' / name).write_bytes(('SYNTHETIC '+name).encode())
+                synthetic_rows[name] = row
         (root / 'upload.json').write_text(json.dumps({'series': rows}))
         return uid
     client = TestClient(portal.app)

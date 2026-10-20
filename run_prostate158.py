@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
 import json
 from pathlib import Path
 
@@ -54,6 +55,18 @@ def restore_segmentation(labels_xyz, transformed_affine, reference_path, destina
         native.unlink(missing_ok=True)
 
 
+def predict_logits(image, model, *, amp, torch_module=None, inferer=None):
+    """Match the author's evaluator: no gradients, CUDA autocast, input-device aggregation."""
+    if torch_module is None:
+        import torch as torch_module
+    if inferer is None:
+        from monai.inferers import sliding_window_inference as inferer
+    with torch_module.no_grad():
+        with torch_module.cuda.amp.autocast() if amp else nullcontext():
+            return inferer(image, roi_size=(96, 96, 96), sw_batch_size=4,
+                           predictor=model, overlap=0.5, mode='constant')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--task', required=True, choices=[TASK])
@@ -64,8 +77,10 @@ def main():
     import torch
     import SimpleITK as sitk
     from monai.networks.nets import UNet
-    from monai.inferers import sliding_window_inference
     from monai.transforms import KeepLargestConnectedComponent
+    from monai.utils import get_torch_version_tuple
+    # Pinned prostate158/utils.py USE_AMP and train.py SupervisedEvaluator.
+    amp = get_torch_version_tuple() >= (1, 6)
     work, output = args.work, args.output
     provenance = runtime_provenance(TASK, args.model_root)
     provenance.update(json.loads((work / 'context.json').read_text()))
@@ -73,6 +88,10 @@ def main():
                        'channel_mapping': {'t2w': 'T2W', 'adc': 'ADC', 'hbv': 'DWI'},
                        'spacing_mm': [0.5, 0.5, 0.5], 'orientation': 'RAS',
                        'sliding_window': {'roi_size': [96, 96, 96], 'batch_size': 4, 'overlap': 0.5, 'mode': 'constant'},
+                       'precision': {'autocast_enabled': amp, 'device_type': 'cuda',
+                                     'autocast_dtype': 'float16' if amp else None,
+                                     'policy': 'Author evaluator USE_AMP: torch version >= 1.6',
+                                     'aggregation_device': 'input device (cuda)'},
                        'postprocessing': 'argmax then largest foreground component, 26-connectivity; nearest-neighbour restoration'})
     data = prepare_channels({role: work / 'native' / f'{role}.nii.gz' for role in CHANNEL_ROLES})
     image = torch.cat([data[role].as_tensor() for role in CHANNEL_ROLES], dim=0).unsqueeze(0)
@@ -80,10 +99,8 @@ def main():
     checkpoint = torch.load(args.model_root / model_folder(TASK) / 'tumor.pt', map_location='cpu', weights_only=True)
     # The author saves the plain state_dict; do not silently accept other releases.
     model.load_state_dict(checkpoint, strict=True)
-    with torch.inference_mode():
-        logits = sliding_window_inference(image.to('cuda'), roi_size=(96, 96, 96), sw_batch_size=4,
-                                          predictor=model, overlap=0.5, mode='constant', device='cpu')
-    labels = KeepLargestConnectedComponent(applied_labels=[1])(logits.argmax(1))[0].numpy()
+    logits = predict_logits(image.to('cuda'), model, amp=amp)
+    labels = KeepLargestConnectedComponent(applied_labels=[1])(logits.argmax(1))[0].cpu().numpy()
     restored = restore_segmentation(labels, data['t2w'].affine, work / 'native/t2w.nii.gz', work / 'restored.nii.gz')
     sitk.WriteImage(restored, str(output) + '.segmentation.nii.gz', True)
     provenance['status'] = 'nonempty' if sitk.GetArrayViewFromImage(restored).any() else 'empty'

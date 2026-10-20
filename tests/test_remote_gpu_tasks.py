@@ -54,8 +54,8 @@ def test_transfer_and_task_scoped_retrieval_cleanup(portal, monkeypatch):
     contour = job / 'output/total_RTSTRUCT.dcm'; contour.write_bytes(b'keep me')
     (job / 'output/prostate_sbrt_crop').mkdir()
     (job / 'output/report').mkdir()
-    assert portal.worker_archive_members(job, [TASK]) == ['input','input_ct','prompt.json','output/total_RTSTRUCT.dcm']
-    assert portal.worker_archive_members(job, ['body']) == ['input','input_ct','prompt.json']
+    assert portal.worker_archive_members(job, [TASK]) == ['input','input_ct','job.json','prompt.json','output/total_RTSTRUCT.dcm']
+    assert portal.worker_archive_members(job, ['body']) == ['input','input_ct','job.json','prompt.json']
     calls = []
     def run(command, **kwargs):
         calls.append(command)

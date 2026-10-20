@@ -37,6 +37,7 @@ from crop_prostate_sbrt import NoSelectedROIError, crop_ct_rtstruct, discover_di
 from viewer import ViewerService
 from mri_inputs import (mr_instance, image_types, finish_mr_series, public_mr_fields, role_contract,
                         resolve_roles, input_directories, input_identity)
+from prostate_models import artifact_names as prostate_artifact_names
 
 BASE = Path(os.environ.get("PORTAL_DATA", Path(__file__).parent / "data"))
 WORKER = os.environ.get("SEGMENTATION_WORKER", "worker@rtsegmentator-worker")
@@ -68,6 +69,7 @@ COLAB_EXTERNAL_TASKS = {name.strip() for name in os.environ.get(
 GPU_RELEASE_COMMAND = os.environ.get("GPU_RELEASE_COMMAND", "")
 GPU_RELEASE_TIMEOUT = int(os.environ.get("GPU_RELEASE_TIMEOUT", "90"))
 MAX_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(8 * 1024**3)))
+MAX_RESULT_BYTES = int(os.environ.get("MAX_RESULT_BYTES", str(8 * 1024**3)))
 RETENTION_HOURS = int(os.environ.get("RETENTION_HOURS", "24"))
 ENABLED_EXTERNAL_MODELS = {name.strip() for name in os.environ.get("ENABLED_EXTERNAL_MODELS", "").split(",") if name.strip()}
 ENABLED_MODELS_FILE = Path(os.environ.get("ENABLED_MODELS_FILE", str(BASE / "enabled-models.txt")))
@@ -896,8 +898,7 @@ def reset_job_output(job, data):
 def worker_archive_members(job, tasks):
     data = metadata(job)
     members = [name for name in input_directories(data) if (job / name).is_dir()]
-    if data.get('input_roles'):
-        members.append('job.json')
+    members.append('job.json')
     if (job / "prompt.json").is_file(): members.append("prompt.json")
     # The report needs finished contours, not bulky crop packages or previous drafts.
     if REPORT_TASK in tasks:
@@ -966,9 +967,15 @@ def run_remote_gpu_task(job, task, index, total):
     if prior.get("remote_results_retained"):
         recover_remote_results(job, remote, prior.get("remote_task_active"))
     save_metadata(job, remote_task_active=task, execution_backend="ssh_task")
+    empty = None
     try:
         prepare_worker_job(job, remote, [task])
-        run_worker_task(job, remote, task, index, total)
+        try:
+            run_worker_task(job, remote, task, index, total)
+        except Exception as exc:
+            if not is_empty_prediction(exc):
+                raise
+            empty = exc
         save_metadata(job, status="retrieving", detail=f"Retrieving {task} results", progress=None)
         recover_remote_results(job, remote, task)
     except Exception:
@@ -976,6 +983,8 @@ def run_remote_gpu_task(job, task, index, total):
         try: recover_remote_results(job, remote, task)
         except Exception: pass
         raise
+    if empty is not None:
+        raise empty
 
 
 def execute_job_task(job, task, index, total, remote=None):
@@ -1391,11 +1400,18 @@ def finalize_results(job: Path, empty=()):
     save_metadata(job, status="retrieving", detail="Preparing results for download", progress=None,
                   stage="Exporting results", stage_key="export", stage_started=time.time(),
                   stage_done=None, stage_total=None, stall_warning=False)
+    output = job / "output"
+    nested = sorted(path for path in output.rglob("*") if path.is_file() and path.parent != output)
+    sidecars = sorted(output.glob("*.dcm.orientation.json")) + sorted(output.glob("*.dcm.lesions.json"))
+    declared = [output / name for task in metadata(job).get("models", [])
+                for name in prostate_artifact_names(task) if (output / name).is_file()]
+    artifacts = sorted(set(results + sidecars + nested + declared))
+    if any(path.is_symlink() or output.resolve() not in path.resolve().parents for path in artifacts):
+        raise ValueError("Result artifacts must be files inside the output directory")
+    if sum(path.stat().st_size for path in artifacts) > MAX_RESULT_BYTES:
+        raise ValueError("Result artifacts exceed the configured download size limit")
     with zipfile.ZipFile(job/"rtstruct-results.zip","w",zipfile.ZIP_DEFLATED) as z:
-        nested = sorted(path for path in (job / "output").rglob("*")
-                        if path.is_file() and path.parent != job / "output")
-        sidecars = sorted((job / "output").glob("*.dcm.orientation.json")) + sorted((job / "output").glob("*.dcm.lesions.json"))
-        for result in results + sidecars + nested:
+        for result in artifacts:
             z.write(result, result.relative_to(job / "output").as_posix())
         if empty:
             z.writestr("NO_STRUCTURES_FOUND.txt",
@@ -1483,38 +1499,106 @@ def safe_extract(archive: Path, destination: Path, budget: int = MAX_BYTES):
             with z.open(info) as src, target.open("wb") as dst: shutil.copyfileobj(src, dst)
 
 def inspect_upload(input_dir: Path) -> dict:
-    groups = {}; ignored = 0
-    for f in input_dir.iterdir():
+    groups = {}; ignored = 0; unattributed = []; rejected_by_uid = {}
+
+    def identify(ds):
+        modality = str(getattr(ds, "Modality", ""))
+        uid = str(getattr(ds, "SeriesInstanceUID", ""))
+        if modality not in IMAGE_MODALITIES or not uid:
+            return None
+        key = f"{uid}|{modality}"
+        return groups.setdefault(key, {"key": key, "series_uid": uid, "modality": modality,
+            "study_uid": str(getattr(ds, "StudyInstanceUID", "")),
+            "frame_uid": str(getattr(ds, "FrameOfReferenceUID", "")),
+            "description": str(getattr(ds, "SeriesDescription", "")),
+            "study_date": str(getattr(ds, "StudyDate", "")), "image_type": [],
+            "files": [], "rows": 0, "columns": 0, **({"instances": []} if modality == "MR" else {})})
+
+    for f in sorted(input_dir.iterdir()):
+        g = None
         try:
             ds = pydicom.dcmread(f, stop_before_pixels=True)
-            modality = str(getattr(ds, "Modality", ""))
-            uid = str(getattr(ds, "SeriesInstanceUID", ""))
-            if modality not in IMAGE_MODALITIES or not uid or not hasattr(ds, "Rows") or not hasattr(ds, "Columns"):
+            # Keep the series identity before detailed metadata can reject an instance.
+            g = identify(ds)
+            if g is None:
+                uid = str(getattr(ds, "SeriesInstanceUID", ""))
+                if uid:
+                    rejected_by_uid.setdefault(uid, []).append({
+                        "file": f.name, "reason": "Instance has missing or unsupported Modality"})
+                elif str(getattr(ds, "Modality", "")) == "MR":
+                    raise ValueError("MR instance has no SeriesInstanceUID")
                 ignored += 1; continue
-            instance = mr_instance(ds, f.name) if modality == "MR" else None
-            key = f"{uid}|{modality}"
-            g = groups.setdefault(key, {"key": key, "series_uid": uid, "modality": modality,
-                "study_uid": str(getattr(ds, "StudyInstanceUID", "")),
-                "frame_uid": str(getattr(ds, "FrameOfReferenceUID", "")),
-                "description": str(getattr(ds, "SeriesDescription", "")),
-                "image_type": image_types(ds), "study_date": str(getattr(ds, "StudyDate", "")),
-                "files": [], "rows": int(ds.Rows), "columns": int(ds.Columns)})
+            instance = mr_instance(ds, f.name) if g["modality"] == "MR" else None
+            rows, columns = int(ds.Rows), int(ds.Columns)
+            if min(rows, columns) < 1:
+                raise ValueError("Invalid image dimensions")
+            g.update(rows=rows, columns=columns)
             g["image_type"] = list(dict.fromkeys(g["image_type"] + image_types(ds)))
             check = detect_cbct(ds)
             g.setdefault("cbct", False)
             g.setdefault("cbct_reason", check["reason"])
             if check["is_cbct"]: g.update(cbct=True, cbct_reason=check["reason"])
             g["files"].append(f.name)
-            if modality == "MR":
-                g.setdefault("instances", []).append(instance)
-        except Exception: ignored += 1
+            if instance is not None:
+                g["instances"].append(instance)
+        except Exception as exc:
+            ignored += 1
+            if g is None:
+                try:
+                    identity = pydicom.dcmread(f, stop_before_pixels=True, specific_tags=[
+                        "Modality", "SeriesInstanceUID", "StudyInstanceUID", "FrameOfReferenceUID",
+                        "SeriesDescription", "StudyDate"])
+                    g = identify(identity)
+                except Exception:
+                    pass
+            known_reasons = {"Invalid NumberOfFrames", "Invalid image dimensions",
+                             "MR instance has no SeriesInstanceUID"}
+            reason = str(exc) if str(exc) in known_reasons else f"Unreadable or rejected image metadata ({type(exc).__name__})"
+            error = {"file": f.name, "reason": reason}
+            if g is not None:
+                g.setdefault("assessment_errors", []).append(error)
+            else:
+                # A damaged DICOM with no recoverable identity cannot safely be
+                # assigned to a surviving MR series. Unrelated non-DICOM files remain ignored.
+                try:
+                    with f.open("rb") as stream:
+                        is_dicom = stream.read(132)[128:] == b"DICM"
+                    if is_dicom or f.suffix.lower() == ".dcm":
+                        unattributed.append(error)
+                except OSError:
+                    pass
     series=[]
     for g in groups.values():
+        if g["series_uid"] in rejected_by_uid:
+            g.setdefault("assessment_errors", []).extend(rejected_by_uid[g["series_uid"]])
+        if g["modality"] == "MR" and unattributed:
+            g.setdefault("assessment_errors", []).extend(unattributed)
+        if g.get("assessment_errors"):
+            reasons = "; ".join(dict.fromkeys(e["reason"] for e in g["assessment_errors"]))
+            g["unavailable_reason"] = (f"Series assessment rejected {len(g['assessment_errors'])} image instance(s): "
+                                       f"{reasons}. Upload a complete readable series")
         if g["modality"] == "MR":
             finish_mr_series(g)
         g["slices"]=len(g["files"]); series.append(g)
     series.sort(key=lambda x:(x["modality"],x["description"],x["series_uid"]))
     return {"series":series,"ignored":ignored}
+
+
+def require_series_assessment(series):
+    if series.get("unavailable_reason") or series.get("assessment_errors"):
+        raise ValueError(series.get("unavailable_reason") or "Series assessment rejected image instances")
+
+
+def validate_staged_mri(job):
+    """Reassess copied/moved MRI before publishing the job as runnable."""
+    data = metadata(job)
+    if not data.get("input_roles") and (data.get("series") or {}).get("modality") != "MR":
+        return
+    for directory in {"input"} | {r["dir"] for r in data.get("input_roles", {}).values()}:
+        report = inspect_upload(job / directory)
+        if report["ignored"] or len(report["series"]) != 1:
+            raise ValueError(f"{directory}: staged series assessment rejected image instances")
+        require_series_assessment(report["series"][0])
 
 def validate_series(input_dir: Path) -> tuple[int, str]:
     valid = 0; series = set(); modalities = set()
@@ -1774,6 +1858,24 @@ def process(job: Path):
             fail_input_preparation(job)
             return
         tasks_to_run = ordered_tasks(data["models"])
+        empty = []
+
+        def run_completed_task(task, index, remote=None):
+            """A declared empty prediction completes the task in every backend."""
+            try:
+                if remote is None:
+                    execute_job_task(job, task, index, len(tasks_to_run))
+                else:
+                    execute_job_task(job, task, index, len(tasks_to_run), remote=remote)
+            except Exception as exc:
+                if not is_empty_prediction(exc):
+                    raise
+                empty.append(task)
+                done = metadata(job).get("completed_models", [])
+                save_metadata(job, completed_models=list(dict.fromkeys([*done, task])))
+                return False
+            return True
+
         if WORKER_MODE == "auto":
             prior = metadata(job)
             if prior.get("fallback_reason") == "gpu_oom":
@@ -1787,18 +1889,18 @@ def process(job: Path):
                 local_tasks = [name for name in tasks_to_run if not task_uses_remote(name)]
                 if local_tasks: run_colab_job_on_nfs_worker(job, tasks=local_tasks, finalize=False)
                 for index, task in enumerate(tasks_to_run, 1):
-                    if task_uses_remote(task): execute_job_task(job, task, index, len(tasks_to_run))
-                finalize_results(job)
+                    if task_uses_remote(task): run_completed_task(task, index)
+                finalize_results(job, empty)
                 return
             save_metadata(job, status="processing", detail="Starting segmentation on worker GPU",
                           progress=None, execution_backend="local")
             for index, task in enumerate(tasks_to_run, 1):
                 if task_uses_remote(task):
-                    execute_job_task(job, task, index, len(tasks_to_run))
+                    run_completed_task(task, index)
                     continue
                 before = set((job / "output").iterdir())
                 try:
-                    execute_job_task(job, task, index, len(tasks_to_run))
+                    run_completed_task(task, index)
                 except Exception as exc:
                     for path in set((job / "output").iterdir()) - before:
                         if path.is_file(): path.unlink(missing_ok=True)
@@ -1808,7 +1910,7 @@ def process(job: Path):
                     if GPU_RELEASE_COMMAND.strip():
                         release_worker_gpu(job, task)
                         try:
-                            execute_job_task(job, task, index, len(tasks_to_run))
+                            run_completed_task(task, index)
                             continue
                         except Exception as retry_exc:
                             for path in set((job / "output").iterdir()) - before:
@@ -1828,21 +1930,15 @@ def process(job: Path):
                     run_colab_job_on_nfs_worker(job, tasks=remaining, finalize=False)
                     for remote_index, remote_task in enumerate(tasks_to_run[index - 1:], index):
                         if task_uses_remote(remote_task):
-                            execute_job_task(job, remote_task, remote_index, len(tasks_to_run))
+                            run_completed_task(remote_task, remote_index)
                     break
-            finalize_results(job)
+            finalize_results(job, empty)
             return
         if WORKER_MODE == "local":
             data=metadata(job)
             save_metadata(job,status="processing",detail="Starting local GPU segmentation",progress=None,postprocess_notes=[])
-            empty=[]
             for i,task in enumerate(tasks_to_run,1):
-                try:
-                    execute_job_task(job, task, i, len(tasks_to_run))
-                except Exception as exc:
-                    if not is_empty_prediction(exc):
-                        raise
-                    empty.append(task)
+                if not run_completed_task(task, i):
                     if task == "total" and "prostate_sbrt_crop" in data.get("postprocess", []):
                         note_prostate_not_cropped(job, "total found no structures; no prostate ROI with contours")
                 else:
@@ -1864,17 +1960,17 @@ def process(job: Path):
         prepare_worker_job(job, remote, tasks_to_run)
         save_metadata(job,status="processing",detail="GPU segmentation in progress",progress=None)
         for i,task in enumerate(tasks_to_run,1):
-            execute_job_task(job, task, i, len(tasks_to_run), remote=remote)
+            run_completed_task(task, i, remote=remote)
         save_metadata(job,status="retrieving",detail="Retrieving RTSTRUCT results from GPU worker",progress=None)
-        retrieve_worker_results(job, remote)
-        cleanup_worker_job(job, remote)
-        finalize_results(job)
+        recover_remote_results(job, remote)
+        finalize_results(job, empty)
     except Exception as exc:
         report_job = REPORT_TASK in metadata(job).get("models", [])
         if WORKER_MODE == "ssh" and report_job:
             try: recover_remote_results(job, remote)
             except Exception: pass
-        elif WORKER_MODE == "ssh" or (WORKER_MODE == "colab" and COLAB_ORCHESTRATOR == "worker"):
+        elif ((WORKER_MODE == "ssh" or (WORKER_MODE == "colab" and COLAB_ORCHESTRATOR == "worker"))
+              and not metadata(job).get("remote_results_retained")):
             try: remove_worker_job(job, remote)
             except Exception: save_metadata(job, remote_results_retained=True)
         changes = {"report_status": "failed", "report_reason": "Task failed; see job error"} if report_job else {}
@@ -2458,6 +2554,7 @@ def validate_job_selection(models, catalog, *, assessed=False, batch=False):
 
 
 def validate_job_series(models, selected, items=None):
+    require_series_assessment(selected)
     items = items or {name: model_details(name) for name in models}
     if REPORT_TASK in models and selected.get("cbct"):
         raise ValueError("CBCT is not supported for AI reports; diagnostic CT is required")
@@ -2558,6 +2655,11 @@ def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="
         if unknown:
             raise HTTPException(400, "Unknown series keys: " + ", ".join(unknown))
         selected = [by_key[key] for key in series_keys]
+        for series in selected:
+            try:
+                require_series_assessment(series)
+            except ValueError as exc:
+                raise HTTPException(400, f"Series {series['key']}: {exc}") from exc
         items = validate_job_selection(models, tasks(), assessed=True, batch=not legacy)
         models = list(dict.fromkeys(models))
         prompted = [name for name in models if items[name].get("prompt")]
@@ -2654,7 +2756,22 @@ def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="
             # Preserve the precise postprocess contract error.
             validate_postprocess(postprocess, models)
         # Check every source before allocating any job directories.
-        for series, _, companion, _, _, _, role_sources, _ in plans:
+        fresh = {s["key"]: s for s in inspect_upload(stage / "input")["series"]}
+        for series, _, companion, _, _, records, role_sources, _ in plans:
+            selected_sources = {s["key"]: s for s in [series] + ([companion] if companion else [])}
+            selected_sources.update({r["series_key"]: by_key[r["series_key"]] for r in records.values()})
+            for source in selected_sources.values():
+                try:
+                    require_series_assessment(source)
+                    current = fresh.get(source["key"])
+                    if current is None:
+                        raise ValueError("Series assessment failed; selected images are no longer readable")
+                    require_series_assessment(current)
+                    if (set(current["files"]) != set(source["files"]) or
+                            current.get("instances") != source.get("instances")):
+                        raise ValueError("Series assessment changed; upload and review the complete series again")
+                except ValueError as exc:
+                    raise HTTPException(400, f"Series {source['key']}: {exc}") from exc
             for source in [series] + ([companion] if companion else []):
                 if any(not (stage / "input" / name).is_file() for name in source["files"]):
                     raise HTTPException(400, f"Series {source['key']}: staged files are missing; upload again")
@@ -2709,12 +2826,16 @@ def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="
             if not all(input_manifest_complete(job, metadata(job)) for job in created):
                 raise ValueError('Prepared input does not match its manifest')
             for job in created:
+                validate_staged_mri(job)
+            for job in created:
                 save_metadata(job, status='queued', detail='Next in queue')
-        except Exception:
+        except Exception as exc:
             for source, destination in reversed(moved):
                 shutil.move(destination, source)
             for job in created:
                 shutil.rmtree(job, ignore_errors=True)
+            if isinstance(exc, ValueError):
+                raise HTTPException(400, str(exc)) from exc
             raise
         shutil.rmtree(stage, ignore_errors=True)
         enqueue_jobs(created)

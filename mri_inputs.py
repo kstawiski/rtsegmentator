@@ -16,7 +16,8 @@ ROLE_PATTERN = r"[a-z0-9_]+"
 MR_FIELDS = ("study_uid", "frame_uid", "image_type", "protocol_name", "acquisition_time",
              "acquisition_datetime", "orientation", "pixel_spacing", "slice_thickness",
              "spacing_between_slices", "dimensions", "instances", "b_values", "b_value_sources",
-             "is_adc", "hbv_options", "hbv_unavailable_reason", "metadata_consistent")
+             "is_adc", "hbv_options", "hbv_unavailable_reason", "metadata_consistent",
+             "assessment_errors", "unavailable_reason")
 
 
 def numbers(value):
@@ -58,6 +59,8 @@ def functional_value(frame, shared, ds, sequence, keyword, default=None):
 
 
 def mr_instance(ds, filename):
+    if int(ds.Rows) < 1 or int(ds.Columns) < 1:
+        raise ValueError("Invalid image dimensions")
     shared = first(attribute(ds, "SharedFunctionalGroupsSequence", []))
     frames = attribute(ds, "PerFrameFunctionalGroupsSequence", [])
     count = int(attribute(ds, "NumberOfFrames", 1))
@@ -118,6 +121,10 @@ def volume_problem(instances):
 
 def finish_mr_series(series):
     instances = series["instances"]
+    if not instances:
+        series.update(hbv_options=[], hbv_unavailable_reason=series["unavailable_reason"],
+                      dimensions=[series["columns"], series["rows"], 0], is_adc=False)
+        return
     first_instance = instances[0]
     for name in ("protocol_name", "acquisition_time", "acquisition_datetime", "orientation",
                  "pixel_spacing", "slice_thickness", "spacing_between_slices"):
@@ -128,8 +135,10 @@ def finish_mr_series(series):
     series["is_adc"] = any("ADC" in value.upper() for value in series["image_type"])
     series["metadata_consistent"] = all(i["study_uid"] == series["study_uid"] and
                                          i["frame_uid"] == series["frame_uid"] for i in instances)
-    reason = ""
-    if not series["metadata_consistent"]:
+    reason = series.get("unavailable_reason", "")
+    if reason:
+        pass
+    elif not series["metadata_consistent"]:
         reason = "Series contains different Study or Frame of Reference identifiers"
     elif series["is_adc"]:
         reason = "ADC map is not a high b-value DWI volume"
@@ -158,6 +167,8 @@ def public_mr_fields(series):
     result = {key: series.get(key) for key in MR_FIELDS if key in series}
     result["instances"] = [{k: v for k, v in i.items() if k != "file"} for i in series.get("instances", [])]
     result["hbv_options"] = [{k: v for k, v in o.items() if k != "files"} for o in series.get("hbv_options", [])]
+    if "assessment_errors" in result:
+        result["assessment_errors"] = [{"reason": e["reason"]} for e in result["assessment_errors"]]
     return result
 
 
@@ -180,7 +191,7 @@ def role_candidates(primary, series, role):
     for candidate in series:
         if (candidate["key"] == primary["key"] or not primary.get("study_uid") or
                 candidate.get("study_uid") != primary["study_uid"] or candidate.get("modality") != role.get("modality", "MR") or
-                candidate.get("metadata_consistent") is False):
+                candidate.get("metadata_consistent") is False or candidate.get("unavailable_reason")):
             continue
         if role["role"] == "hbv":
             for option in candidate.get("hbv_options", []):
@@ -195,6 +206,8 @@ def role_candidates(primary, series, role):
 
 def suggest_role(primary, series, role):
     candidates = role_candidates(primary, series, role)
+    if role["role"] == "adc" and candidates and candidates[0]["score"] == 1:
+        return None, "ADC requires ImageType ADC evidence or an explicit user choice"
     if not candidates or candidates[0]["score"] <= 0:
         return None, f"Missing {role.get('label', role['role'])}; select a series"
     if len(candidates) > 1 and candidates[0]["score"] == candidates[1]["score"]:
@@ -227,6 +240,8 @@ def resolve_roles(primary, all_series, task, selections):
         candidate = by_key.get(choice.get("series_key"))
         if candidate is None:
             raise ValueError(f"Unknown series for role {name}")
+        if candidate.get("unavailable_reason") or candidate.get("assessment_errors"):
+            raise ValueError(f"Role {name}: " + (candidate.get("unavailable_reason") or "Series assessment failed"))
         if (not primary.get("study_uid") or candidate.get("study_uid") != primary["study_uid"]):
             raise ValueError(f"Role {name} must share the primary StudyInstanceUID")
         if candidate.get("modality") != role.get("modality", "MR"):
@@ -237,6 +252,8 @@ def resolve_roles(primary, all_series, task, selections):
             raise ValueError(f"Role {name} must use a companion series")
         record = {"series_key": candidate["key"], "series_uid": candidate["series_uid"],
                   "description": candidate.get("description", ""), "dir": "input" if name == reference else f"input_{name}",
+                  "selection_method": ("user" if name == reference or name in selections else
+                                       "image_type" if name == "adc" else "b_value"),
                   "study_uid": candidate.get("study_uid"), "frame_uid": candidate.get("frame_uid"),
                   "frame_of_reference_differs": candidate.get("frame_uid") != primary.get("frame_uid")}
         files = candidate["files"]
