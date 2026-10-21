@@ -28,10 +28,10 @@
     "noncommercial": true,
     "license": "CC BY-NC-SA 4.0",
     "license_note": "Non-commercial, share-alike weight licence; code Apache-2.0.",
-    "status": "Not enabled: on our GPUs the lowest-scoring lesion candidate in the authors' public example differs in extent from their reference output (390 vs 1,132 voxels), outside the authors' reproduction tolerance. The semi-supervised PI-CAI model is a separate option and requires passing acceptance checks.",
+    "status": "Not enabled: on our GPUs the lowest-scoring lesion candidate in the authors' public example differs in extent from their reference output (390 vs 1,132 voxels), outside the authors' reproduction tolerance. The semi-supervised PI-CAI model passed the same checks and is available.",
     "requires_preflight": true,
     "enabled": false,
-    "blocked_status": "Not enabled: on our GPUs the lowest-scoring lesion candidate in the authors' public example differs in extent from their reference output (390 vs 1,132 voxels), outside the authors' reproduction tolerance. The semi-supervised PI-CAI model is a separate option and requires passing acceptance checks."
+    "blocked_status": "Not enabled: on our GPUs the lowest-scoring lesion candidate in the authors' public example differs in extent from their reference output (390 vs 1,132 voxels), outside the authors' reproduction tolerance. The semi-supervised PI-CAI model passed the same checks and is available."
   },
   "picai_nnunet_semisupervised_bpmri": {
     "modality": "MR",
@@ -62,7 +62,7 @@
     "noncommercial": true,
     "license": "CC BY-NC-SA 4.0",
     "license_note": "Non-commercial, share-alike weight licence; code Apache-2.0.",
-    "status": "Engineering integration; GPU acceptance pending",
+    "status": "technical_checks_recorded",
     "requires_preflight": true
   },
   "umu_prostate_zones_urethra_t2": {
@@ -73,7 +73,7 @@
     "source": "https://github.com/UMU-DDI/prostate-segmentation",
     "license": "Weight licence not stated",
     "license_note": "Weight licence not stated by the authors; repository code MIT.",
-    "status": "Engineering integration; GPU acceptance pending",
+    "status": "technical_checks_recorded",
     "requires_preflight": true
   },
   "prostate158_tumor_bpmri": {
@@ -106,7 +106,7 @@
     "reference_role": "t2w",
     "license": "CC BY 4.0",
     "license_note": "Weights CC BY 4.0; original source code MIT.",
-    "status": "Engineering integration; GPU acceptance pending",
+    "status": "technical_checks_recorded",
     "requires_preflight": true
   }
 }
