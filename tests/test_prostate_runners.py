@@ -231,6 +231,7 @@ def umu_probabilities():
 
 
 def test_umu_urethra_radius_with_anisotropic_slice_spacing():
+    pytest.importorskip('skimage')  # the vendored Umeå postprocessor imports scikit-image
     probabilities = umu_probabilities()
     result = umu_postprocess(probabilities, (0.5, 0.5, 3))
     y, x = np.ogrid[:49, :55]
@@ -245,6 +246,7 @@ def test_umu_urethra_radius_with_anisotropic_slice_spacing():
 
 
 def test_umu_nearest_zone_uses_physical_distance():
+    pytest.importorskip('skimage')  # the vendored Umeå postprocessor imports scikit-image
     gland = np.ones((9, 9, 3), bool)
     labels = np.zeros(gland.shape, np.uint8)
     labels[1, 4, 1] = 1  # Three x voxels (6 mm).
@@ -258,6 +260,7 @@ def test_umu_nearest_zone_uses_physical_distance():
 
 
 def test_umu_clips_urethra_and_handles_empty_prostate():
+    pytest.importorskip('skimage')  # the vendored Umeå postprocessor imports scikit-image
     probabilities = umu_probabilities()
     probabilities[:, :, :24, :] = 0
     probabilities[0, :, :24, :] = 1
