@@ -117,6 +117,35 @@ def marker_has_failure(value):
     return False
 
 
+def installed_source_commit(source):
+    """Commit of a pinned upstream checkout, read from .git without running git.
+
+    The portal runs as root in a container while the bundle belongs to another user,
+    so `git rev-parse` refuses the repository ("dubious ownership"). Reading HEAD and
+    the ref it names (loose or packed) needs no git binary. Without .git, the install
+    manifest records the commit.
+    """
+    git = Path(source) / '.git'
+    if not git.is_dir():
+        return json.loads((Path(source) / 'RTSEG_MANIFEST.json').read_text())['commit']
+    try:
+        head = (git / 'HEAD').read_text().strip()
+        if head.startswith('ref: '):
+            ref = head[5:].strip()
+            loose = git / ref
+            if loose.is_file():
+                head = loose.read_text().strip()
+            else:
+                packed = (git / 'packed-refs').read_text().splitlines()
+                head = next(line.split()[0] for line in packed
+                            if not line.startswith(('#', '^')) and line.split()[-1] == ref)
+    except (OSError, StopIteration, IndexError) as exc:
+        raise ValueError('Cannot verify installed source commit') from exc
+    if not re.fullmatch('[0-9a-f]{40}', head):
+        raise ValueError('Cannot verify installed source commit')
+    return head
+
+
 def validate_acceptance(record, task, root):
     """Validate the prostate harness marker against this installed release."""
     def require(condition, message):
@@ -141,14 +170,7 @@ def validate_acceptance(record, task, root):
             'Incomplete acceptance checks')
     model = TASKS[task][0]
     source = Path(root) / 'sources' / model
-    if (source / '.git').exists():
-        try:
-            installed_commit = subprocess.run(['git', '-C', str(source), 'rev-parse', 'HEAD'],
-                capture_output=True, text=True, check=True, timeout=10).stdout.strip()
-        except (OSError, subprocess.SubprocessError) as exc:
-            raise ValueError('Cannot verify installed source commit') from exc
-    else:
-        installed_commit = json.loads((source / 'RTSEG_MANIFEST.json').read_text())['commit']
+    installed_commit = installed_source_commit(source)
     require(record.get('source_commit') == installed_commit == SOURCE_COMMITS[model], 'Source commit mismatch')
     hashes = {relative.as_posix(): file_sha256(Path(root) / relative) for relative in weight_files(task)}
     require(record.get('checkpoint_hashes') == hashes, 'Checkpoint hashes mismatch')

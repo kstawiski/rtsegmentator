@@ -425,3 +425,31 @@ def test_checkpoint_hash_cache_rehashes_changed_files(tmp_path):
     path.write_bytes(b'second, longer')
     os.utime(path, ns=(path.stat().st_atime_ns, path.stat().st_mtime_ns + 1_000_000))
     assert prostate_models.file_sha256(path) != first
+
+
+def test_installed_source_commit_reads_git_files_without_git(tmp_path):
+    import prostate_models
+    commit = 'a' * 40
+    detached = tmp_path / 'detached'
+    (detached / '.git').mkdir(parents=True)
+    (detached / '.git/HEAD').write_text(commit + '\n')
+    assert prostate_models.installed_source_commit(detached) == commit
+    loose = tmp_path / 'loose'
+    (loose / '.git/refs/heads').mkdir(parents=True)
+    (loose / '.git/HEAD').write_text('ref: refs/heads/main\n')
+    (loose / '.git/refs/heads/main').write_text('b' * 40 + '\n')
+    assert prostate_models.installed_source_commit(loose) == 'b' * 40
+    packed = tmp_path / 'packed'
+    (packed / '.git').mkdir(parents=True)
+    (packed / '.git/HEAD').write_text('ref: refs/heads/main\n')
+    (packed / '.git/packed-refs').write_text('# pack-refs with: peeled\n' + 'c' * 40 + ' refs/heads/main\n')
+    assert prostate_models.installed_source_commit(packed) == 'c' * 40
+    manifest = tmp_path / 'manifest'
+    manifest.mkdir()
+    (manifest / 'RTSEG_MANIFEST.json').write_text('{"commit": "' + 'd' * 40 + '"}')
+    assert prostate_models.installed_source_commit(manifest) == 'd' * 40
+    broken = tmp_path / 'broken'
+    (broken / '.git').mkdir(parents=True)
+    (broken / '.git/HEAD').write_text('ref: refs/heads/missing\n')
+    with pytest.raises(ValueError, match='Cannot verify installed source commit'):
+        prostate_models.installed_source_commit(broken)
