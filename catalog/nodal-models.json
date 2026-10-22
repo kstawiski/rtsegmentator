@@ -241,9 +241,9 @@
   "lnq_atlas": {
     "code_license": "CC BY-NC-ND 4.0",
     "weights_license": "Archive-specific terms unverified",
-    "description": "LNQ atlas model: binary mediastinal node candidates with probabilistic-atlas context. No station-region outputs.",
-    "limitations": "Disabled: complete archive/fold verification, runtime and technical checks remain pending. The upstream archive was reachable on 2026-10-18 (HTTP 200), so the earlier access failure no longer applies.",
-    "evidence_note": "Published ensemble Dice 0.6033 and detection of 57% of reference nodes versus 27% with CT-only training.",
+    "description": "Segments visible mediastinal lymph-node candidates on one CT series. The output is one aggregate ROI, Mediastinal_Lymph_Node_Candidate, not an elective nodal region or a station map. No remaining candidate completes with no RTSTRUCT.",
+    "limitations": "Code licence CC BY-NC-ND 4.0. Archive weight terms are not stated. Owner accepted these terms on 2026-10-22. The installed adapter uses the challenge-submission post-processing: binarization threshold 0.3 and a 5 mm minimum diameter. This task is routed to the H100 worker. On the P6000 portal (compute capability 6.1), keep lnq_atlas in REMOTE_GPU_TASKS. An acceptance marker recorded on the H100 does not enable the task on a P6000. GPU acceptance has not been run. Selectable only after the GPU acceptance marker and the orientation marker pass.",
+    "evidence_note": "Engelson et al., MELBA 2024, sections 4.1-4.3 and Tables 2 and 4, on the LNQ test set of 100 patients and 861 reference nodes. The ablation that uses all modifications, a binarization threshold of 0.2 and no minimum-diameter filter had Dice 0.6033 and found 57% of reference nodes (LN-found 0.5654), compared with 27% (LN-found 0.2749) when training on CT only. The challenge submission, a five-model ensemble with threshold 0.3 and a 5 mm minimum diameter, had Dice 0.5690 and ASSD 6.8976 mm on that same test set. The authors state that post-processing fit on the small validation set did not carry over to the test set. The installed adapter uses the submission settings, not the 0.2 ablation.",
     "evidence_sources": [
       "https://www.melba-journal.org/papers/2024:009.html",
       "EXTERNAL_MODELS.md"

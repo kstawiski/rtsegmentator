@@ -147,10 +147,19 @@ def test_preflight_blocks_even_when_all_files_exist(monkeypatch, tmp_path):
 
 
 def test_catalog_stays_disabled_even_with_passing_preflight(portal):
-    for name in ('choi_tmli','clnet_235','lnq_atlas'):
+    for name in ('choi_tmli','clnet_235'):
         item={'name':name,**portal.INFORMATIONAL_MODELS[name]}
         portal.apply_model_gates(item,{'ready':True,'orientation_ready':True,'missing':[]},{name})
         assert item['enabled'] is False
+    lnq={'name':'lnq_atlas',**portal.INFORMATIONAL_MODELS['lnq_atlas']}
+    portal.apply_model_gates(lnq,{'ready':False,'orientation_ready':False,'missing':['validation/lnq_atlas.json']},{'lnq_atlas'})
+    assert lnq['enabled'] is False and lnq['status']=='dependencies_missing'
+    ready={'name':'lnq_atlas',**portal.INFORMATIONAL_MODELS['lnq_atlas']}
+    portal.apply_model_gates(ready,{'ready':True,'orientation_ready':False,'missing':[]},{'lnq_atlas'})
+    assert ready['enabled'] is False and ready['status']=='orientation_revalidation_pending'
+    opened={'name':'lnq_atlas',**portal.INFORMATIONAL_MODELS['lnq_atlas']}
+    portal.apply_model_gates(opened,{'ready':True,'orientation_ready':True,'missing':[]},{'lnq_atlas'})
+    assert opened['enabled'] is True
 
 
 def test_dispatch_rejects_unconfirmed_choi_before_spawning(monkeypatch,tmp_path):

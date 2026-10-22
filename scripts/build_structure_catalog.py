@@ -182,12 +182,12 @@ def resolve(task, details, ns, bundle, maps, map_path, root=ROOT):
         return fixed(json.loads(path.read_text()), "Exporter label map", note), [str(path), "structure_labels.repo_label_path", "structure_labels.final_roi_names"]
     if task in INLINE_LABELS:
         return fixed(INLINE_LABELS[task], "Exporter label contract"), ["structure_labels.INLINE_LABELS", "structure_labels.final_roi_names"]
-    for registry in ("CERR_TASKS", "ANTSPYNET_TASKS", "PYCAD_TASKS", "MRANNOTATOR_TASKS", "CADS_OPEN_TASKS", "NNUNET_V1_TASKS", "MONAI_BUNDLE_TASKS"):
+    for registry in ("CERR_TASKS", "ANTSPYNET_TASKS", "PYCAD_TASKS", "MRANNOTATOR_TASKS", "CADS_OPEN_TASKS", "CADS_RESEARCH_TASKS", "NNUNET_V1_TASKS", "MONAI_BUNDLE_TASKS"):
         if task in ns[registry]:
             spec = ns[registry][task]
             labels = spec_labels(spec, root, bundle)
             source = (bundle / "weights/monai-bundles" / spec["bundle"] / "configs/metadata.json" if spec.get("labels_from_metadata") else
-                      root / spec["labels_file"] if spec.get("labels_file") else root / ("catalog/" + {"CERR_TASKS":"cerr", "ANTSPYNET_TASKS":"antspynet", "PYCAD_TASKS":"pycad-model-zoo", "MRANNOTATOR_TASKS":"mrannotator", "CADS_OPEN_TASKS":"cads-open", "NNUNET_V1_TASKS":"nnunet-v1", "MONAI_BUNDLE_TASKS":"monai-bundles"}[registry] + ".json"))
+                      root / spec["labels_file"] if spec.get("labels_file") else root / ("catalog/" + {"CERR_TASKS":"cerr", "ANTSPYNET_TASKS":"antspynet", "PYCAD_TASKS":"pycad-model-zoo", "MRANNOTATOR_TASKS":"mrannotator", "CADS_OPEN_TASKS":"cads-open", "CADS_RESEARCH_TASKS":"cads-research", "NNUNET_V1_TASKS":"nnunet-v1", "MONAI_BUNDLE_TASKS":"monai-bundles"}[registry] + ".json"))
             return fixed(labels, "MONAI output channel definitions" if spec.get("labels_from_metadata") else "Exporter registry label map"), [str(source), "structure_labels.spec_labels", "structure_labels.final_roi_names"]
     if task in ns["NNUNET_V2_TASKS"]:
         spec = ns["NNUNET_V2_TASKS"][task]

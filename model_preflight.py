@@ -6,12 +6,21 @@ import argparse
 import json
 import shutil
 import os
+import subprocess
 import sys
 from pathlib import Path
 
 from choi_ontology import confirmed_labels
-from run_lnq_atlas import (total_python as lnq_total_python, MODEL_RELATIVE as LNQ_MODEL,
-                           ATLAS_FILES as LNQ_ATLAS_FILES, validate_manifest as validate_lnq_manifest)
+from run_lnq_atlas import (lnq_python, total_python as lnq_total_python, total_weights_root as lnq_total_weights,
+                           MODEL_RELATIVE as LNQ_MODEL, ATLAS_FILES as LNQ_ATLAS_FILES,
+                           TASK256_CHECKPOINT, TASK256_CHECKPOINT_PKL, TASK256_PLANS,
+                           validate_manifest as validate_lnq_manifest,
+                           validate_acceptance as validate_lnq_acceptance,
+                           validate_orientation as validate_lnq_orientation,
+                           probe_interpreter_device as probe_lnq_device,
+                           device_supported, device_refusal_message)
+from cads_variants import (TASK_IDS as CADS_RESEARCH_IDS, research_requirements,
+                           validate_research_acceptance, validate_orientation as validate_cads_orientation)
 from nv_segment_logic import MODES as NV_SEGMENT_MODES, validate_acceptance
 import lnctvseg_bundle
 from prostate_models import TASKS as PROSTATE_TASKS, requirements as prostate_requirements
@@ -47,12 +56,17 @@ COMMON = ["dicom_series_to_nifti.py", "dicom_series.py", "orientation_contract.p
           "rtstruct_geometry.py", "rtstruct_roundtrip.py"]
 LNQ_WEIGHTS = "weights/lnq-atlas-20261015/weights"
 REQUIREMENTS = {
-    "lnq_atlas": ["@run_lnq_atlas.py", "@run_total_v1.py", "@labels/lnq-atlas.json", "envs/lnq/bin/python",
-                  "envs/lnq-atlas-total-v1/bin/python", "sources/LNQ2023/Inference/preregistration/preregistration.py",
+    "lnq_atlas": ["@run_lnq_atlas.py", "@run_total_v1.py", "@labels/lnq-atlas.json",
+                  "@models/manifests/totalsegmentator-v1.5.7.json",
+                  "runtime-envs/lnq-atlas-ref/bin/python",
+                  "runtime-envs/lnq-atlas-total-v1/bin/python", "sources/LNQ2023/Inference/preregistration/preregistration.py",
                   "weights/lnq-atlas-20261015/provenance.json",
                   *[f"{LNQ_WEIGHTS}/{LNQ_MODEL}/{name}" for name in ("dataset.json", "plans.json")],
                   *[f"{LNQ_WEIGHTS}/{LNQ_MODEL}/fold_{i}/checkpoint_best.pth" for i in range(5)],
                   *[f"{LNQ_WEIGHTS}/data/Atlas/{name}" for name in LNQ_ATLAS_FILES],
+                  f"weights/totalsegmentator-v1.5.7/{TASK256_CHECKPOINT}",
+                  f"weights/totalsegmentator-v1.5.7/{TASK256_CHECKPOINT_PKL}",
+                  f"weights/totalsegmentator-v1.5.7/{TASK256_PLANS}",
                   "validation/lnq_atlas.json"],
     "choi_tmli": ["@run_choi_tmli.py", "@choi_ontology.py", "@labels/choi-tmli.json",
                   "envs/nnunet-v1/bin/python", "envs/nnunet-v1/bin/nnUNet_predict",
@@ -304,6 +318,9 @@ for task, details in CADS_OPEN_TASKS.items():
         requirements.append("weights/cads/open/Dataset552_Totalseg252")
     REQUIREMENTS[task] = requirements
 
+for task, task_id in CADS_RESEARCH_IDS.items():
+    REQUIREMENTS[task] = research_requirements(task, task_id)
+
 UNIVERSAL_MODEL_TASKS = json.loads((APP_ROOT / "catalog/universal-model.json").read_text())
 for task, details in UNIVERSAL_MODEL_TASKS.items():
     REQUIREMENTS[task] = ["@combine_universal_model.py", "@labels/universal-model.json",
@@ -475,8 +492,8 @@ def audit(tasks=None) -> dict[str, dict]:
         if tasks is not None and task not in tasks: continue
         missing = []
         for requirement in [*("@" + item for item in COMMON), *requirements]:
-            if task == "lnq_atlas" and requirement == "envs/lnq-atlas-total-v1/bin/python":
-                path = lnq_total_python(RUNTIME_ROOT)
+            if task == "lnq_atlas" and requirement == "runtime-envs/lnq-atlas-total-v1/bin/python":
+                path = lnq_total_python(MODEL_ROOT)
             elif task == "nv_reason_ct_report" and requirement == "envs/nv-reason-ct/bin/python":
                 path = nv_reason_python()
             elif requirement.startswith("@"):
@@ -495,11 +512,66 @@ def audit(tasks=None) -> dict[str, dict]:
                 confirmed_labels(APP_ROOT / "labels/choi-tmli.json")
             except (OSError, ValueError, TypeError, AttributeError):
                 missing.append("labels/choi-tmli.json (clinician confirmation pending or invalid)")
+        content_acceptance = False
+        orientation_invalid = False
         if task == "lnq_atlas":
+            python = lnq_python(MODEL_ROOT)
+            payload = None
+            try:
+                if not python.is_file():
+                    missing.append("runtime-envs/lnq-atlas-ref/bin/python (device probe unavailable)")
+                else:
+                    payload = probe_lnq_device(python)
+                    if not device_supported(payload.get("cuda_available"), payload.get("major"),
+                                            payload.get("minor"), payload.get("arch_list")):
+                        missing.append(device_refusal_message(payload))
+            except (OSError, ValueError, TypeError, RuntimeError, json.JSONDecodeError, subprocess.SubprocessError):
+                missing.append("LNQ device probe failed")
+                payload = None
             try:
                 validate_lnq_manifest(json.loads((MODEL_ROOT / "weights/lnq-atlas-20261015/provenance.json").read_text()))
             except (OSError, ValueError, TypeError, AttributeError):
                 missing.append("LNQ artifact provenance missing or invalid")
+            marker = MODEL_ROOT / "validation/lnq_atlas.json"
+            if marker.is_file():
+                try:
+                    validate_lnq_acceptance(
+                        json.loads(marker.read_text()),
+                        MODEL_ROOT / LNQ_WEIGHTS,
+                        MODEL_ROOT / "weights/lnq-atlas-20261015/provenance.json",
+                        lnq_total_weights(MODEL_ROOT),
+                        APP_ROOT / "models/manifests/totalsegmentator-v1.5.7.json",
+                        MODEL_ROOT / "sources/LNQ2023",
+                        device=payload)
+                    content_acceptance = True
+                except (OSError, ValueError, TypeError, AttributeError, KeyError, StopIteration):
+                    if "validation/lnq_atlas.json" not in missing:
+                        missing.append("validation/lnq_atlas.json (inconsistent acceptance contents)")
+            orientation_path = MODEL_ROOT / "orientation-validation/lnq_atlas.json"
+            if orientation_path.is_file():
+                try:
+                    validate_lnq_orientation(json.loads(orientation_path.read_text()), task)
+                except (OSError, ValueError, TypeError, AttributeError, KeyError):
+                    orientation_invalid = True
+                    if "orientation-validation/lnq_atlas.json" not in missing:
+                        missing.append("orientation-validation/lnq_atlas.json (inconsistent orientation contents)")
+        if task in CADS_RESEARCH_IDS:
+            marker = MODEL_ROOT / "validation" / f"{task}.json"
+            if marker.is_file():
+                try:
+                    validate_research_acceptance(json.loads(marker.read_text()), task, MODEL_ROOT, APP_ROOT)
+                    content_acceptance = True
+                except (OSError, ValueError, TypeError, AttributeError, KeyError, StopIteration):
+                    if f"validation/{task}.json" not in missing:
+                        missing.append(f"validation/{task}.json (inconsistent acceptance contents)")
+            orientation_path = MODEL_ROOT / "orientation-validation" / f"{task}.json"
+            if orientation_path.is_file():
+                try:
+                    validate_cads_orientation(json.loads(orientation_path.read_text()), task)
+                except (OSError, ValueError, TypeError, AttributeError, KeyError):
+                    orientation_invalid = True
+                    if f"orientation-validation/{task}.json" not in missing:
+                        missing.append(f"orientation-validation/{task}.json (inconsistent orientation contents)")
         acceptance_ready = False
         if task == lnctvseg_bundle.TASK:
             if not LNCTVSEG_MANIFEST.get('nnunet'):
@@ -524,7 +596,7 @@ def audit(tasks=None) -> dict[str, dict]:
                 if f"validation/{task}.json" not in missing:
                     missing.append(f"validation/{task}.json (inconsistent acceptance contents)")
         orientation = MODEL_ROOT / "orientation-validation" / f"{task}.json"
-        orientation_ready = orientation.is_file()
+        orientation_ready = orientation.is_file() and not orientation_invalid
         if task in PROSTATE_TASKS:
             for folder, validator in (("validation", lambda record: prostate_acceptance(record, task, MODEL_ROOT)),
                                       ("orientation-validation", lambda record: prostate_orientation(record, task))):
@@ -545,6 +617,8 @@ def audit(tasks=None) -> dict[str, dict]:
             report[task]["acceptance_ready"] = report_acceptance_ready()
         elif task in NV_SEGMENT_MODES or task == lnctvseg_bundle.TASK or task in PROSTATE_TASKS:
             report[task]["acceptance_ready"] = acceptance_ready
+        elif task == "lnq_atlas" or task in CADS_RESEARCH_IDS:
+            report[task]["acceptance_ready"] = content_acceptance
     # Native tasks have the same installed-runtime contract as the production catalog.
     for task in set(tasks or []) - REQUIREMENTS.keys():
         missing = []

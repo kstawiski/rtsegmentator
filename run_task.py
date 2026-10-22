@@ -84,6 +84,7 @@ MULTITALENT_V1_TASKS = json.loads((APP_ROOT / "catalog/multitalent-v1.json").rea
 NNUNET_V1_TASKS = json.loads((APP_ROOT / "catalog/nnunet-v1.json").read_text())
 MONAI_BUNDLE_TASKS = json.loads((APP_ROOT / "catalog/monai-bundles.json").read_text())
 CADS_OPEN_TASKS = json.loads((APP_ROOT / "catalog/cads-open.json").read_text())
+CADS_RESEARCH_TASKS = json.loads((APP_ROOT / "catalog/cads-research.json").read_text())
 UNIVERSAL_MODEL_TASKS = json.loads((APP_ROOT / "catalog/universal-model.json").read_text())
 MRANNOTATOR_TASKS = json.loads((APP_ROOT / "catalog/mrannotator.json").read_text())
 PYCAD_TASKS = json.loads((APP_ROOT / "catalog/pycad-model-zoo.json").read_text())
@@ -546,8 +547,12 @@ try:
              "--dicom", str(job / "input"), "--output", str(output),
              "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
-    elif task in CADS_OPEN_TASKS:
-        spec = CADS_OPEN_TASKS[task]
+    elif task in CADS_OPEN_TASKS or task in CADS_RESEARCH_TASKS:
+        from cads_variants import require_installed
+        research = task in CADS_RESEARCH_TASKS
+        spec = (CADS_RESEARCH_TASKS if research else CADS_OPEN_TASKS)[task]
+        license_name = "research" if research else "open"
+        require_installed(MODEL_ROOT, license_name, spec["task_id"])
         work = job / "external" / task
         work.mkdir(parents=True, exist_ok=True)
         nifti = work / "input.nii.gz"
@@ -564,10 +569,11 @@ try:
         env["CADS_WEIGHTS_PATH"] = str(MODEL_ROOT / "weights/cads")
         run([str(RUNTIME_ROOT / "envs/cads/bin/python"), "-m", "cads.scripts.predict_images",
              "-in", str(nifti), "-out", str(segmentation_dir),
-             "-task", str(spec["task_id"]), "-license", "open", "-np", "2", "-ns", "2"], env=env, cwd=source)
+             "-task", str(spec["task_id"]), "-license", license_name, "-np", "2", "-ns", "2"], env=env, cwd=source)
         prediction = segmentation_dir / "input" / f"input_part_{spec['task_id']}.nii.gz"
         if not prediction.exists():
             raise SystemExit("CADS did not create its expected task segmentation")
+        print(f"CADS {license_name} output {prediction.name}", flush=True)
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),
@@ -1054,23 +1060,26 @@ try:
              "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
     elif task == "lnq_atlas":
-        from run_lnq_atlas import total_python as lnq_total_python
+        from run_lnq_atlas import lnq_python, total_python as lnq_total_python, total_weights_root
         work = job / "external" / task
         work.mkdir(parents=True, exist_ok=True)
         nifti, prediction = work / "input.nii.gz", work / "prediction.nii.gz"
         run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"),
              str(job / "input"), str(nifti)])
-        run([str(RUNTIME_ROOT / "envs/lnq/bin/python"), str(APP_ROOT / "run_lnq_atlas.py"),
+        run([str(lnq_python(MODEL_ROOT)), str(APP_ROOT / "run_lnq_atlas.py"),
              "--input", str(nifti), "--output", str(prediction), "--work", str(work / "inference"),
              "--source", str(MODEL_ROOT / "sources/LNQ2023"),
              "--weights", str(MODEL_ROOT / "weights/lnq-atlas-20261015/weights"),
              "--manifest", str(MODEL_ROOT / "weights/lnq-atlas-20261015/provenance.json"),
-             "--total-python", str(lnq_total_python(RUNTIME_ROOT))])
+             "--total-python", str(lnq_total_python(MODEL_ROOT)),
+             "--total-weights", str(total_weights_root(MODEL_ROOT))])
         run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
              "--prediction", str(prediction), "--model-input", str(nifti),
              "--dicom", str(job / "input"), "--output", str(output),
              "--labels", str(repo_label_path(task, APP_ROOT))])
-        shutil.rmtree(work, ignore_errors=True)
+        # Default off. The acceptance harness keeps the CT-grid mask it compares.
+        if os.environ.get("RTSEG_RETAIN_LNQ_PREDICTION") != "1":
+            shutil.rmtree(work, ignore_errors=True)
     elif task == "choi_tmli":
         from choi_ontology import confirmed_labels
         labels_map = confirmed_labels(APP_ROOT / "labels/choi-tmli.json")

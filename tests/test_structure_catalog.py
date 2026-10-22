@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CATALOG = json.loads((ROOT / 'catalog/structures.json').read_text())
 REGISTRIES = builder.registries()
 SPEC_REGISTRIES = ('CERR_TASKS', 'ANTSPYNET_TASKS', 'PYCAD_TASKS', 'MRANNOTATOR_TASKS',
-                   'CADS_OPEN_TASKS', 'NNUNET_V1_TASKS', 'MONAI_BUNDLE_TASKS')
+                   'CADS_OPEN_TASKS', 'CADS_RESEARCH_TASKS', 'NNUNET_V1_TASKS', 'MONAI_BUNDLE_TASKS')
 
 
 def test_catalog_covers_all_registry_tasks_and_respects_writer_names():

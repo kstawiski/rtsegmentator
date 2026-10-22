@@ -1,0 +1,21 @@
+{
+  "name": "TotalSegmentator 1.5.7 task 256 fast multilabel weights",
+  "upstream_version": "1.5.7",
+  "weights_release": "v1.5.6-weights",
+  "url": "https://github.com/wasserth/TotalSegmentator/releases/download/v1.5.6-weights/Task256_TotalSegmentator_3mm_1139subj.zip",
+  "zenodo_record": "https://zenodo.org/records/6802052",
+  "archive_bytes": 229878018,
+  "archive_sha256": "459434b96be1c5b8812a246c56aef1bae534902c972f71f321b49c61b98ce600",
+  "archive_md5": "a9b8bacff0ba0a2edd903e53a97720f1",
+  "md5_agreement": "The GitHub archive size and MD5 match Zenodo record 6802052 file Task256_TotalSegmentator_3mm_1139subj.zip (md5:a9b8bacff0ba0a2edd903e53a97720f1, 229878018 bytes).",
+  "install_root": "weights/totalsegmentator-v1.5.7",
+  "relative_checkpoint": "nnUNet/3d_fullres/Task256_TotalSegmentator_3mm_1139subj/nnUNetTrainerV2_ep8000_nomirror__nnUNetPlansv2.1/fold_0/model_final_checkpoint.model",
+  "checkpoint_sha256": "3155cf912468be1536d6cf6e2be76f9e5ada4e7b7e26bfd8098cb677cd71eca3",
+  "checkpoint_pkl_sha256": "4ca47d9e83cca5549dd5c25c458e8206efc065b80fec4a4473ab2cb781c7ed5f",
+  "relative_checkpoint_pkl": "nnUNet/3d_fullres/Task256_TotalSegmentator_3mm_1139subj/nnUNetTrainerV2_ep8000_nomirror__nnUNetPlansv2.1/fold_0/model_final_checkpoint.model.pkl",
+  "plans_pkl_sha256": "d166ffed489513f162e5d0a9809687b075702c87c5681d6911df6c33f3c6ae96",
+  "relative_plans_pkl": "nnUNet/3d_fullres/Task256_TotalSegmentator_3mm_1139subj/nnUNetTrainerV2_ep8000_nomirror__nnUNetPlansv2.1/plans.pkl",
+  "trainer": "nnUNetTrainerV2_ep8000_nomirror__nnUNetPlansv2.1",
+  "task_id": 256,
+  "call": "totalsegmentator(input, output, ml=True, fast=True)"
+}

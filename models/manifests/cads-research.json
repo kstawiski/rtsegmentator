@@ -1,0 +1,84 @@
+{
+  "name": "CADS research model family",
+  "version": "cads-model-research_v1.0.0",
+  "source": "https://github.com/murong-xu/CADS",
+  "source_commit": "7480324808ab490b5e27035c8bfd28486e8c004a",
+  "code_license": "Apache-2.0",
+  "model_license": "CC BY-NC-SA 4.0",
+  "runtime": "envs/cads (Python 3.11, PyTorch 2.6.0+cu124, nnU-Net v2 2.5.2)",
+  "weights_layout": "weights/cads/research/<dataset>/nnUNetTrainerNoMirroring__nnUNetResEncUNetLPlans__3d_fullres/fold_all/checkpoint_final.pth",
+  "archives": {
+    "Dataset551_Totalseg251.zip": "6941b2c536a0737c1f7c151ce8884f943022a4d1b271238c5a834168bc15ec0d",
+    "Dataset552_Totalseg252.zip": "546b8f0c177a4e4992d7da9ce0a18add6772fc40b0e164aab2ae23568f09a69e",
+    "Dataset553_Totalseg253.zip": "46a45beaadf99e7777b2064f966b7ef98e1a9c1dee3ac783e65e8063a9ded5ca",
+    "Dataset554_Totalseg254.zip": "2c7972f9446de950c2f48288ccec8383acafb4e07aea8fbe7507a1fa44c019a9",
+    "Dataset555_Totalseg255.zip": "6ec5bc46a43a3e4c6d77e071ae179277fd1715dfa1debec96d225ab2f2ea30b4",
+    "Dataset556_GC256.zip": "94ecf5456e16dd212a0b8aee85be499f3fdafd1b4d7adc4b199802cb32aef5db",
+    "Dataset557_Brain257.zip": "3b257b5e9a84abc51552812c3c08f13577ce87113c7bc495ad30c875b4da1bb8",
+    "Dataset558_OAR258.zip": "1365677ce4498238e1630f1a06d6307b791fc06676f1421a1ecd0a1f7e4e4a8c",
+    "Dataset559_Saros259.zip": "f8191a62b7351dfbc46ddc4f26945bc399981b7f66574d46c348b475757e4bbb"
+  },
+  "checkpoints": {
+    "Dataset551_Totalseg251": "41045f97e2a348f3d888360868923bfeb1ab9982f53afc5ba923b7732de7fa66",
+    "Dataset552_Totalseg252": "5ba2185a42ce3183ac8f338cb7953ce9125c8d64adb704345eeb8d142d4ce021",
+    "Dataset553_Totalseg253": "2cc58e9a351333e25cd5f1df9a93480b331600b1545504c87aa75b1e751b10ef",
+    "Dataset554_Totalseg254": "2f6aea2ff7db1b18e3f21e91243113793e49ce2170d7005eea5b3b5bbb97f13e",
+    "Dataset555_Totalseg255": "e1024cbf96c8e6f40c696e618489e9bcb81b96cd4973b9305249968082195c8c",
+    "Dataset556_GC256": "bec85d81e86a91db1e3e8b1fe8ef233fe8800fdc652814895df2457639684a88",
+    "Dataset557_Brain257": "b34f7749b16f812999e2155a8314ae1296da80bb9af8ec5b4ddc95938fbabbfb",
+    "Dataset558_OAR258": "92df90e50076b7fffe2a072f08d6db764b882ad7d25083a9a7a8fe4c62e57091",
+    "Dataset559_Saros259": "c09c5710e1c2bc2c248cb5f2db6c8e88ea6db13c1549b7fd01868188f98d45a3"
+  },
+  "metadata": {
+    "Dataset551_Totalseg251": {
+      "plans.json": "5f93feaa8ff636a5063bf5f297acbdcbc1b35529f239844ffe4989b6e969dcdd",
+      "dataset.json": "21fa7ffd49e06c4a5f1cf8a263e0521cbbd560681d1ce3bdca4026c6286ab8c6"
+    },
+    "Dataset552_Totalseg252": {
+      "plans.json": "0059db18ed1425ad6fd5571db13434e3af8d1464b0fbeb8f29fdfd4b5920343c",
+      "dataset.json": "31d3c8de4a5648998b26e5e518ab18a3546d655d4a8376860d20ee3576695a89"
+    },
+    "Dataset553_Totalseg253": {
+      "plans.json": "3894a73ee51e3d723797f107d705578d131cf6bbb423caf967aa7fd7f86c19ac",
+      "dataset.json": "91f29c12da94211adfa024de9985513b51b4fcb30ad08f506b191c5d811406f8"
+    },
+    "Dataset554_Totalseg254": {
+      "plans.json": "af9cfdf9e3f7bb409e44b014cdea02cea9c66727806ca0a2ec5231276d5915f8",
+      "dataset.json": "97a80f73bd8ef8d27e45df06ed451344196e6b928ce74f4234407cd3da979743"
+    },
+    "Dataset555_Totalseg255": {
+      "plans.json": "5f7ff87074c20ef736f714ec5354c1112b5b246d005d60c26350f0088c19527a",
+      "dataset.json": "736702da8e900225a40e3626fa6d6551de4f4bc6844b54086a3c628b67766e9c"
+    },
+    "Dataset556_GC256": {
+      "plans.json": "dbcb4e9a08405262b37b09564a755509700196ca61914c657996cb51b3df3f11",
+      "dataset.json": "aa8646a0841f0b82d9799f1fc8784cb4443dff58f9a42739362378efc3e25dc4"
+    },
+    "Dataset557_Brain257": {
+      "plans.json": "48a56eac415c3fed6ec207e65e9fa185f7d7c4928f898ee071db77e4b1acbf1e",
+      "dataset.json": "9117fa975a1655c4e6debe31b3f5915d35a45ea06dee506df75ac8c90e12b5eb"
+    },
+    "Dataset558_OAR258": {
+      "plans.json": "e6ca8bba5fc7efa2d0126b301dfd7bae2a43bc2cfc365490627b7ed00f4260e9",
+      "dataset.json": "c1a12d71f90c6bf17d58302722c491dfd0c739c85a466971e58c2c4ecafc5fde"
+    },
+    "Dataset559_Saros259": {
+      "plans.json": "3583dfd3d9a60b495bed91738f5fff46c84f37e979dfe392a0ccae2873402666",
+      "dataset.json": "203a52e2752acbae830024ace79b537fd68572ea426f2451d79c0ac6f1bf1cf8"
+    }
+  },
+  "tasks": [
+    551,
+    552,
+    553,
+    554,
+    555,
+    556,
+    557,
+    558,
+    559
+  ],
+  "foreground_classes": 167,
+  "label_comparison": "Foreground label names and indices in dataset.json match the installed open dataset.json for all nine datasets. The open catalogue underscores four task-556 muscle names and six task-557 tissue names; the research tasks keep the dataset.json spelling.",
+  "acceptance": "GPU acceptance is pending. A passing marker is validation/cads_research_<task>.json."
+}

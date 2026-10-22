@@ -301,6 +301,11 @@ for _name, _details in CADS_OPEN_TASKS.items():
     EXTERNAL_TASKS[_name] = {k: v for k, v in _details.items()
                              if k not in {"task_id", "labels"}}
 
+CADS_RESEARCH_TASKS = json.loads((Path(__file__).parent / "catalog/cads-research.json").read_text())
+for _name, _details in CADS_RESEARCH_TASKS.items():
+    EXTERNAL_TASKS[_name] = {k: v for k, v in _details.items()
+                             if k not in {"task_id", "labels"}}
+
 UNIVERSAL_MODEL_TASKS = json.loads((Path(__file__).parent / "catalog/universal-model.json").read_text())
 for _name, _details in UNIVERSAL_MODEL_TASKS.items():
     EXTERNAL_TASKS[_name] = {k: v for k, v in _details.items()
@@ -631,10 +636,10 @@ INFORMATIONAL_MODELS = {
         "structures":"Visible mediastinal lymph-node candidates",
         "description":"DBDMP VNetv2 for visible mediastinal lymph-node candidates; the portal repairs the release's erroneous crop geometry before inference and applies its official refinement.",
         "reference":"https://github.com/WltyBY/LNQ2023_training_code"},
-    "lnq_atlas": {"noncommercial":True, "modality":"CT", "enabled":False, "requires_preflight":True, "status":"public_weights_download_pending",
+    "lnq_atlas": {"noncommercial":True, "modality":"CT", "enabled":True, "requires_preflight":True, "status":"acceptance_pending",
         "structures":"Visible mediastinal lymph-node candidates with probabilistic-atlas context",
-        "license_note":"CC BY-NC-ND weights (model ledger).",
-        "description":"Checked 2026-10-15: the public share returns HTTP 200 without credentials and lists five checkpoints plus the atlas. Download, pinned artifact verification, TotalSegmentator 1.5.7 runtime and GPU checks remain required; the adapter is staged and disabled.",
+        "license_note":"Code CC BY-NC-ND 4.0. Archive weight terms are not stated. Owner accepted these terms on 2026-10-22.",
+        "description":"Segments visible mediastinal lymph-node candidates on one CT series. The output is one aggregate ROI, Mediastinal_Lymph_Node_Candidate, not an elective nodal region or a station map. No remaining candidate completes with no RTSTRUCT. Code licence CC BY-NC-ND 4.0. Archive weight terms are not stated. Owner accepted these terms on 2026-10-22. This task is routed to the H100 worker. On the P6000 portal (compute capability 6.1), keep lnq_atlas in REMOTE_GPU_TASKS. An acceptance marker recorded on the H100 does not enable the task on a P6000. Engelson et al., MELBA 2024, sections 4.1-4.3 and Tables 2 and 4: on the LNQ test set of 100 patients and 861 reference nodes, the ablation that uses all modifications, a binarization threshold of 0.2 and no minimum-diameter filter had Dice 0.6033 and found 57% of reference nodes (LN-found 0.5654), compared with 27% (LN-found 0.2749) when training on CT only. The challenge submission, a five-model ensemble with threshold 0.3 and a 5 mm minimum diameter, had Dice 0.5690 and ASSD 6.8976 mm on that same test set. The authors state that post-processing fit on the small validation set did not carry over to the test set. The installed adapter uses the submission settings (threshold 0.3, 5 mm), not the 0.2 ablation. Selectable only after the GPU acceptance marker and the orientation marker pass.",
         "reference":"https://github.com/MICAI-IMI-UzL/LNQ2023"},
     "wcode_pia": {"modality":"CT", "enabled":False, "status":"weights_unavailable",
         "structures":"Visible mediastinal lymph-node candidates",
