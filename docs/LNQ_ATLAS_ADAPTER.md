@@ -5,8 +5,8 @@ The five-fold archive is installed at `weights/lnq-atlas-20261015/`. Its
 `provenance.json` records archive SHA-256
 `ae0735e8444179deb51114dbf3fc469c854758f06849d69747985bbbaa3fecba` and a
 SHA-256 for every file returned by `required_files()`. Folds 0–4 passed strict
-CPU loading with no missing or unexpected keys. GPU acceptance has not been run.
-The task stays off until that marker and the orientation marker pass.
+CPU loading with no missing or unexpected keys. H100 acceptance passed on 2026-10-22 on a public CT (MSD Task06 lung_053): two production runs and the released predictor gave identical masks (17,234 voxels).
+The task stays off unless that marker and the orientation marker pass.
 
 The adapter requires:
 

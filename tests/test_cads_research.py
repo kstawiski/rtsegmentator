@@ -29,7 +29,7 @@ def test_research_catalogue_licence_and_dataset_spellings():
     }
     for name, spec in tasks.items():
         assert spec["enabled"] is True and spec["requires_preflight"] is True
-        assert spec["status"] == "acceptance_pending"
+        assert spec["status"] == "technical_checks_recorded"
         assert spec["noncommercial"] is True
         assert spec["license"] == "CC BY-NC-SA 4.0"
         assert spec["weights_license"] == "CC BY-NC-SA 4.0"
