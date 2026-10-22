@@ -19,8 +19,9 @@ from run_lnq_atlas import (lnq_python, total_python as lnq_total_python, total_w
                            validate_orientation as validate_lnq_orientation,
                            probe_interpreter_device as probe_lnq_device,
                            device_supported, device_refusal_message)
-from cads_variants import (TASK_IDS as CADS_RESEARCH_IDS, research_requirements,
-                           validate_research_acceptance, validate_orientation as validate_cads_orientation)
+from cads_variants import (TASK_IDS as CADS_RESEARCH_IDS, gpu_preflight as cads_gpu_preflight,
+                           research_requirements, validate_research_acceptance,
+                           validate_orientation as validate_cads_orientation)
 from nv_segment_logic import MODES as NV_SEGMENT_MODES, validate_acceptance
 import lnctvseg_bundle
 from prostate_models import TASKS as PROSTATE_TASKS, requirements as prostate_requirements
@@ -488,6 +489,9 @@ for task in PROSTATE_TASKS:
 
 def audit(tasks=None) -> dict[str, dict]:
     report = {}
+    cads_gpu = None
+    cads_gpu_error = None
+    cads_gpu_probed = False
     for task, requirements in REQUIREMENTS.items():
         if tasks is not None and task not in tasks: continue
         missing = []
@@ -556,10 +560,21 @@ def audit(tasks=None) -> dict[str, dict]:
                     if "orientation-validation/lnq_atlas.json" not in missing:
                         missing.append("orientation-validation/lnq_atlas.json (inconsistent orientation contents)")
         if task in CADS_RESEARCH_IDS:
+            if not cads_gpu_probed:
+                cads_gpu_probed = True
+                try:
+                    cads_gpu = cads_gpu_preflight(RUNTIME_ROOT, model_root=MODEL_ROOT)
+                except (OSError, ValueError, TypeError, RuntimeError, subprocess.SubprocessError) as exc:
+                    cads_gpu = {}
+                    cads_gpu_error = f"envs/cads/bin/python ({exc})"
+            if cads_gpu_error and cads_gpu_error not in missing:
+                missing.append(cads_gpu_error)
             marker = MODEL_ROOT / "validation" / f"{task}.json"
             if marker.is_file():
                 try:
-                    validate_research_acceptance(json.loads(marker.read_text()), task, MODEL_ROOT, APP_ROOT)
+                    validate_research_acceptance(
+                        json.loads(marker.read_text()), task, MODEL_ROOT, APP_ROOT,
+                        gpu=cads_gpu, runtime_root=RUNTIME_ROOT)
                     content_acceptance = True
                 except (OSError, ValueError, TypeError, AttributeError, KeyError, StopIteration):
                     if f"validation/{task}.json" not in missing:
@@ -567,8 +582,10 @@ def audit(tasks=None) -> dict[str, dict]:
             orientation_path = MODEL_ROOT / "orientation-validation" / f"{task}.json"
             if orientation_path.is_file():
                 try:
-                    validate_cads_orientation(json.loads(orientation_path.read_text()), task)
-                except (OSError, ValueError, TypeError, AttributeError, KeyError):
+                    validate_cads_orientation(
+                        json.loads(orientation_path.read_text()), task, MODEL_ROOT, APP_ROOT,
+                        gpu=cads_gpu, runtime_root=RUNTIME_ROOT)
+                except (OSError, ValueError, TypeError, AttributeError, KeyError, StopIteration):
                     orientation_invalid = True
                     if f"orientation-validation/{task}.json" not in missing:
                         missing.append(f"orientation-validation/{task}.json (inconsistent orientation contents)")

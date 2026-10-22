@@ -5,9 +5,13 @@ licences. A missing checkpoint is an error: CADS would otherwise download it.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
+import os
 import re
+import subprocess
 from pathlib import Path
 
 DATASETS = {
@@ -63,6 +67,153 @@ FAILURE_KEYS = frozenset({
 })
 REJECTED_STRINGS = frozenset({"failed", "failure", "waived", "waiver", "deviation"})
 ORIENTATION_FIX = "direct_column_row_slice_mapping"
+SCHEMA_VERSION = 2
+DEVICES = ("H100", "P6000")
+_GPU_PROBE_SCRIPT = (
+    "import json, torch\n"
+    "if not torch.cuda.is_available():\n"
+    "    raise RuntimeError('GPU inference is required; CUDA is unavailable in envs/cads')\n"
+    "cap = torch.cuda.get_device_capability(0)\n"
+    "archs = list(torch.cuda.get_arch_list())\n"
+    "if not archs and hasattr(torch._C, '_cuda_getArchFlags'):\n"
+    "    flags = torch._C._cuda_getArchFlags()\n"
+    "    archs = flags.split() if flags else []\n"
+    "print(json.dumps({\n"
+    "    'name': torch.cuda.get_device_name(0),\n"
+    "    'compute_capability': [int(cap[0]), int(cap[1])],\n"
+    "    'torch': str(torch.__version__),\n"
+    "    'cuda': str(torch.version.cuda or ''),\n"
+    "    'compiled_architectures': archs,\n"
+"}))\n"
+)
+
+
+def cads_python(runtime_root, model_root=None):
+    candidates = [Path(runtime_root) / "envs/cads/bin/python"]
+    if model_root is not None:
+        candidates.append(Path(model_root) / "envs/cads/bin/python")
+    return next((path for path in candidates if path.is_file()), candidates[0])
+
+
+def device_supported(major, minor, arch_list):
+    """Check whether compiled_architectures supports (major, minor) via cubin or PTX."""
+    if type(major) is not int or type(minor) is not int or not isinstance(arch_list, list):
+        return False
+    device = (major, minor)
+    for item in arch_list:
+        if not isinstance(item, str):
+            return False
+        match = re.fullmatch(r"(sm|compute)_(\d)(\d+)([a-z]*)", item.strip())
+        if not match:
+            continue
+        kind, target_major, target_minor, suffix = match.groups()
+        target = (int(target_major), int(target_minor))
+        if suffix:
+            continue
+        if kind == "sm" and target[0] == device[0] and target[1] <= device[1]:
+            return True
+        if kind == "compute" and target <= device:
+            return True
+    return False
+
+
+def device_key(gpu):
+    if not isinstance(gpu, dict):
+        raise ValueError("CADS research acceptance requires a GPU identity mapping")
+    capability = gpu.get("compute_capability")
+    name = gpu.get("name", "")
+    if (isinstance(capability, list) and len(capability) == 2
+            and all(type(item) is int for item in capability) and isinstance(name, str)):
+        if capability == [9, 0] and "H100" in name:
+            return "H100"
+        if capability == [6, 1] and "P6000" in name:
+            return "P6000"
+    raise ValueError("CADS research acceptance requires an identified H100 or P6000 GPU")
+
+
+def validate_gpu(gpu):
+    key = device_key(gpu)
+    torch_version = gpu.get("torch")
+    cuda_version = gpu.get("cuda")
+    archs = gpu.get("compiled_architectures")
+    if not isinstance(torch_version, str) or not torch_version.strip():
+        raise ValueError("CADS GPU record is missing torch version")
+    if not isinstance(cuda_version, str) or not cuda_version.strip():
+        raise ValueError("CADS GPU record is missing CUDA version")
+    if (not isinstance(archs, list) or not archs
+            or not all(isinstance(item, str) and item.strip() for item in archs)):
+        raise ValueError("CADS GPU record is missing compiled_architectures")
+    major, minor = gpu["compute_capability"]
+    if not device_supported(major, minor, archs):
+        raise ValueError(
+            f"envs/cads torch {torch_version} ({archs}) does not support {gpu.get('name')} ({major}.{minor})")
+    return key
+
+
+def gpu_preflight(runtime_root, model_root=None):
+    """Query the live CUDA device and torch/CUDA build through envs/cads."""
+    python = cads_python(runtime_root, model_root=model_root)
+    if not python.is_file():
+        raise ValueError(f"CADS runtime interpreter missing: {python}")
+    try:
+        result = subprocess.run(
+            [str(python), "-c", _GPU_PROBE_SCRIPT],
+            capture_output=True, text=True, timeout=60, check=True,
+        )
+        gpu = json.loads(result.stdout)
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError) as exc:
+        detail = getattr(exc, "stderr", None) or str(exc)
+        raise ValueError(f"Cannot verify CADS research executing GPU/runtime: {detail.strip()}") from exc
+    validate_gpu(gpu)
+    return gpu
+
+
+@contextmanager
+def marker_lock(path):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.with_suffix(".lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+def read_device_records(path):
+    path = Path(path)
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text())
+        records = payload["devices"] if payload.get("schema_version") == SCHEMA_VERSION else {}
+        return dict(records) if isinstance(records, dict) else {}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return {}
+
+
+def write_device_records(path, records):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
+    temporary.write_text(
+        json.dumps({"schema_version": SCHEMA_VERSION, "devices": records}, indent=2, sort_keys=True) + "\n"
+    )
+    temporary.replace(path)
+
+
+def invalidate_device(model_root, task, label=None):
+    """Retain other GPU evidence, remove the attempted device's record and legacy unscoped records."""
+    for folder in ("validation", "orientation-validation"):
+        path = Path(model_root) / folder / f"{task}.json"
+        with marker_lock(path):
+            records = read_device_records(path)
+            if label is not None:
+                records.pop(label, None)
+            if label is not None and records:
+                write_device_records(path, records)
+            else:
+                path.unlink(missing_ok=True)
 
 
 def marker_has_failure(value):
@@ -214,16 +365,79 @@ def research_metadata_hashes(model_root, task_id, app_root):
     return expected
 
 
-def validate_research_acceptance(record, task, model_root, app_root):
-    """Accept a research marker only when every declared check passed."""
+def research_checkpoint_hashes(model_root, task_id, app_root):
+    pins = _manifest_checkpoint_hashes(app_root)
+    expected = {}
+    for tid in required_task_ids(task_id):
+        dataset = DATASETS[tid]
+        digest = file_sha256(checkpoint_path(model_root, "research", tid))
+        if digest != pins[dataset]:
+            raise ValueError(f"Installed research checkpoint does not match the pin: {dataset}")
+        expected[dataset] = digest
+    return expected
+
+
+def research_binding(model_root, task_id, app_root):
+    installed = installed_source_commit(Path(model_root) / "sources/CADS")
+    if installed != SOURCE_COMMIT:
+        raise ValueError("CADS source commit mismatch")
+    return {
+        "source_commit": installed,
+        "checkpoint_hashes": research_checkpoint_hashes(model_root, task_id, app_root),
+        "metadata_hashes": research_metadata_hashes(model_root, task_id, app_root),
+    }
+
+
+def _validate_research_bindings(record, task_id, model_root, app_root):
+    expected_metadata = research_metadata_hashes(model_root, task_id, app_root)
+    if record.get("metadata_hashes") != expected_metadata:
+        raise ValueError("Metadata hashes mismatch")
+    expected_checkpoints = research_checkpoint_hashes(model_root, task_id, app_root)
+    if record.get("checkpoint_hashes") != expected_checkpoints:
+        raise ValueError("Checkpoint hashes mismatch")
+    installed = installed_source_commit(Path(model_root) / "sources/CADS")
+    if not (record.get("source_commit") == installed == SOURCE_COMMIT):
+        raise ValueError("CADS source commit mismatch")
+
+
+def _extract_device_record(record, gpu, kind="Acceptance"):
+    if not isinstance(record, dict):
+        raise ValueError(f"{kind} record must be a JSON object")
+    if marker_has_failure({k: v for k, v in record.items() if k != "devices"}):
+        raise ValueError(f"{kind} contains a failure, deviation, or waiver")
+    if record.get("schema_version") != SCHEMA_VERSION or not isinstance(record.get("devices"), dict):
+        raise ValueError(f"{kind} requires schema_version 2 per-device records")
+    devices = record["devices"]
+    if not devices or not (set(devices) <= set(DEVICES)):
+        raise ValueError(f"{kind} devices must be H100 and/or P6000")
+    key = validate_gpu(gpu)
+    device_record = devices.get(key)
+    if not isinstance(device_record, dict):
+        raise ValueError(f"Missing {kind.lower()} for executing device {key}")
+    if marker_has_failure(device_record):
+        raise ValueError(f"{kind} contains a failure, deviation, or waiver")
+    record_gpu = device_record.get("gpu")
+    if validate_gpu(record_gpu) != key or record_gpu != gpu:
+        raise ValueError(f"{kind} executing GPU/runtime mismatch")
+    return device_record
+
+
+def validate_research_acceptance(record, task, model_root, app_root, *, gpu=None, runtime_root=None):
+    """Accept a research marker only when the executing device record and every declared check passed."""
     def require(condition, message):
         if not condition:
             raise ValueError(message)
 
     task_id = TASK_IDS[task]
-    require(isinstance(record, dict) and record.get("task") == task and record.get("result") == "passed",
+    require(isinstance(record, dict), "Acceptance record must be a JSON object")
+    require(not marker_has_failure({k: v for k, v in record.items() if k != "devices"}),
+            "Acceptance contains a failure, deviation, or waiver")
+    require(record.get("schema_version") == SCHEMA_VERSION and isinstance(record.get("devices"), dict),
+            "Acceptance requires schema_version 2 per-device records")
+    gpu = gpu if gpu is not None else gpu_preflight(runtime_root or model_root, model_root=model_root)
+    record = _extract_device_record(record, gpu, kind="Acceptance")
+    require(record.get("task") == task and record.get("result") == "passed",
             "Acceptance task/result mismatch")
-    require(not marker_has_failure(record), "Acceptance contains a failure, deviation, or waiver")
     require(record.get("license") == "research", "Acceptance licence is not research")
     require(record.get("task_id") == task_id, "Acceptance task id mismatch")
     require(record.get("fixture") == PUBLIC_FIXTURES[task],
@@ -243,22 +457,10 @@ def validate_research_acceptance(record, task, model_root, app_root):
             "Dependency task list mismatch")
     require(record.get("expected_output_name") == f"input_part_{task_id}.nii.gz",
             "Unexpected CADS output name")
-    expected_metadata = research_metadata_hashes(model_root, task_id, app_root)
-    require(record.get("metadata_hashes") == expected_metadata, "Metadata hashes mismatch")
-    pins = _manifest_checkpoint_hashes(app_root)
-    expected = {}
-    for tid in required_task_ids(task_id):
-        dataset = DATASETS[tid]
-        digest = file_sha256(checkpoint_path(model_root, "research", tid))
-        if digest != pins[dataset]:
-            raise ValueError(f"Installed research checkpoint does not match the pin: {dataset}")
-        expected[dataset] = digest
-    require(record.get("checkpoint_hashes") == expected, "Checkpoint hashes mismatch")
-    installed = installed_source_commit(Path(model_root) / "sources/CADS")
-    require(record.get("source_commit") == installed == SOURCE_COMMIT, "CADS source commit mismatch")
+    _validate_research_bindings(record, task_id, model_root, app_root)
 
 
-def validate_orientation(record, task):
+def validate_orientation_geometry(record, task):
     """Require the geometry payload written by audit_rtstruct_orientation.py."""
     if not isinstance(record, dict) or record.get("task") != task or record.get("result") != "passed":
         raise ValueError("Orientation task/result mismatch")
@@ -284,3 +486,51 @@ def validate_orientation(record, task):
         raise ValueError("Orientation artifact is empty")
     if not isinstance(record.get("artifact_sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", record["artifact_sha256"]):
         raise ValueError("Orientation artifact hash is missing")
+
+
+def validate_orientation(record, task, model_root=None, app_root=None, *, gpu=None, runtime_root=None):
+    """Validate orientation geometry, plus per-device and artifact bindings for CADS research tasks."""
+    if task not in TASK_IDS:
+        return validate_orientation_geometry(record, task)
+    if not isinstance(record, dict):
+        raise ValueError("Orientation record must be a JSON object")
+    if marker_has_failure({k: v for k, v in record.items() if k != "devices"}):
+        raise ValueError("Orientation marker contains a failure, deviation, or waiver")
+    if record.get("schema_version") != SCHEMA_VERSION or not isinstance(record.get("devices"), dict):
+        raise ValueError("Orientation requires schema_version 2 per-device records")
+    if model_root is None:
+        raise ValueError("Model root is required for CADS research orientation binding")
+    if app_root is None:
+        app_root = Path(__file__).resolve().parent
+    gpu = gpu if gpu is not None else gpu_preflight(runtime_root or model_root, model_root=model_root)
+    device_record = _extract_device_record(record, gpu, kind="Orientation")
+    validate_orientation_geometry(device_record, task)
+    _validate_research_bindings(device_record, TASK_IDS[task], model_root, app_root)
+
+
+def store_device_records(model_root, app_root, task, acceptance_record, orientation_record, *, runtime_root=None):
+    gpu = acceptance_record.get("gpu")
+    key = validate_gpu(gpu)
+    if orientation_record.get("gpu") != gpu:
+        raise ValueError("Orientation GPU record does not match acceptance GPU record")
+    validate_research_acceptance(
+        {"schema_version": SCHEMA_VERSION, "devices": {key: acceptance_record}},
+        task, model_root, app_root, gpu=gpu, runtime_root=runtime_root,
+    )
+    validate_orientation(
+        {"schema_version": SCHEMA_VERSION, "devices": {key: orientation_record}},
+        task, model_root, app_root, gpu=gpu, runtime_root=runtime_root,
+    )
+    for folder, record, validator in (
+        ("validation", acceptance_record, validate_research_acceptance),
+        ("orientation-validation", orientation_record, validate_orientation),
+    ):
+        path = Path(model_root) / folder / f"{task}.json"
+        with marker_lock(path):
+            records = read_device_records(path)
+            records[key] = record
+            write_device_records(path, records)
+            validator(
+                json.loads(path.read_text()),
+                task, model_root, app_root, gpu=gpu, runtime_root=runtime_root,
+            )

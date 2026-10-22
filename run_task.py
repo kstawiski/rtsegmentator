@@ -39,6 +39,7 @@ if len(sys.argv) > 2 and sys.argv[2] in {
 import pydicom
 from nv_segment_logic import MODES as NV_SEGMENT_MODES
 import lnctvseg_bundle
+from cads_variants import TASK_IDS as CADS_RESEARCH_IDS
 from prostate_models import TASKS as PROSTATE_TASKS, run_task as run_prostate_task
 from structure_labels import spec_labels, repo_label_path, INLINE_LABELS, sct_matched_name
 from monai_bundle import compatible_config, bundle_command
@@ -54,6 +55,9 @@ if HELD_MRI_AUDIT and task not in {'nci_monai_prostate_lesion_bpmri', 'umambamtl
 NODAL_AUDIT = '--nodal-acceptance-audit' in sys.argv[3:]
 if NODAL_AUDIT and task not in {lnctvseg_bundle.TASK, 'hnlnl_2d3d'}:
     raise SystemExit('Nodal acceptance audit accepts only LNCTVSeg and HNLNL')
+CADS_RESEARCH_AUDIT = sys.argv[3:] == ['--cads-research-acceptance-audit']
+if CADS_RESEARCH_AUDIT and task not in CADS_RESEARCH_IDS:
+    raise SystemExit('CADS research acceptance audit accepts only the nine CADS research tasks')
 child = None
 APP_ROOT = Path(os.environ.get("RTSEG_APP_ROOT", Path(__file__).resolve().parent))
 MODEL_ROOT = Path(os.environ.get("RTSEG_MODEL_ROOT", "/models"))
@@ -577,11 +581,26 @@ try:
              "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
     elif task in CADS_OPEN_TASKS or task in CADS_RESEARCH_TASKS:
-        from cads_variants import require_installed
+        from cads_variants import (
+            gpu_preflight, require_installed, validate_orientation, validate_research_acceptance,
+        )
         research = task in CADS_RESEARCH_TASKS
         spec = (CADS_RESEARCH_TASKS if research else CADS_OPEN_TASKS)[task]
         license_name = "research" if research else "open"
-        require_installed(MODEL_ROOT, license_name, spec["task_id"])
+        require_installed(MODEL_ROOT, license_name, spec["task_id"], APP_ROOT)
+        if research:
+            gpu = gpu_preflight(RUNTIME_ROOT, model_root=MODEL_ROOT)
+            if not CADS_RESEARCH_AUDIT:
+                if sys.argv[3:]:
+                    raise SystemExit("Unexpected CADS research dispatcher arguments")
+                validate_research_acceptance(
+                    json.loads((MODEL_ROOT / "validation" / f"{task}.json").read_text()),
+                    task, MODEL_ROOT, APP_ROOT, gpu=gpu, runtime_root=RUNTIME_ROOT,
+                )
+                validate_orientation(
+                    json.loads((MODEL_ROOT / "orientation-validation" / f"{task}.json").read_text()),
+                    task, MODEL_ROOT, APP_ROOT, gpu=gpu, runtime_root=RUNTIME_ROOT,
+                )
         work = job / "external" / task
         work.mkdir(parents=True, exist_ok=True)
         nifti = work / "input.nii.gz"
