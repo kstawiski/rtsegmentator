@@ -599,7 +599,7 @@ def audit(tasks=None) -> dict[str, dict]:
         orientation_ready = orientation.is_file() and not orientation_invalid
         if task in PROSTATE_TASKS:
             for folder, validator in (("validation", lambda record: prostate_acceptance(record, task, MODEL_ROOT)),
-                                      ("orientation-validation", lambda record: prostate_orientation(record, task))):
+                                      ("orientation-validation", lambda record: prostate_orientation(record, task, MODEL_ROOT))):
                 try:
                     validator(json.loads((MODEL_ROOT / folder / f"{task}.json").read_text()))
                     if folder == "validation":

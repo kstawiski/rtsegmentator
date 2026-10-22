@@ -1,0 +1,19 @@
+{
+  "nci_monai_prostate_lesion_bpmri": {
+    "sources/nci_monai_lesion/prostate-mri-lesion-seg/LICENSE": "5c55b740c04b3b59ed087110702adf5e1a1d74816327924f486d079f5bddcbd9",
+    "sources/nci_monai_lesion/prostate-mri-lesion-seg/prostate_mri_lesion_seg_app/organ_seg_operator.py": "f3c59fc4e0d3a6fff58d48ca841775034e8d4e71d372a28996f3c4d59ed6214e",
+    "sources/nci_monai_lesion/prostate-mri-lesion-seg/prostate_mri_lesion_seg_app/custom_lesion_seg_operator.py": "89d3482f6bbb4f0251617c7ec334cc6cb34355ac9329f8c69cc4feebf4e016b0",
+    "sources/nci_monai_lesion/prostate-mri-lesion-seg/prostate_mri_lesion_seg_app/custom_lesion_classifier_operator.py": "81b91e084e3116b66a53b517e0a1ed4a1631e90fdb0f63857d89e2b7e3fe9cc6",
+    "sources/nci_monai_lesion/prostate-mri-lesion-seg/prostate_mri_lesion_seg_app/rrunet3D.py": "81bf2f668ea7a5e09bde467f82f5b91a4ed426ac5a8141a6e30e3347ac4fe254",
+    "sources/nci_monai_lesion/prostate-mri-lesion-seg/prostate_mri_lesion_seg_app/resnet.py": "ffae3afaf086b7acdfec6f1366406d122c0f20f97263b156fb92e7accb9341a6",
+    "sources/nci_monai_lesion/prostate-mri-lesion-seg/prostate_mri_lesion_seg_app/common.py": "a919480d2c25bc2d001a3c76f070637904c97acf02be743d188bdcead3e5698e",
+    "sources/nci_monai_lesion/prostate-mri-lesion-seg/prostate_mri_lesion_seg_app/app.py": "d7fba7e7bef82ddc217d82cae4885b5bae964aa575a6352bb4894795227f94e2"
+  },
+  "umambamtl_cspca_bpmri": {
+    "sources/umambamtl/LICENSE": "7da9f2ddeda836a891f537104530230a7b2318f61ea4c57b05e3dd46a9ae27fd",
+    "sources/umambamtl/gc_algorithms/base_container/models/umamba_mtl/process.py": "13d5fb06b12bf9bc881059afc99c7d47d132c8ad12cbaa8656c108c53c2e1730",
+    "sources/umambamtl/gc_algorithms/base_container/models/umamba_mtl/process_prostate.py": "8f1462e0912097286dd9387e68c4bdbd5556b7c309603ad921813d0242b6c39e",
+    "sources/umambamtl/gc_algorithms/base_container/models/umamba_mtl/UMambaBot_3d.py": "e2b2e4fc8194b60d35b0f75cabd9b9c5fba01376e55e179c27bad3f8ed066075",
+    "sources/umambamtl/gc_algorithms/base_container/models/umamba_mtl/UMambaBot_3d_mtl.py": "03f083470834029528de27dfab8aee6806ac7326042fe5fec7e9310d02c75e20"
+  }
+}

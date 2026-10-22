@@ -603,3 +603,50 @@ def test_legacy_single_series_manifest_still_works(mri):
     for key in ['input_manifest', 'staging_upload']:
         data.pop(key)
     assert mri.portal.input_manifest_complete(job, data)
+
+
+@pytest.mark.parametrize('creator',['SIEMENS MR HEADER','WRONG',None])
+@pytest.mark.parametrize('explicit',[False,True])
+def test_siemens_private_b_value_requires_creator_on_every_slice(mri,creator,explicit):
+    t2=mri.add('T2 axial');adc=mri.add('ADC',image_type=['DERIVED','PRIMARY','ADC'])
+    hbv=mri.add('Computed high b',image_type=['DERIVED','PRIMARY','DIFFUSION','TRACEW'])
+    for index,path in enumerate(sorted((mri.root/'input').glob('Computed high b-*.dcm'))):
+        ds=pydicom.dcmread(path)
+        if index!=1 or creator is not None:
+            ds.add_new((0x0019,0x0010),'LO','SIEMENS MR HEADER' if index!=1 else creator)
+        ds.add_new((0x0019,0x100c),'IS','1400');ds.save_as(path,enforce_file_format=True)
+    rows=mri.assess();series=rows['Computed high b']
+    if creator=='SIEMENS MR HEADER':
+        assert series['hbv_options'][0]['b_value']==1400
+        assert 'SIEMENS MR HEADER' in series['hbv_options'][0]['b_value_source']
+        choices={t2:{'adc':adc,'hbv':{'series_key':hbv,'b_value':1400}}} if explicit else None
+        response=mri.submit([t2],roles=choices)
+        assert response.status_code==202,response.text
+    else:
+        assert series['hbv_options']==[]
+
+
+@pytest.mark.parametrize('raw',[b'1400', '1400', 1400])
+def test_siemens_decoder_numeric_and_byte_vr(raw):
+    from mri_inputs import diffusion_b_value,SIEMENS_B_VALUE_SOURCE
+    ds=Dataset();ds.add_new((0x0019,0x0010),'LO','SIEMENS MR HEADER')
+    ds.add_new((0x0019,0x100c),'OB' if isinstance(raw,bytes) else 'IS',raw)
+    assert diffusion_b_value(ds)==(1400,SIEMENS_B_VALUE_SOURCE)
+
+
+def test_mixed_b_selection_records_only_selected_sops_and_keeps_offset_numbers(mri):
+    from prostate_models import role_directories,validate_dicom_roles
+    t2,adc,hbv,_,_=standard_exam(mri)
+    for index,path in enumerate(sorted((mri.root/'input').glob('DWI-*.dcm'))):
+        ds=pydicom.dcmread(path);ds.InstanceNumber=101+index;ds.save_as(path,enforce_file_format=True)
+    mri.assess()
+    response=mri.submit([t2],roles={t2:{'adc':adc,'hbv':{'series_key':hbv,'b_value':1400}}})
+    assert response.status_code==202,response.text
+    job=mri.portal.BASE/response.json()['ids'][0]
+    meta=json.loads((job/'job.json').read_text())
+    selected=meta['input_roles']['hbv']
+    assert selected['expected_slices']==3 and len(selected['expected_sop_instances'])==3
+    headers=[pydicom.dcmread(p,stop_before_pixels=True) for p in (job/'input_hbv').iterdir()]
+    assert {int(d.InstanceNumber) for d in headers}=={107,108,109}
+    assert set(selected['expected_sop_instances'])=={str(d.SOPInstanceUID) for d in headers}
+    assert validate_dicom_roles(role_directories(job),meta['input_roles'])==[]

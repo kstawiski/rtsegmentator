@@ -108,5 +108,68 @@
     "license_note": "Weights CC BY 4.0; original source code MIT.",
     "status": "technical_checks_recorded",
     "requires_preflight": true
+  },
+  "nci_monai_prostate_lesion_bpmri": {
+    "modality": "MR",
+    "description": "Segments the prostate and lesion candidates from axial T2W, ADC and high b-value DWI. Each lesion receives a model PI-RADS class (2\u20135). External evaluation in 151 patients reported csPCa examination-level AUROC 0.78 (95% CI 0.71\u20130.86), sensitivity 0.87 and specificity 0.53. Research use only: the licence excludes diagnosis and treatment.",
+    "structures": "NCI_Prostate and one NCI_L##_PIRADS2\u20135 ROI per lesion; no fixed maximum lesion count",
+    "reference": "https://pubmed.ncbi.nlm.nih.gov/40753327/",
+    "input_roles": [
+      {
+        "role": "t2w",
+        "modality": "MR",
+        "required": true,
+        "label": "Axial T2-weighted"
+      },
+      {
+        "role": "adc",
+        "modality": "MR",
+        "required": true,
+        "label": "ADC map"
+      },
+      {
+        "role": "hbv",
+        "modality": "MR",
+        "required": true,
+        "label": "High b-value DWI (one b-value)"
+      }
+    ],
+    "reference_role": "t2w",
+    "noncommercial": true,
+    "license": "NIH/NVIDIA non-commercial research licence",
+    "license_note": "Research use only: the licence excludes diagnosis and treatment. Owner accepted these terms on 2026-10-22",
+    "status": "GPU reference and DICOM acceptance pending",
+    "requires_preflight": true
+  },
+  "umambamtl_cspca_bpmri": {
+    "modality": "MR",
+    "description": "Detects up to three clinically significant prostate cancer candidates from axial T2W, ADC and high b-value DWI. Lesion and examination likelihoods are model scores. The released architecture has two decoders. The paper reports AUROC 0.843 and average precision 0.622 for MTL-Dual in 100 PI-CAI hidden tuning cases; AUROC 0.925 and average precision 0.685 in 200 institutional examinations. The auxiliary zone head gates detection; no zone ROIs are exported. Runs on the H100 worker.",
+    "structures": "Up to three UMMTL_L##_p0.73 lesion ROIs; full-precision scores in JSON",
+    "reference": "https://proceedings.mlr.press/v301/larsen26a.html",
+    "input_roles": [
+      {
+        "role": "t2w",
+        "modality": "MR",
+        "required": true,
+        "label": "Axial T2-weighted"
+      },
+      {
+        "role": "adc",
+        "modality": "MR",
+        "required": true,
+        "label": "ADC map"
+      },
+      {
+        "role": "hbv",
+        "modality": "MR",
+        "required": true,
+        "label": "High b-value DWI (one b-value)"
+      }
+    ],
+    "reference_role": "t2w",
+    "license": "Repository Apache-2.0; weight licence not stated",
+    "license_note": "Weight licence not stated. Owner accepted these terms on 2026-10-22",
+    "status": "H100 reference and DICOM acceptance pending",
+    "requires_preflight": true
   }
 }

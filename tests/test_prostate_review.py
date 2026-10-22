@@ -123,9 +123,14 @@ def test_review_m3_all_declared_artifacts_are_packaged(portal, empty):
     job = job_at(portal, tasks)
     expected = set()
     for task in tasks:
-        suffixes = (('.lesions.json', '.probability.nii.gz', '.detection.nii.gz') if task.startswith('picai_')
-                    else ('.provenance.json', '.segmentation.nii.gz') +
-                         (('.probabilities.npz',) if task == TASK else ()))
+        if task in prostate_models.HELD_MRI_TASKS:
+            suffixes = ('.lesions.json', '.probability.nii.gz', '.detection.nii.gz') + (
+                ('.gland.nii.gz',) if task == 'nci_monai_prostate_lesion_bpmri' else ())
+        elif task.startswith('picai_'):
+            suffixes = ('.lesions.json', '.probability.nii.gz', '.detection.nii.gz')
+        else:
+            suffixes = ('.provenance.json', '.segmentation.nii.gz') + (
+                ('.probabilities.npz',) if task == TASK else ())
         for suffix in suffixes + (() if empty else ('', '.orientation.json')):
             name = task + '_RTSTRUCT.dcm' + suffix
             (job / 'output' / name).write_bytes(b'synthetic artifact')
@@ -295,8 +300,11 @@ def test_review_m5_environments_belong_to_model_root(tmp_path, monkeypatch, task
     args = [task, job, root, model_root]
     if 'runtime_root' in inspect.signature(prostate_models.run_task).parameters:
         args.append(runtime_root)
-    with pytest.raises(SystemExit, match='empty prediction'):
-        prostate_models.run_task(*args, 'worker-python', run)
+    if task in prostate_models.HELD_MRI_TASKS:
+        prostate_models.run_task(*args, 'worker-python', run, acceptance_audit=True)
+    else:
+        with pytest.raises(SystemExit, match='empty prediction'):
+            prostate_models.run_task(*args, 'worker-python', run)
     assert calls[0][0] == str(interpreter)
     assert 'runtime_root' not in inspect.signature(prostate_models.run_task).parameters
     assert 'Runtimes resolve from `RTSEG_RUNTIME_ROOT`' not in (root / 'docs/PROSTATE_MODELS.md').read_text()
@@ -305,6 +313,11 @@ def test_review_m5_environments_belong_to_model_root(tmp_path, monkeypatch, task
     other.parent.mkdir(parents=True)
     other.write_text('wrong root; never executed')
     assert relative in model_preflight.audit([task])[task]['missing']
+
+
+def synthetic_runtime_identity(python):
+    return {'version':'synthetic', 'packages':[], 'stdlib':'/nonexistent-synthetic-stdlib',
+            'prefix': str(Path(python).parent.parent) if str(python) != sys.executable else '/nonexistent-synthetic-worker'}
 
 
 def synthetic_acceptance_bundle(root, task):
@@ -317,6 +330,41 @@ def synthetic_acceptance_bundle(root, task):
             path.write_text('synthetic placeholder')
     commit = prostate_models.SOURCE_COMMITS[model]
     (root / 'sources' / model / 'RTSEG_MANIFEST.json').write_text(json.dumps({'commit': commit}))
+    if task in prostate_models.HELD_MRI_TASKS:
+        import held_mri
+        for src in held_mri.source_files(task):
+            p = root / src
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text('synthetic source')
+        hashes = {p.as_posix(): hashlib.sha256((root / p).read_bytes()).hexdigest() for p in held_mri.weights(task)}
+        src_hashes = {p.as_posix(): hashlib.sha256((root / p).read_bytes()).hexdigest() for p in held_mri.source_files(task)}
+        app = Path(held_mri.__file__).parent
+        adapter_hashes = {name: hashlib.sha256((app / name).read_bytes()).hexdigest() for name in (
+            'held_mri.py', 'held_mri_upstream.py', 'prostate_models.py', 'prostate_postprocess.py',
+            held_mri.TASKS[task][2], 'convert_masks_validate_rtstruct.py', 'models/manifests/held-mri-sources.json')}
+        env_name = held_mri.TASKS[task][1]
+        lock_hash = hashlib.sha256((root / 'runtime-envs' / env_name / 'requirements.lock').read_bytes()).hexdigest()
+        record = {
+            'task': task, 'result': 'passed', 'source_commit': commit,
+            'source_file_hashes': src_hashes, 'adapter_hashes': adapter_hashes,
+            'checkpoint_revision': held_mri.REVISIONS[task],
+            'checkpoint_hashes': hashes,
+            'checkpoint_sha256': hashlib.sha256(json.dumps(hashes, sort_keys=True, separators=(',', ':')).encode()).hexdigest(),
+            'environment_lock_sha256': lock_hash,
+            'acceptance_modes': ['reference', 'dicom'], 'deviations': [],
+            'reference_mode': {'passed': True, 'result_sha256': 'a' * 64, 'runs': 2, 'deviations': []},
+            'dicom_mode': {'passed': True, 'result_sha256': 'b' * 64, 'runs': 2, 'deviations': []},
+            'gpu': {'name': 'NVIDIA H100', 'compute_capability': [9, 0]},
+            'tolerances': {'map_atol': 0.001 if task == 'umambamtl_cspca_bpmri' else 0.0,
+                           'mask_voxel_differences': 0, 'grid_atol_mm': 0.0001},
+            'checks': ['gpu_inference', 'unmodified_reference', 'repeatability', 'exact_input_grid',
+                       'rtstruct_roundtrip', 'orientation', 'both_acceptance_modes', 'lesion_measurements'],
+        }
+        import held_mri_runtime
+        from unittest.mock import patch
+        with patch.object(held_mri, 'pinned_source_hashes', lambda task: src_hashes), patch.object(held_mri_runtime, 'runtime_identity', synthetic_runtime_identity):
+            record.update(held_mri.binding(task, root))
+        return record, copy.deepcopy(record)
     hashes = {str(p): hashlib.sha256((root / p).read_bytes()).hexdigest() for p in prostate_models.weight_files(task)}
     record = {'task': task, 'result': 'passed', 'source_commit': commit,
         'checkpoint_revision': commit if task.startswith('picai_') else
@@ -341,6 +389,13 @@ def test_round2_m1_real_preflight_to_catalogue(portal, tmp_path, monkeypatch, ta
     import model_preflight
     root = tmp_path / 'synthetic-bundle'
     record, orientation = synthetic_acceptance_bundle(root, task)
+    if task in prostate_models.HELD_MRI_TASKS:
+        import held_mri
+        expected_hashes = copy.deepcopy(record['source_file_hashes'])
+        monkeypatch.setattr(held_mri, 'pinned_source_hashes', lambda t: copy.deepcopy(expected_hashes))
+        monkeypatch.setattr(held_mri, 'gpu_preflight', lambda t, root: {'name':'NVIDIA H100', 'compute_capability':[9,0]})
+        import held_mri_runtime
+        monkeypatch.setattr(held_mri_runtime, 'runtime_identity', synthetic_runtime_identity)
     model = prostate_models.TASKS[task][0]
     if defect == 'empty': record = {}
     elif defect == 'wrong_task': record['task'] = 'wrong-task'
@@ -364,13 +419,18 @@ def test_round2_m1_real_preflight_to_catalogue(portal, tmp_path, monkeypatch, ta
     marker.write_text('{' if defect == 'malformed' else json.dumps(record))
     if defect == 'missing': marker.unlink()
     marker = root / 'orientation-validation' / f'{task}.json'
-    marker.parent.mkdir()
-    if defect != 'orientation_missing': marker.write_text(json.dumps(orientation))
+    marker.parent.mkdir(exist_ok=True)
+    if defect == 'orientation_missing':
+        marker.unlink(missing_ok=True)
+    else:
+        marker.write_text(json.dumps(orientation))
     monkeypatch.setattr(model_preflight, 'MODEL_ROOT', root)
     monkeypatch.setattr(model_preflight, 'RUNTIME_ROOT', root)
     check = model_preflight.audit([task])[task]
     assert check['ready'] == (defect in {'good', 'no_preflight'}), check
-    assert check['orientation_ready'] == (not defect.startswith('orientation_'))
+    expected_orientation_ready = (not defect.startswith('orientation_')
+                                  and not (task in prostate_models.HELD_MRI_TASKS and defect in {'stale_file', 'installed_source'}))
+    assert check['orientation_ready'] == expected_orientation_ready
     item = {'name': task, 'enabled': True, **copy.deepcopy(portal.PROSTATE_TASKS[task])}
     portal.apply_model_gates(item, None if defect == 'no_preflight' else check, {task})
     assert item['enabled'] == (defect == 'good' and task != 'picai_nnunet_supervised_bpmri'), item
@@ -453,3 +513,28 @@ def test_installed_source_commit_reads_git_files_without_git(tmp_path):
     (broken / '.git/HEAD').write_text('ref: refs/heads/missing\n')
     with pytest.raises(ValueError, match='Cannot verify installed source commit'):
         prostate_models.installed_source_commit(broken)
+
+
+@pytest.mark.parametrize('defect',['gpu','interpreter','conversion'])
+def test_fix_r1_real_preflight_rejects_changed_execution(tmp_path,monkeypatch,defect):
+    import held_mri,held_mri_runtime,model_preflight
+    task=held_mri.NCI;root=tmp_path/'bundle'
+    record,orientation=synthetic_acceptance_bundle(root,task)
+    monkeypatch.setattr(held_mri,'pinned_source_hashes',lambda task:record['source_file_hashes'])
+    monkeypatch.setattr(held_mri_runtime,'runtime_identity',synthetic_runtime_identity)
+    calls=[]
+    def gpu(task,root):
+        calls.append(task)
+        return {'name':'Quadro P6000','compute_capability':[6,1]} if defect=='gpu' else record['gpu']
+    monkeypatch.setattr(held_mri,'gpu_preflight',gpu)
+    if defect=='interpreter': (root/'runtime-envs/nci-monai/bin/python').write_text('changed executable, same lock')
+    if defect=='conversion':
+        fake_app=tmp_path/'app';fake_app.mkdir();(fake_app/'dicom_series_to_nifti.py').write_text('changed conversion')
+        monkeypatch.setattr(held_mri,'__file__',str(fake_app/'held_mri.py'))
+    for folder,data in [('validation',record),('orientation-validation',orientation)]:
+        (root/folder/f'{task}.json').write_text(json.dumps({'schema_version':2,'devices':{'H100':data}}))
+    monkeypatch.setattr(model_preflight,'MODEL_ROOT',root)
+    monkeypatch.setattr(model_preflight,'RUNTIME_ROOT',root)
+    check=model_preflight.audit([task])[task]
+    assert calls
+    assert check['ready'] is check['acceptance_ready'] is check['orientation_ready'] is False

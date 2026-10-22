@@ -3315,6 +3315,16 @@
     "source": "nnU-Net export label map",
     "note": "Only structures found in the scan are written to the RTSTRUCT."
   },
+  "nci_monai_prostate_lesion_bpmri": {
+    "kind": "variable",
+    "names": [
+      "NCI_Prostate",
+      "NCI_L01_PIRADS2\u20135"
+    ],
+    "count": null,
+    "source": "Pinned NCI foreground components and four-class lesion classifier",
+    "note": "NCI_Prostate is fixed. Zero or more lesions are named NCI_L01_PIRADS4, etc.; no published maximum. PI-RADS is the model class. A gland-only result is valid."
+  },
   "nninteractive_v1_prompted": {
     "kind": "prompted",
     "names": [
@@ -5069,6 +5079,15 @@
     "count": 4,
     "source": "TotalSegmentator task class map",
     "note": "Only structures found in the scan are written to the RTSTRUCT."
+  },
+  "umambamtl_cspca_bpmri": {
+    "kind": "variable",
+    "names": [
+      "UMMTL_L01_p\u2026"
+    ],
+    "count": null,
+    "source": "Pinned U-MambaMTL / RGA 0.2.4 indexed candidates",
+    "note": "Zero to three lesions (maximum 3), named UMMTL_L01_p0.73 through UMMTL_L03_p\u2026. Scores are rounded in ROI names; JSON retains full precision. No zone ROIs. Empty results are valid."
   },
   "umu_prostate_zones_urethra_t2": {
     "kind": "fixed",

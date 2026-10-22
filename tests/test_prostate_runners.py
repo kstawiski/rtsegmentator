@@ -67,7 +67,9 @@ def role_job(tmp_path):
         dirname = 'input' if role == 't2w' else f'input_{role}'
         uid = make_series(tmp_path / dirname, study, frame, 10 * (index + 1),
                           b_value=1400 if role == 'hbv' else None)
-        records[role] = {'dir': dirname, 'series_uid': uid}
+        records[role] = {'dir': dirname, 'series_uid': uid, 'expected_slices': 5,
+                         'expected_sop_instances': {str(d.SOPInstanceUID): [[float(v) for v in d.ImagePositionPatient]]
+                             for d in [pydicom.dcmread(f,stop_before_pixels=True) for f in sorted((tmp_path/dirname).iterdir())]}}
         if role == 'hbv':
             records[role].update(b_value=1400, b_value_source='(0018,9087)')
     data = {'input_roles': records}
@@ -107,7 +109,7 @@ def test_role_manifest_rejects_partial_or_redirected_input(role_job, defect):
         models.role_directories(job)
 
 
-@pytest.mark.parametrize('defect', ['study', 'series', 'mixed_b', 'duplicate_position', 'multiframe', 'modality', 'unknown_b'])
+@pytest.mark.parametrize('defect', ['study', 'series', 'mixed_b', 'duplicate_position', 'multiframe', 'modality', 'unknown_b', 'missing_boundary_slice', 'missing_interior_slice', 'expected_slices_mismatch'])
 def test_dicom_role_validation_rejects_wrong_volumes(role_job, defect):
     job, data = role_job
     path = job / 'input_hbv/000.dcm'
@@ -119,7 +121,14 @@ def test_dicom_role_validation_rejects_wrong_volumes(role_job, defect):
     if defect == 'multiframe': ds.NumberOfFrames = 2
     if defect == 'modality': ds.Modality = 'CT'
     if defect == 'unknown_b': data['input_roles']['hbv'].pop('b_value_source')
-    ds.save_as(path, enforce_file_format=True)
+    if defect in {'study', 'series', 'mixed_b', 'duplicate_position', 'multiframe', 'modality', 'unknown_b'}:
+        ds.save_as(path, enforce_file_format=True)
+    if defect == 'missing_boundary_slice':
+        path.unlink()
+    if defect == 'missing_interior_slice':
+        (job / 'input_hbv/002.dcm').unlink()
+    if defect == 'expected_slices_mismatch':
+        data['input_roles']['hbv']['expected_slices'] = 19
     update_manifest(job, data)
     with pytest.raises(ValueError):
         models.validate_dicom_roles(models.role_directories(job), data['input_roles'])
@@ -342,6 +351,8 @@ def test_catalogues_label_order_and_variable_contract(tmp_path):
             assert 'model card lists no performance' in spec['description']
             assert structures[task]['kind'] == 'variable'
             assert 'maximum 5' in structures[task]['note']
+        elif task in models.HELD_MRI_TASKS:
+            assert structures[task]['kind'] == 'variable'
         else:
             assert structures[task]['kind'] == 'fixed'
     assert structures['umu_prostate_zones_urethra_t2']['names'] == [
@@ -491,28 +502,87 @@ def test_dispatch_positive_synthetic_result_uses_reference_dicom(role_job, task)
     calls = []
     def run(command):
         calls.append(command)
-        script = Path(command[1]).name
+        script = next(Path(c).name for c in command[1:] if str(c).endswith('.py'))
         if script.startswith('run_'):
             work = Path(command[command.index('--work') + 1])
+            if task == 'nci_monai_prostate_lesion_bpmri':
+                # The mocked model process supplies the SDK-native geometry companion.
+                reader=sitk.ImageSeriesReader();reader.SetFileNames(sorted(str(p) for p in (job/'input').iterdir()))
+                (work/'native').mkdir();sitk.WriteImage(reader.Execute(),str(work/'native/t2w.nii.gz'))
             reference = sitk.ReadImage(str(work / 'native/t2w.nii.gz'))
             values = np.zeros((5, 32, 40), np.uint8)
             values[1:4, 8:24, 10:28] = 1
             prediction = work / 'restored.nii.gz'
             write_array(values, reference, prediction)
             (work / 'result.json').write_text('{"empty":false}')
-            if task.startswith('picai_'):
-                (work / 'masks.json').write_text(json.dumps({'csPCa_L01_p0.73': str(prediction)}))
+            if task.startswith('picai_') or task in models.HELD_MRI_TASKS:
+                name = ('NCI_Prostate' if task == 'nci_monai_prostate_lesion_bpmri' else
+                        'UMMTL_L01_p0.73' if task == 'umambamtl_cspca_bpmri' else 'csPCa_L01_p0.73')
+                (work / 'masks.json').write_text(json.dumps({name: str(prediction)}))
         else:
             subprocess.run(command, check=True)
-    models.run_task(task, job, ROOT, Path('/models'), sys.executable, run)
+    models.run_task(task, job, ROOT, Path('/models'), sys.executable, run, acceptance_audit=task in models.HELD_MRI_TASKS)
     output = job / 'output' / f'{task}_RTSTRUCT.dcm'
     assert output.is_file()
     ds = pydicom.dcmread(output)
-    expected_name = ('csPCa_L01_p0.73' if task.startswith('picai_') else
+    expected_name = ('NCI_Prostate' if task == 'nci_monai_prostate_lesion_bpmri' else
+                     'UMMTL_L01_p0.73' if task == 'umambamtl_cspca_bpmri' else
+                     'csPCa_L01_p0.73' if task.startswith('picai_') else
                      'Prostate_PZ' if task.startswith('umu_') else 'Prostate158_Tumour')
     assert [roi.ROIName for roi in ds.StructureSetROISequence] == [expected_name]
     references = {str(image.ReferencedSOPInstanceUID) for roi in ds.ROIContourSequence
                   for contour in roi.ContourSequence for image in contour.ContourImageSequence}
     source = {str(pydicom.dcmread(path).SOPInstanceUID) for path in (job / 'input').iterdir()}
     assert references and references <= source
-    assert len([c for c in calls if Path(c[1]).name == 'dicom_series_to_nifti.py']) == (1 if task.startswith('umu_') else 3)
+    assert len([c for c in calls if any(Path(str(arg)).name == 'dicom_series_to_nifti.py' for arg in c)]) == (0 if task == 'nci_monai_prostate_lesion_bpmri' else 1 if task.startswith('umu_') else 3)
+
+
+@pytest.mark.parametrize('numbering',[lambda i:101+i,lambda i:3*i+2])
+def test_assessed_complete_volume_accepts_offset_and_mixed_b_numbering(role_job,numbering):
+    job,data=role_job
+    for i,path in enumerate(sorted((job/'input_hbv').iterdir())):
+        ds=pydicom.dcmread(path);ds.InstanceNumber=numbering(i);ds.save_as(path,enforce_file_format=True)
+    update_manifest(job,data)
+    assert models.validate_dicom_roles(models.role_directories(job),data['input_roles'])==[]
+
+
+@pytest.mark.parametrize('defect',['missing_creator','wrong_creator','missing_value'])
+def test_runtime_hbv_decoder_checks_every_instance(role_job,defect):
+    job,data=role_job
+    for path in sorted((job/'input_hbv').iterdir()):
+        ds=pydicom.dcmread(path);del ds.DiffusionBValue
+        ds.add_new((0x0019,0x0010),'LO','SIEMENS MR HEADER');ds.add_new((0x0019,0x100c),'IS','1400')
+        ds.save_as(path,enforce_file_format=True)
+    path=job/'input_hbv/002.dcm';ds=pydicom.dcmread(path)
+    if defect=='missing_creator': del ds[(0x0019,0x0010)]
+    elif defect=='wrong_creator': ds[(0x0019,0x0010)].value='OTHER CREATOR'
+    else: del ds[(0x0019,0x100c)]
+    ds.save_as(path,enforce_file_format=True);update_manifest(job,data)
+    with pytest.raises(ValueError,match='every selected instance'):
+        models.validate_dicom_roles(models.role_directories(job),data['input_roles'])
+
+
+def test_run_task_entrypoint_acceptance_audit_preserves_empty_artifacts(role_job):
+    job,_=role_job
+    app=job/'app';app.mkdir()
+    (app/'catalog').symlink_to(ROOT/'catalog',target_is_directory=True)
+    # The inference process is a synthetic result producer, never a neural model.
+    (app/'run_umambamtl.py').write_text('''import argparse,json
+from pathlib import Path
+p=argparse.ArgumentParser()
+for name in ('task','work','model-root','output','worker-python'):p.add_argument('--'+name)
+p.add_argument('--held-mri-acceptance-audit',action='store_true')
+a=p.parse_args();work=Path(a.work)
+(work/'result.json').write_text('{"empty":true}')
+(work/'masks.json').write_text('{}')
+Path(a.output+'.lesions.json').write_text('{"status":"empty","lesions":[]}')
+''')
+    (app/'dicom_series_to_nifti.py').symlink_to(ROOT/'dicom_series_to_nifti.py')
+    bundle=job/'bundle';python=bundle/'runtime-envs/umamba/bin/python'
+    python.parent.mkdir(parents=True);python.symlink_to(sys.executable)
+    env={**os.environ,'RTSEG_APP_ROOT':str(app),'RTSEG_MODEL_ROOT':str(bundle),'RTSEG_SCRATCH_ROOT':str(job/'scratch')}
+    subprocess.run([sys.executable,str(ROOT/'run_task.py'),str(job),'umambamtl_cspca_bpmri',
+                    '--held-mri-acceptance-audit'],env=env,check=True,capture_output=True,text=True)
+    output=job/'output/umambamtl_cspca_bpmri_RTSTRUCT.dcm'
+    assert not output.exists() and Path(str(output)+'.lesions.json').is_file()
+    assert json.loads((job/'external/umambamtl_cspca_bpmri/result.json').read_text())['empty'] is True

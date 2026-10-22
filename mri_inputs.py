@@ -1,7 +1,7 @@
 """DICOM sequence assessment and the reviewed multi-series input contract.
 
-Only standard diffusion tags are supported. No private-tag or description-based
-b-value inference is performed. Pixel data and rescale tags are never modified.
+Standard diffusion tags and creator-verified Siemens B_value are supported.
+Descriptions never supply b-values. Pixel data and rescale tags are unchanged.
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import re
 
 
 B_VALUE_SOURCE = "(0018,9087)"
+SIEMENS_B_VALUE_SOURCE = "(0019,100C); creator (0019,0010)=SIEMENS MR HEADER"
 ROLE_PATTERN = r"[a-z0-9_]+"
 MR_FIELDS = ("study_uid", "frame_uid", "image_type", "protocol_name", "acquisition_time",
              "acquisition_datetime", "orientation", "pixel_spacing", "slice_thickness",
@@ -49,6 +50,26 @@ def b_value(ds):
         return None
 
 
+def diffusion_b_value(ds, *, allow_private=True):
+    """Return a value and its documented source; never guess a private creator."""
+    if attribute(ds, "DiffusionBValue") is not None:
+        value = b_value(ds)
+        return value, B_VALUE_SOURCE if value is not None else None
+    if allow_private and ds is not None and hasattr(ds, "get"):
+        creator, element = ds.get((0x0019, 0x0010)), ds.get((0x0019, 0x100C))
+        if creator is not None and str(creator.value).strip() == "SIEMENS MR HEADER" and element is not None:
+            try:
+                raw = element.value
+                if isinstance(raw, bytes):
+                    raw = raw.decode("ascii").strip(" \0")
+                value = float(raw)
+                if math.isfinite(value) and value >= 0:
+                    return value, SIEMENS_B_VALUE_SOURCE
+            except (ValueError, TypeError, UnicodeError):
+                pass
+    return None, None
+
+
 def functional_value(frame, shared, ds, sequence, keyword, default=None):
     for container in (frame, shared):
         item = first(attribute(container, sequence, []))
@@ -72,14 +93,15 @@ def mr_instance(ds, filename):
         diffusion = first(attribute(frame, "MRDiffusionSequence", []))
         if diffusion is None:
             diffusion = first(attribute(shared, "MRDiffusionSequence", []))
-        value = b_value(diffusion if diffusion is not None else ds)
+        value, source = diffusion_b_value(diffusion if diffusion is not None else ds,
+                                          allow_private=count == 1)
         path = ("PerFrameFunctionalGroupsSequence/MRDiffusionSequence" if
                 attribute(frame, "MRDiffusionSequence") else
                 "SharedFunctionalGroupsSequence/MRDiffusionSequence" if
                 attribute(shared, "MRDiffusionSequence") else "DiffusionBValue")
         records.append({"frame": index + 1, "b_value": value,
-                        "b_value_source": B_VALUE_SOURCE if value is not None else None,
-                        "b_value_path": path if value is not None else None,
+                        "b_value_source": source,
+                        "b_value_path": ("Siemens/B_value" if source == SIEMENS_B_VALUE_SOURCE else path) if value is not None else None,
                         "position": numbers(functional_value(frame, shared, ds, "PlanePositionSequence", "ImagePositionPatient", [])),
                         "orientation": numbers(functional_value(frame, shared, ds, "PlaneOrientationSequence", "ImageOrientationPatient", [])),
                         "pixel_spacing": numbers(functional_value(frame, shared, ds, "PixelMeasuresSequence", "PixelSpacing", []))})
@@ -99,7 +121,7 @@ def mr_instance(ds, filename):
             "spacing_between_slices": numbers([functional_value(None, shared, ds, "PixelMeasuresSequence", "SpacingBetweenSlices")]),
             "b_value": values[0] if complete and len(values) == 1 else None,
             "b_values": values, "b_value_complete": complete,
-            "b_value_source": B_VALUE_SOURCE if complete else None, "frames": records}
+            "b_value_source": "; ".join(sorted({r["b_value_source"] for r in records})) if complete else None, "frames": records}
 
 
 def volume_problem(instances):
@@ -131,7 +153,7 @@ def finish_mr_series(series):
         series[name] = first_instance[name]
     series["dimensions"] = [series["columns"], series["rows"], sum(i["number_of_frames"] for i in instances)]
     series["b_values"] = sorted({v for i in instances for v in i["b_values"]})
-    series["b_value_sources"] = [B_VALUE_SOURCE] if series["b_values"] else []
+    series["b_value_sources"] = sorted({f["b_value_source"] for i in instances for f in i["frames"] if f["b_value_source"]})
     series["is_adc"] = any("ADC" in value.upper() for value in series["image_type"])
     series["metadata_consistent"] = all(i["study_uid"] == series["study_uid"] and
                                          i["frame_uid"] == series["frame_uid"] for i in instances)
@@ -156,7 +178,7 @@ def finish_mr_series(series):
             if problem:
                 reason = problem
                 continue
-            options.append({"b_value": value, "b_value_source": B_VALUE_SOURCE,
+            options.append({"b_value": value, "b_value_source": "; ".join(sorted({i["b_value_source"] for i in selected})),
                             "dimensions": [series["columns"], series["rows"], sum(i["number_of_frames"] for i in selected)],
                             "files": [i["file"] for i in selected]})
     series["hbv_options"] = options
@@ -275,6 +297,11 @@ def resolve_roles(primary, all_series, task, selections):
             problem = volume_problem([i for i in candidate["instances"] if i["file"] in files])
             if problem:
                 raise ValueError(f"Role {name}: {problem}")
+        assessed = [i for i in candidate.get("instances", []) if i["file"] in files]
+        if assessed:
+            record.update(expected_slices=sum(i["number_of_frames"] for i in assessed),
+                          expected_sop_instances={i["sop_uid"]: [f["position"] for f in i["frames"]]
+                                                  for i in assessed})
         records[name] = record
         sources[record["dir"]] = files
     keys = [r["series_key"] for r in records.values()]

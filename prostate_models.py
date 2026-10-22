@@ -9,6 +9,8 @@ import re
 import shutil
 import subprocess
 
+from held_mri import TASKS as HELD_MRI_TASKS, COMMITS as HELD_MRI_COMMITS
+
 CHANNEL_ROLES = ('t2w', 'adc', 'hbv')
 TRAINER = 'nnUNetTrainerV2_Loss_FL_and_CE_checkpoints'
 UMU_FOLDER = 'Dataset077_ProstateZones/nnUNetTrainer__nnUNetPlans__3d_fullres'
@@ -24,11 +26,19 @@ SOURCE_COMMITS = {
     'umu_prostate_zones': 'eacfe6436635f43b74dadf4d31e8424a856014e5',
     'prostate158_tumor': '8187638887409c95ba0b091f249a40c0822c89e0',
 }
+TASKS.update(HELD_MRI_TASKS)
+SOURCE_COMMITS.update(HELD_MRI_COMMITS)
+
 UMU_LABELS = {'background': 0, 'PZ': 1, 'CZ': 2, 'TZ': 3, 'AFS': 4, 'Urethra': 5}
 
 
 def artifact_names(task):
     """Finite, task-owned download allowlist; inference work files are excluded."""
+    if task in HELD_MRI_TASKS:
+        suffixes = ['.lesions.json', '.probability.nii.gz', '.detection.nii.gz']
+        if task == 'nci_monai_prostate_lesion_bpmri':
+            suffixes.append('.gland.nii.gz')
+        return [f'{task}_RTSTRUCT.dcm{s}' for s in suffixes]
     if task not in TASKS:
         return []
     suffixes = ('.lesions.json', '.probability.nii.gz', '.detection.nii.gz') if task.startswith('picai_') else (
@@ -51,25 +61,29 @@ def model_folder(task):
 _SHA256_CACHE = {}
 
 
-def file_sha256(path):
-    """SHA-256 of a checkpoint, cached per process by path, size and mtime.
-
-    Preflight runs on every catalogue refresh; re-reading several GB each time is
-    needlessly slow, while a replaced or modified file changes size or mtime.
-    """
+def file_sha256(path, *, uncached=False):
+    """Hash current bytes; ctime and inode detect timestamp-preserving changes."""
     path = Path(path)
     stat = path.stat()
-    key = (str(path.resolve()), stat.st_size, stat.st_mtime_ns)
-    if key not in _SHA256_CACHE:
+    key = (str(path.resolve()), stat.st_dev, stat.st_ino, stat.st_size,
+           stat.st_mtime_ns, stat.st_ctime_ns)
+    if uncached or key not in _SHA256_CACHE:
         digest = hashlib.sha256()
         with path.open('rb') as stream:
             for chunk in iter(lambda: stream.read(1024 * 1024), b''):
                 digest.update(chunk)
+        after = path.stat()
+        if (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns) != (
+                after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+            raise ValueError(f'File changed while hashing: {path}')
         _SHA256_CACHE[key] = digest.hexdigest()
     return _SHA256_CACHE[key]
 
 
 def weight_files(task):
+    if task in HELD_MRI_TASKS:
+        from held_mri import weights
+        return weights(task)
     folder = model_folder(task)
     if task.startswith('picai_'):
         return [folder / 'plans.pkl', *[folder / f'fold_{fold}' / name for fold in range(5)
@@ -81,6 +95,9 @@ def weight_files(task):
 
 
 def requirements(task):
+    if task in HELD_MRI_TASKS:
+        from held_mri import requirements as held_requirements
+        return held_requirements(task)
     model, env, runner = TASKS[task]
     files = [f'@{runner}', '@prostate_models.py', '@prostate_postprocess.py',
              f'runtime-envs/{env}/bin/python', f'sources/{model}/LICENSE',
@@ -148,6 +165,9 @@ def installed_source_commit(source):
 
 def validate_acceptance(record, task, root):
     """Validate the prostate harness marker against this installed release."""
+    if task in HELD_MRI_TASKS:
+        from held_mri import validate_marker
+        return validate_marker(record, task, root)
     def require(condition, message):
         if not condition:
             raise ValueError(message)
@@ -182,7 +202,12 @@ def validate_acceptance(record, task, root):
     require(record.get('checkpoint_revision') == revision, 'Checkpoint revision mismatch')
 
 
-def validate_orientation(record, task):
+def validate_orientation(record, task, root=None):
+    if task in HELD_MRI_TASKS:
+        from held_mri import validate_marker
+        if root is None:
+            raise ValueError('Installed root is required for MRI orientation binding')
+        return validate_marker(record, task, root)
     if (not isinstance(record, dict) or record.get('task') != task or record.get('result') != 'passed'
             or marker_has_failure(record)):
         raise ValueError('Orientation task/result mismatch or failed checks')
@@ -225,7 +250,7 @@ def role_directories(job, *, multisequence=True):
 
 
 def validate_dicom_roles(directories, records):
-    """Check series identity, one-volume geometry and standard diffusion metadata.
+    """Check assessed SOP identities, physical geometry and documented diffusion tags.
 
     Intensity values and rescale tags are left to the existing DICOM converter.
     Enhanced multi-frame input needs the input adapter's frame extraction first.
@@ -272,16 +297,27 @@ def validate_dicom_roles(directories, records):
         gaps = np.diff(sorted(positions))
         if len(gaps) and (np.any(gaps < 1e-4) or not np.allclose(gaps, np.median(gaps), atol=1e-3, rtol=1e-3)):
             raise ValueError(f'{role}: duplicate or irregular slice positions; expected one 3-D volume')
+        expected_slices = records.get(role, {}).get('expected_slices')
+        if expected_slices is not None and len(headers) != int(expected_slices):
+            raise ValueError(f'{role}: missing DICOM slices (expected {expected_slices}, found {len(headers)})')
+        expected = records.get(role, {}).get('expected_sop_instances')
+        if expected is not None:
+            actual = {str(d.SOPInstanceUID): [[float(v) for v in d.ImagePositionPatient]] for d in headers}
+            if set(actual) != set(expected) or any(
+                    not np.allclose(actual[uid], expected[uid], atol=1e-5, rtol=0) for uid in actual):
+                raise ValueError(f'{role}: assessed SOP instances or physical positions differ from staged slices')
         if role == 'hbv':
             selected = records.get(role, {})
             value = selected.get('b_value')
             if (not isinstance(value, (int, float)) or isinstance(value, bool)
                     or not math.isfinite(value) or value <= 0 or not selected.get('b_value_source')):
                 raise ValueError('HBV requires a recorded b_value and documented b_value_source')
-            # Standard scalar tag. Other documented selectors belong to the input adapter.
+            from mri_inputs import diffusion_b_value
             for header in headers:
-                observed = getattr(header, 'DiffusionBValue', None)
-                if observed is not None and not math.isclose(float(observed), value, abs_tol=1e-3):
+                observed, source = diffusion_b_value(header)
+                if observed is None or source is None:
+                    raise ValueError('HBV requires a documented b-value on every selected instance (including private creator)')
+                if not math.isclose(observed, value, abs_tol=1e-3):
                     raise ValueError('HBV contains an unselected b-value')
         summaries[role] = identities
     if len({s['StudyInstanceUID'] for s in summaries.values()}) != 1:
@@ -309,7 +345,8 @@ def runtime_provenance(task, root):
     model, _, _ = TASKS[task]
     packages = {}
     for package in ('torch', 'numpy', 'scipy', 'SimpleITK', 'nnunet', 'nnunetv2', 'monai',
-                    'picai-prep', 'picai-baseline', 'picai-eval', 'report-guided-annotation'):
+                    'picai-prep', 'picai-baseline', 'picai-eval', 'report-guided-annotation',
+                    'mamba-ssm', 'causal-conv1d', 'nibabel', 'scikit-image', 'monai-deploy-app-sdk'):
         try:
             packages[package] = version(package)
         except PackageNotFoundError:
@@ -321,9 +358,17 @@ def runtime_provenance(task, root):
     return {'task': task, 'source_commit': SOURCE_COMMITS[model], 'packages': packages, 'weights': weights}
 
 
-def run_task(task, job, app_root, model_root, worker_python, run):
+def run_task(task, job, app_root, model_root, worker_python, run, *, acceptance_audit=False):
     """Use model-root runtime-envs assets; write only to the job workspace/results."""
     model, environment, script = TASKS[task]
+    if task in HELD_MRI_TASKS and not acceptance_audit:
+        from held_mri import binding, gpu_preflight, validate_marker
+        records = [json.loads((model_root / folder / f'{task}.json').read_text())
+                   for folder in ('validation', 'orientation-validation')]
+        current = binding(task, model_root, worker_python=worker_python, uncached=True)
+        gpu = gpu_preflight(task, model_root)
+        for record in records:
+            validate_marker(record, task, model_root, worker_python=worker_python, gpu=gpu, expected=current)
     job = Path(job).absolute()
     work = job / 'external' / task
     output = job / 'output' / f'{task}_RTSTRUCT.dcm'
@@ -337,25 +382,41 @@ def run_task(task, job, app_root, model_root, worker_python, run):
     metadata = json.loads((job / 'job.json').read_text())
     dirs = role_directories(job, multisequence=model != 'umu_prostate_zones')
     warnings = validate_dicom_roles(dirs, metadata.get('input_roles', {}))
+    def execute(command):
+        if task in HELD_MRI_TASKS:
+            from held_mri_runtime import python_command
+            with python_command(command[0], directory=work) as prefix:
+                return run([*prefix, *command[1:]])
+        return run(command)
+
     for role, directory in dirs.items():
+        if model == 'nci_monai_lesion':
+            continue  # Model runtime uses the SDK's DICOM operators, without generic conversion.
         converted = work / 'converted' / f'{role}.nii.gz'
-        run([worker_python, str(app_root / 'dicom_series_to_nifti.py'), str(directory), str(converted)])
+        execute([worker_python, str(app_root / 'dicom_series_to_nifti.py'), str(directory), str(converted)])
         native_input(converted, work / 'native' / f'{role}.nii.gz')
     context = {'input_roles': metadata.get('input_roles', {}), 'warnings': warnings,
                'channel_order': list(dirs), 'reference_role': 't2w'}
+    if model == 'nci_monai_lesion':
+        context['dicom_roles'] = {role: str(path) for role, path in dirs.items()}
     (work / 'context.json').write_text(json.dumps(context, indent=2) + '\n')
-    run([str(model_root / 'runtime-envs' / environment / 'bin/python'), str(app_root / script),
-         '--task', task, '--work', str(work), '--model-root', str(model_root), '--output', str(output)])
+    execute([str(model_root / 'runtime-envs' / environment / 'bin/python'), str(app_root / script),
+         '--task', task, '--work', str(work), '--model-root', str(model_root), '--output', str(output),
+         *(['--worker-python', str(worker_python)] if task in HELD_MRI_TASKS else []),
+         *(['--held-mri-acceptance-audit'] if acceptance_audit else [])])
     result = json.loads((work / 'result.json').read_text())
     if result['empty']:
         # Existing portal/SSH handling recognises this completed-empty marker.
+        if acceptance_audit:
+            return
         shutil.rmtree(work)
         raise SystemExit('empty prediction: no RTSTRUCT created')
     args = ['--model-input', str(work / 'native/t2w.nii.gz'), '--dicom', str(job / 'input'), '--output', str(output)]
-    if model.startswith('picai_'):
-        run([worker_python, str(app_root / 'convert_masks_validate_rtstruct.py'),
+    if model.startswith('picai_') or task in HELD_MRI_TASKS:
+        execute([worker_python, str(app_root / 'convert_masks_validate_rtstruct.py'),
              '--masks-json', str(work / 'masks.json'), *args])
     else:
         run([worker_python, str(app_root / 'convert_validate_rtstruct.py'),
              '--prediction', str(work / 'restored.nii.gz'), '--labels', str(app_root / 'labels' / f'{model}.json'), *args])
-    shutil.rmtree(work)
+    if not acceptance_audit:
+        shutil.rmtree(work)

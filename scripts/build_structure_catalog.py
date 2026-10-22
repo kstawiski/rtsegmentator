@@ -145,6 +145,16 @@ def fixed(labels, source, note=""):
 
 def resolve(task, details, ns, bundle, maps, map_path, root=ROOT):
     """Return a public contract and private provenance; unavailable metadata raises."""
+    if task == "nci_monai_prostate_lesion_bpmri":
+        return {"kind": "variable", "names": ["NCI_Prostate", "NCI_L01_PIRADS2–5"], "count": None,
+                "source": "Pinned NCI foreground components and four-class lesion classifier",
+                "note": "NCI_Prostate is fixed. Zero or more lesions are named NCI_L01_PIRADS4, etc.; no published maximum. "
+                        "PI-RADS is the model class. A gland-only result is valid."}, [str(root / "run_nci_prostate.py")]
+    if task == "umambamtl_cspca_bpmri":
+        return {"kind": "variable", "names": ["UMMTL_L01_p…"], "count": None,
+                "source": "Pinned U-MambaMTL / RGA 0.2.4 indexed candidates",
+                "note": "Zero to three lesions (maximum 3), named UMMTL_L01_p0.73 through UMMTL_L03_p…. "
+                        "Scores are rounded in ROI names; JSON retains full precision. No zone ROIs. Empty results are valid."}, [str(root / "held_mri.py")]
     if task in PROSTATE_TASKS:
         if task.startswith("picai_"):
             return {"kind": "variable", "names": ["csPCa_L01_p…"], "count": None,

@@ -1,3 +1,22 @@
+# Restart held MRI dispatch before importing conversion/export dependencies.
+# os and sys are frozen/builtin modules on the supported CPython runtimes.
+import os
+import sys
+if len(sys.argv) > 2 and sys.argv[2] in {
+        'nci_monai_prostate_lesion_bpmri', 'umambamtl_cspca_bpmri'}:
+    if not (sys.flags.ignore_environment and sys.flags.no_user_site
+            and sys.dont_write_bytecode and sys.pycache_prefix):
+        cache = os.path.join(os.path.abspath(sys.argv[1]), '.held-pycache-' + os.urandom(16).hex())
+        os.mkdir(cache, 0o700)
+        os.execv(sys.executable, [sys.executable, '-E', '-s', '-B', '-X',
+                                 'pycache_prefix=' + cache, *sys.argv])
+    if (sys.flags.optimize or sys.flags.isolated or sys.flags.safe_path
+            or sys._xoptions != {'pycache_prefix': sys.pycache_prefix}
+            or not os.path.isdir(sys.pycache_prefix) or os.path.islink(sys.pycache_prefix)
+            or os.stat(sys.pycache_prefix).st_uid != os.getuid()
+            or os.stat(sys.pycache_prefix).st_mode & 0o077 or any(os.scandir(sys.pycache_prefix))):
+        raise SystemExit('Held MRI requires an empty private bytecode cache at startup')
+
 import re
 import atexit
 import logging
@@ -9,6 +28,13 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+if len(sys.argv) > 2 and sys.argv[2] in {
+        'nci_monai_prostate_lesion_bpmri', 'umambamtl_cspca_bpmri'}:
+    from held_mri_runtime import check_python_policy
+    check_python_policy()
+    if Path(sys.pycache_prefix).parent == Path(sys.argv[1]).absolute() and Path(sys.pycache_prefix).name.startswith('.held-pycache-'):
+        atexit.register(shutil.rmtree, sys.pycache_prefix, ignore_errors=True)
 
 import pydicom
 from nv_segment_logic import MODES as NV_SEGMENT_MODES
@@ -22,6 +48,9 @@ progress = Progress()
 job=Path(sys.argv[1]); task=sys.argv[2]
 if not re.fullmatch(r"[A-Za-z0-9_]+",task): raise SystemExit("Invalid task")
 output=job/"output"/f"{task}_RTSTRUCT.dcm"
+HELD_MRI_AUDIT = sys.argv[3:] == ['--held-mri-acceptance-audit']
+if HELD_MRI_AUDIT and task not in {'nci_monai_prostate_lesion_bpmri', 'umambamtl_cspca_bpmri'}:
+    raise SystemExit('Held MRI acceptance audit accepts only NCI and U-MambaMTL')
 NODAL_AUDIT = '--nodal-acceptance-audit' in sys.argv[3:]
 if NODAL_AUDIT and task not in {lnctvseg_bundle.TASK, 'hnlnl_2d3d'}:
     raise SystemExit('Nodal acceptance audit accepts only LNCTVSeg and HNLNL')
@@ -202,7 +231,7 @@ try:
         "hippunfold_maguire_t2_subfields_mr": "maguire_T2w",
     }
     if task in PROSTATE_TASKS:
-        run_prostate_task(task, job, APP_ROOT, MODEL_ROOT, sys.executable, run)
+        run_prostate_task(task, job, APP_ROOT, MODEL_ROOT, sys.executable, run, acceptance_audit=HELD_MRI_AUDIT)
     elif task == "nv_reason_ct_report":
         from model_preflight import nv_reason_python, NV_REASON_REVISION
         env = os.environ.copy()
@@ -1457,6 +1486,11 @@ test_time_augmentation_iteration=0
     progress.emit("export", 0, 1)
     if task != "nv_reason_ct_report":
         if not output.exists():
+            if HELD_MRI_AUDIT:
+                result = job / "external" / task / "result.json"
+                if result.is_file() and json.loads(result.read_text()).get("empty") is True:
+                    progress.emit("export", 1, 1, force=True)
+                    raise SystemExit(0)
             raise SystemExit(f"{task} did not create its expected RTSTRUCT")
         identify_rtstruct(output, task)
     progress.emit("export", 1, 1, force=True)
