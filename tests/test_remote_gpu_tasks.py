@@ -306,3 +306,46 @@ def test_retention_removes_pending_worker_copies_and_requeues_failures(portal, m
     monkeypatch.setattr(portal.subprocess, 'run', lambda command, **kw: SimpleNamespace(returncode=0))
     portal.cleanup_once()
     assert not queue.exists()
+
+
+@pytest.mark.parametrize('task_name', ['gtrc_psma_petct_ttb', 'gtrc_fdg_petct_ttb'])
+def test_routed_gtrc_petct_task_retrieves_rtstruct_and_prefixed_sidecars(portal, monkeypatch, task_name):
+    job = job_at(portal, [task_name])
+    (job / 'input_ct').mkdir()
+    assert 'input_ct' in portal.worker_archive_members(job, [task_name])
+    calls = []
+    def run(command, **kwargs):
+        calls.append(command)
+        if command[0] == 'scp':
+            for suffix in ('', '.lesions.json', '.provenance.json', '.ttb_mask.nii.gz'):
+                (job / 'output' / f'{task_name}_RTSTRUCT.dcm{suffix}').write_bytes(b'gtrc-out')
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(portal.subprocess, 'run', run)
+    monkeypatch.setattr(portal, 'transfer_to_worker', lambda *args: calls.append(['transfer', args[2]]))
+    monkeypatch.setattr(portal, 'run_worker_task', lambda *args: calls.append(['inference', args[2]]))
+    portal.run_remote_gpu_task(job, task_name, 1, 1)
+    scp_cmd = next(c for c in calls if c[0] == 'scp')
+    assert scp_cmd[-2].endswith(f'/output/{task_name}_RTSTRUCT.dcm*')
+    for suffix in ('', '.lesions.json', '.provenance.json', '.ttb_mask.nii.gz'):
+        assert (job / 'output' / f'{task_name}_RTSTRUCT.dcm{suffix}').is_file()
+
+
+def test_routed_gtrc_petct_empty_prediction_retrieves_prefixed_sidecars_and_records_note(portal, monkeypatch):
+    task_name = 'gtrc_fdg_petct_ttb'
+    job = job_at(portal, [task_name])
+    monkeypatch.setattr(portal, 'REMOTE_GPU_TASKS', {task_name})
+    monkeypatch.setattr(portal, 'prepare_worker_job', lambda *args: None)
+    def run_empty(*args):
+        raise RuntimeError(f'{task_name}: empty prediction: no RTSTRUCT created')
+    monkeypatch.setattr(portal, 'run_worker_task', run_empty)
+    def retrieve_sidecars(j, remote_job, t):
+        (j / 'output' / f'{t}_RTSTRUCT.dcm.lesions.json').write_text('{"empty_prediction": true}\n')
+        (j / 'output' / f'{t}_RTSTRUCT.dcm.ttb_mask.nii.gz').write_bytes(b'empty-mask')
+    monkeypatch.setattr(portal, 'retrieve_worker_results', retrieve_sidecars)
+    monkeypatch.setattr(portal, 'cleanup_worker_job', lambda *args: None)
+    portal.process(job)
+    meta = portal.metadata(job)
+    assert meta['status'] == 'complete'
+    assert meta['no_structures_found'] == [task_name]
+    assert (job / 'output' / f'{task_name}_RTSTRUCT.dcm.lesions.json').is_file()
+    assert (job / 'output' / f'{task_name}_RTSTRUCT.dcm.ttb_mask.nii.gz').is_file()

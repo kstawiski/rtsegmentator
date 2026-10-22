@@ -74,8 +74,62 @@ function promptSuggestions(catalog, selected, regionId, metadata, series, allSer
 }
 function insertPromptSuggestion(prompt, chip) { return {...prompt, text:chip.text}; }
 function supports(task, series) { return !!series && (task.modalities || [task.modality]).includes(series.modality); }
+function matchingCTSeries(series, allSeries = []) {
+  if (!series?.study_uid || !series?.frame_uid) return [];
+  return allSeries.filter(s => s.modality === 'CT' && !s.unavailable_reason && s.study_uid === series.study_uid && s.frame_uid === series.frame_uid);
+}
 function pairedCT(series, allSeries) {
-  return allSeries.find(s => s.modality === 'CT' && series?.study_uid && series?.frame_uid && s.study_uid === series.study_uid && s.frame_uid === series.frame_uid);
+  return matchingCTSeries(series, allSeries)[0];
+}
+function validateGtrcOptions(selected, seriesList, allSeries = seriesList, values = {}) {
+  const sel = selected instanceof Set ? selected : new Set(selected || []);
+  const rows = Array.isArray(seriesList) ? seriesList : [seriesList].filter(Boolean);
+  const petSeries = rows.filter(s => s?.modality === 'PT');
+  const hasFdg = sel.has('gtrc_fdg_petct_ttb') && petSeries.length > 0;
+  const hasPsma = sel.has('gtrc_psma_petct_ttb') && petSeries.length > 0;
+  if (!hasFdg && !hasPsma) return { error: '', taskOptions: {} };
+  const taskOptions = {};
+  if (hasFdg) {
+    const rawFdg = values.fdgThreshold === undefined || values.fdgThreshold === null ? '' : String(values.fdgThreshold).trim();
+    if (!rawFdg) {
+      return { error: 'gtrc_fdg_petct_ttb requires a patient-specific FDG SUVbw threshold (g/mL); there is no fixed default.', taskOptions: {} };
+    }
+    const fdg = Number(rawFdg);
+    if (!Number.isFinite(fdg) || fdg < 0.1 || fdg > 100.0) {
+      return { error: 'FDG SUVbw threshold must be a finite number between 0.1 and 100.0 g/mL.', taskOptions: {} };
+    }
+    taskOptions.gtrc_fdg_petct_ttb = { suv_threshold: fdg, source: 'user-entered' };
+  }
+  if (hasPsma) {
+    const rawPsma = values.psmaThreshold === undefined || values.psmaThreshold === null ? '' : String(values.psmaThreshold).trim();
+    if (!rawPsma) {
+      taskOptions.gtrc_psma_petct_ttb = { suv_threshold: 3.0, source: 'published-default' };
+    } else {
+      const psma = Number(rawPsma);
+      if (!Number.isFinite(psma) || psma < 0.1 || psma > 100.0) {
+        return { error: 'PSMA SUVbw threshold must be a finite number between 0.1 and 100.0 g/mL.', taskOptions: {} };
+      }
+      const source = psma === 3.0 && !values.psmaEdited ? 'published-default' : 'user-entered';
+      taskOptions.gtrc_psma_petct_ttb = { suv_threshold: psma, source };
+    }
+  }
+  for (const s of petSeries) {
+    const candidates = matchingCTSeries(s, allSeries);
+    if (candidates.length > 1) {
+      const chosenCt = String(values.ctSeriesKey || '').trim();
+      if (!chosenCt || !candidates.some(c => c.key === chosenCt)) {
+        return { error: 'Multiple CT series match the PET Study and Frame of Reference. Select the companion CT series or upload only the matching CT.', taskOptions: {} };
+      }
+      for (const name of ['gtrc_fdg_petct_ttb', 'gtrc_psma_petct_ttb']) {
+        if (taskOptions[name]) taskOptions[name].ct_series_key = chosenCt;
+      }
+    } else if (candidates.length === 1 && values.ctSeriesKey && candidates[0].key === values.ctSeriesKey) {
+      for (const name of ['gtrc_fdg_petct_ttb', 'gtrc_psma_petct_ttb']) {
+        if (taskOptions[name]) taskOptions[name].ct_series_key = candidates[0].key;
+      }
+    }
+  }
+  return { error: '', taskOptions };
 }
 function roleCandidates(primary, allSeries, role) {
   const options=[];
@@ -679,6 +733,22 @@ if (typeof document !== 'undefined') {
     });
     showError($('startError'),invalid.map(t=>`${meta(t).title}: ${reason(t)}`).join(' · '));
     const crop=cropAvailable();$('postprocessPanel').hidden=!crop;if(!crop)$('prostatePostprocess').checked=false;
+    const petSelected=selectedSeries().filter(s=>s.modality==='PT');
+    const hasFdg=state.selected.has('gtrc_fdg_petct_ttb')&&petSelected.length>0;
+    const hasPsma=state.selected.has('gtrc_psma_petct_ttb')&&petSelected.length>0;
+    const hasGtrc=hasFdg||hasPsma;
+    $('gtrcOptionsPanel').hidden=!hasGtrc;
+    $('gtrcFdgThresholdRow').hidden=!hasFdg;
+    $('gtrcPsmaThresholdRow').hidden=!hasPsma;
+    const ambiguousCts=petSelected.flatMap(s=>{const m=matchingCTSeries(s,state.upload?.series||[]);return m.length>1?m:[];});
+    const ctCandidates=[...new Map(ambiguousCts.map(c=>[c.key,c])).values()];
+    $('gtrcCtCompanionRow').hidden=!hasGtrc||ctCandidates.length<=1;
+    if(hasGtrc&&ctCandidates.length>1){
+      const prevCt=$('gtrcCtCompanion').value;
+      $('gtrcCtCompanion').innerHTML='<option value="">Select matching CT series</option>'+ctCandidates.map(c=>`<option value="${esc(c.key)}">${esc(c.description||'CT series')} (${counted(c.slices,'image')})</option>`).join('');
+      $('gtrcCtCompanion').value=ctCandidates.some(c=>c.key===prevCt)?prevCt:'';
+    }
+    if(!hasGtrc)showError($('gtrcOptionsError'),'');
     $('promptPanel').hidden=!prompted().length;
     if(prompted().length){renderNodalPromptGuidance();loadPromptSlice();}
     const warnings=[];if(tasks.some(t=>t.output==='report'))warnings.push('AI output is a research draft requiring radiologist review. Diagnostic chest/abdomen CT only; coverage, HU or resource checks can refuse generation. Reports run after segmentation.');
@@ -767,26 +837,33 @@ if (typeof document !== 'undefined') {
   $('promptSlice').oninput=loadPromptSlice;$('clearPrompt').onclick=resetPrompt;
   $('promptText').oninput=()=>{try{prompt=readPrompt();prompt.text=$('promptText').value;$('promptJson').value=JSON.stringify(prompt,null,2);showError($('promptError'),'');}catch(error){showError($('promptError'),error.message);}};
   $('promptJson').oninput=()=>{try{prompt=readPrompt();$('promptText').value=typeof prompt.text==='string'?prompt.text:'';boxCorner=null;drawPrompt();showError($('promptError'),'');}catch(error){showError($('promptError'),error.message);}};
+  $('gtrcFdgThreshold').oninput=()=>showError($('gtrcOptionsError'),'');
+  $('gtrcPsmaThreshold').oninput=()=>{state.psmaEdited=true;showError($('gtrcOptionsError'),'');};
+  $('gtrcCtCompanion').onchange=()=>showError($('gtrcOptionsError'),'');
   function routeStartError(message){
     if(/postprocess|SBRT|crop/i.test(message)&&!$('postprocessPanel').hidden){showError($('postprocessError'),message);$('postprocessError').scrollIntoView({block:'center'});}
+    else if(/SUV|threshold|companion CT|gtrc/i.test(message)&&!$('gtrcOptionsPanel').hidden){showError($('gtrcOptionsError'),message);$('gtrcOptionsError').scrollIntoView({block:'center'});}
     else if(/prompt|point|corner|coordinate|VoxTell|MedSAM|PAM|SAT3D/i.test(message)&&prompted().length){showError($('promptError'),message);$('promptError').scrollIntoView({block:'center'});}
     else if(/series|paired|same Study|CBCT/i.test(message)){goStep(1);showError($('seriesError'),message);}
     else if(/model|task|licen/i.test(message)){goStep(2);showError($('modelError'),message);}
     else showError($('startError'),message);
   }
   $('startJob').onclick=async()=>{
-    if(state.starting)return;showError($('startError'),'');showError($('promptError'),'');showError($('postprocessError'),'');
+    if(state.starting)return;showError($('startError'),'');showError($('promptError'),'');showError($('postprocessError'),'');showError($('gtrcOptionsError'),'');
     for(const t of chosen()){const error=reason(t);if(error){goStep(2);showError($('modelError'),`${meta(t).title}: ${error}`);return;}}
     if(plan().some(p=>p.reason||!p.models.length)){renderReview();return;}
     if(!state.selected.size){goStep(2);showError($('modelError'),'Choose segmentation, an AI draft report, or both.');return;}
+    const gtrcCheck=validateGtrcOptions(state.selected,selectedSeries(),state.upload?.series||[],{fdgThreshold:$('gtrcFdgThreshold').value,psmaThreshold:$('gtrcPsmaThreshold').value,psmaEdited:Boolean(state.psmaEdited),ctSeriesKey:$('gtrcCtCompanion').value});
+    if(gtrcCheck.error){showError($('gtrcOptionsError'),gtrcCheck.error);$('gtrcOptionsError').scrollIntoView({block:'center'});return;}
     let promptValue='';if(prompted().length){try{prompt=readPrompt();const error=boxCorner?'Complete the second box corner or clear the prompt.':validatePrompt(prompt,prompted(),state.series);if(error)throw Error(error);promptValue=JSON.stringify(prompt);}catch(error){showError($('promptError'),error.message);$('promptError').scrollIntoView({block:'center'});return;}}
     state.starting=true;steps();$('startJob').disabled=true;$('startJob').textContent='Starting…';
     let failure=null;
     try{const form=new FormData();state.seriesKeys.forEach(key=>form.append('series_keys',key));chosen().forEach(t=>form.append('models',t.name));form.append('roles',JSON.stringify(reviewedChoices()));if(promptValue)form.append('prompt_json',promptValue);
+      if(Object.keys(gtrcCheck.taskOptions).length)form.append('task_options',JSON.stringify(gtrcCheck.taskOptions));
       if($('prostatePostprocess').checked&&cropAvailable())form.append('postprocess','prostate_sbrt_crop');
       const result=await request(`/api/v1/uploads/${encodeURIComponent(state.upload.upload_id)}/jobs`,{method:'POST',body:form});
       result.ids.forEach(id=>{rememberJob(id);newJobs.add(id);});$('jobNotice').textContent=result.ids.length===1?'Job queued. Follow progress and download results here.':`${result.ids.length} jobs queued from one upload; they run one after another`;$('jobNotice').hidden=false;
-      state.upload=null;state.series=null;state.seriesKeys=[];state.roles={};state.modelsEdited=false;state.selected.clear();seriesViewer?.destroy();seriesViewer=null;uploads.seg.files=[];uploads.seg.session=null;uploads.seg.selection.textContent='No files selected';uploads.seg.progress.hidden=true;$('assessment').textContent='';$('toSeries').hidden=true;resetPrompt();
+      state.upload=null;state.series=null;state.seriesKeys=[];state.roles={};state.modelsEdited=false;state.psmaEdited=false;state.selected.clear();$('gtrcFdgThreshold').value='';$('gtrcPsmaThreshold').value='3.0';$('gtrcCtCompanion').value='';seriesViewer?.destroy();seriesViewer=null;uploads.seg.files=[];uploads.seg.session=null;uploads.seg.selection.textContent='No files selected';uploads.seg.progress.hidden=true;$('assessment').textContent='';$('toSeries').hidden=true;resetPrompt();
       location.hash=result.ids.length===1?'jobs/'+encodeURIComponent(result.ids[0]):'jobs';pollJobs();
     }catch(error){failure=error.message;}
     finally{state.starting=false;$('startJob').disabled=false;steps();if(!state.upload)goStep(0,false);else renderReview();if(failure)routeStartError(failure);}
@@ -991,4 +1068,4 @@ if (typeof document !== 'undefined') {
   }
   initialize();setInterval(pollJobs,4000);setInterval(refreshHealth,30000);
 }
-if(typeof module!=='undefined'&&module.exports)module.exports={nodalSections,regionPreset,promptSuggestions,insertPromptSuggestion,roleCandidates,reviewedRole,roleChoicesForSubmit,taskRoleReason,roleOptionLabel,jobProgress,modelChecklist,preselectSeries,defaultSelection,seriesPlan,batchBlockedReason,jobTitle,groupBatchJobs,DEFAULT_MODELS,presentation,executesRemotely,supports,pairedCT,blockedReason,cropSupported,validatePrompt,structureInfo,humanize,safeReference,primarySelection,canDeleteJob,reportMarkdown,reportMarkup,licenceBadges,counted,reportStatusText,isReportSection,GROUPS};
+if(typeof module!=='undefined'&&module.exports)module.exports={nodalSections,regionPreset,promptSuggestions,insertPromptSuggestion,roleCandidates,reviewedRole,roleChoicesForSubmit,taskRoleReason,roleOptionLabel,jobProgress,modelChecklist,preselectSeries,defaultSelection,seriesPlan,batchBlockedReason,jobTitle,groupBatchJobs,DEFAULT_MODELS,presentation,executesRemotely,supports,matchingCTSeries,pairedCT,validateGtrcOptions,blockedReason,cropSupported,validatePrompt,structureInfo,humanize,safeReference,primarySelection,canDeleteJob,reportMarkdown,reportMarkup,licenceBadges,counted,reportStatusText,isReportSection,GROUPS};

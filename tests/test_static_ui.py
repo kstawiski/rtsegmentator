@@ -144,6 +144,7 @@ def test_primary_actions_viewers_results_and_secondary_tools_contract():
     parser = PageParser()
     parser.feed(html)
     required = {"segmentAction", "reportAction", "catalogPicker", "restoreDefaults", "selectAllSeries", "clearSeries", "seriesCount", "seriesViewer", "batchSiblings",
+                "gtrcOptionsPanel",
                 "jobDetailPage", "jobViewer", "reportPanel", "structuresPanel", "downloadsPanel",
                 "reportTab", "structuresTab", "downloadsTab", "deleteDialog", "confirmDelete", "moreTools"}
     assert required <= set(parser.ids)

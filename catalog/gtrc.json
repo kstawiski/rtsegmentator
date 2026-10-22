@@ -1,0 +1,66 @@
+{
+  "gtrc_psma_petct_ttb": {
+    "modality": "PT",
+    "requires_ct": true,
+    "requires_preflight": true,
+    "enabled": true,
+    "status": "acceptance_pending",
+    "suv_threshold_required": false,
+    "default_suv_threshold": 3.0,
+    "suv_threshold_bounds": [
+      0.1,
+      100.0
+    ],
+    "clinical_tag_ids": [
+      "prostate_cancer"
+    ],
+    "label_map": "labels/gtrc_psma_petct_ttb.json",
+    "output_artifacts": [
+      "gtrc_psma_petct_ttb_RTSTRUCT.dcm",
+      "gtrc_psma_petct_ttb_RTSTRUCT.dcm.lesions.json",
+      "gtrc_psma_petct_ttb_RTSTRUCT.dcm.ttb_mask.nii.gz"
+    ],
+    "structures": "GTRC_PSMA_TTB whole-body PSMA-avid total tumour burden on the PET grid",
+    "description": "GTRC-Net segments whole-body PSMA-avid total tumour burden (GTRC_PSMA_TTB) on [68Ga]PSMA-11 or [18F]DCFPyL PET/CT in metastatic castration-resistant prostate cancer. Requires attenuation- and decay-corrected PET (converted to SUVbw and divided by the SUV threshold; published default 3.0, optional per-job override in [0.1, 100.0]) and a co-registered CT covering the PET axial extent in the same Study and Frame of Reference. In Jackson et al. (J Nucl Med 2025;66(11):1811-1817), reference contours used \"either a fixed threshold (SUV of >=3 for PSMA PET and SPECT imaging) or a variable liver-based threshold (1.5x mean + 2x SD of liver background for [18F]FDG PET imaging)\" (whereas the DEEP-PSMA challenge pages describe liver mean + 2 SD); Table 1 reports 5-fold cross-validation mean DSC 0.9365 (n=676: 567 [68Ga]PSMA-11, 109 [18F]DCFPyL) and external referral test mean DSC 0.9520 (n=56), with Pearson r=0.98 for tumour volume and r=0.98 for SUVmean; hepatic metastasis sensitivity was 73.7% (median liver Dice 0.564). Inference enforces deterministic cuDNN (cudnn.deterministic=True, cudnn.benchmark=False); on H100 train_0001, deterministic launch differs by 1 raw nnU-Net label voxel from unmodified autotuned nnUNetv2_predict (cudnn.benchmark=True) as a measured, documented deviation while yielding identical subregions and final TTB masks. Outputs one whole-burden ROI without per-lesion probabilities; lesions below the SUV threshold and hepatic disease in high-background livers may be missed. No licence stated by the authors (owner accepted these terms on 2026-10-22).",
+    "reference": "https://doi.org/10.2967/jnumed.125.270077",
+    "license": {
+      "code": "No licence stated by the authors",
+      "weights": "No licence stated by the authors",
+      "note": "No licence stated by the authors in the repository or weight release. Owner accepted these terms on 2026-10-22. Deterministic cuDNN launch (cudnn.deterministic=True, cudnn.benchmark=False) has a measured 1-voxel raw nnU-Net label deviation from unmodified autotuned nnUNetv2_predict on H100 train_0001, with identical subregions and final TTB mask."
+    },
+    "cohort_size": 676,
+    "external_test_cohort_size": 56
+  },
+  "gtrc_fdg_petct_ttb": {
+    "modality": "PT",
+    "requires_ct": true,
+    "requires_preflight": true,
+    "enabled": true,
+    "status": "acceptance_pending",
+    "suv_threshold_required": true,
+    "default_suv_threshold": null,
+    "suv_threshold_bounds": [
+      0.1,
+      100.0
+    ],
+    "clinical_tag_ids": [
+      "prostate_cancer"
+    ],
+    "label_map": "labels/gtrc_fdg_petct_ttb.json",
+    "output_artifacts": [
+      "gtrc_fdg_petct_ttb_RTSTRUCT.dcm",
+      "gtrc_fdg_petct_ttb_RTSTRUCT.dcm.lesions.json",
+      "gtrc_fdg_petct_ttb_RTSTRUCT.dcm.ttb_mask.nii.gz"
+    ],
+    "structures": "GTRC_FDG_TTB whole-body FDG-avid total tumour burden on the PET grid",
+    "description": "GTRC-Net segments whole-body FDG-avid metabolic total tumour burden (GTRC_FDG_TTB) on [18F]FDG PET/CT in metastatic castration-resistant prostate cancer. Requires attenuation- and decay-corrected FDG PET (converted to SUVbw and divided by a required user-entered patient-specific FDG SUV threshold in [0.1, 100.0]; no fixed default exists) and a co-registered CT covering the PET axial extent in the same Study and Frame of Reference. In Jackson et al. (J Nucl Med 2025;66(11):1811-1817), reference contours used \"a variable liver-based threshold (1.5x mean + 2x SD of liver background for [18F]FDG PET imaging)\", whereas the DEEP-PSMA challenge pages describe liver mean + 2 SD (typically 2.5-5 SUV); Table 1 reports 5-fold cross-validation mean DSC 0.8448 (n=390) and external referral test mean DSC 0.8447 (n=56), with Pearson r=0.94 for tumour volume and r=0.88 for SUVmean; hepatic metastasis sensitivity was 81.8% (median liver Dice 0.759). Inference enforces deterministic cuDNN (cudnn.deterministic=True, cudnn.benchmark=False); on H100 train_0001 (r1b), deterministic vs unmodified autotuned nnUNetv2_predict differed by 2 raw nnU-Net label voxels with identical subregions and final TTB masks (same cuDNN autotuning mechanism expected, not separately ablated). Outputs one whole-burden ROI without per-lesion probabilities. No licence stated by the authors (owner accepted these terms on 2026-10-22).",
+    "reference": "https://doi.org/10.2967/jnumed.125.270077",
+    "license": {
+      "code": "No licence stated by the authors",
+      "weights": "No licence stated by the authors",
+      "note": "No licence stated by the authors in the repository or weight release. Owner accepted these terms on 2026-10-22. Deterministic cuDNN launch (cudnn.deterministic=True, cudnn.benchmark=False) differed by 2 raw nnU-Net label voxels from unmodified autotuned nnUNetv2_predict on H100 train_0001 (r1b), with identical subregions and final TTB mask (same mechanism expected, not separately tested)."
+    },
+    "cohort_size": 390,
+    "external_test_cohort_size": 56
+  }
+}

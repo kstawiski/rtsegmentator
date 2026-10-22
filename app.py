@@ -38,6 +38,11 @@ from viewer import ViewerService
 from mri_inputs import (mr_instance, image_types, finish_mr_series, public_mr_fields, role_contract,
                         resolve_roles, input_directories, input_identity)
 from prostate_models import artifact_names as prostate_artifact_names
+from gtrc_models import (
+    artifact_names as gtrc_artifact_names,
+    is_gtrc_task,
+    resolve_job_suv_threshold,
+)
 
 BASE = Path(os.environ.get("PORTAL_DATA", Path(__file__).parent / "data"))
 WORKER = os.environ.get("SEGMENTATION_WORKER", "worker@rtsegmentator-worker")
@@ -276,6 +281,8 @@ LNCTVSEG_TASKS = json.loads((Path(__file__).parent / "catalog/lnctvseg.json").re
 EXTERNAL_TASKS.update(LNCTVSEG_TASKS)
 PROSTATE_TASKS = json.loads((Path(__file__).parent / "catalog/prostate.json").read_text())
 EXTERNAL_TASKS.update(PROSTATE_TASKS)
+GTRC_TASKS = json.loads((Path(__file__).parent / "catalog/gtrc.json").read_text())
+EXTERNAL_TASKS.update(GTRC_TASKS)
 
 NNUNET_V2_TASKS = json.loads((Path(__file__).parent / "catalog/nnunet-v2.json").read_text())
 for _name, _details in NNUNET_V2_TASKS.items():
@@ -1409,7 +1416,8 @@ def finalize_results(job: Path, empty=()):
     nested = sorted(path for path in output.rglob("*") if path.is_file() and path.parent != output)
     sidecars = sorted(output.glob("*.dcm.orientation.json")) + sorted(output.glob("*.dcm.lesions.json"))
     declared = [output / name for task in metadata(job).get("models", [])
-                for name in prostate_artifact_names(task) if (output / name).is_file()]
+                for name in (*prostate_artifact_names(task), *gtrc_artifact_names(task))
+                if (output / name).is_file()]
     artifacts = sorted(set(results + sidecars + nested + declared))
     if any(path.is_symlink() or output.resolve() not in path.resolve().parents for path in artifacts):
         raise ValueError("Result artifacts must be files inside the output directory")
@@ -2110,6 +2118,10 @@ def apply_model_gates(item, check, enabled):
             item.update(enabled=False, status="report_requires_managed_gpu_worker")
         elif not check or not check.get("acceptance_ready"):
             item.update(enabled=False, status="report_acceptance_pending")
+    elif is_gtrc_task(name) and check is not None and check.get("acceptance_ready") is False:
+        item.update(enabled=False, status="acceptance_validation_pending")
+    elif is_gtrc_task(name) and check is not None and check.get("cuda_ready") is False:
+        item.update(enabled=False, status="gpu_runtime_unavailable")
     else:
         orientation_ready = (check.get("orientation_ready", False) if check is not None
                              else (ORIENTATION_VALIDATION / f"{name}.json").is_file())
@@ -2668,7 +2680,102 @@ def validate_assessed_prompt(models, items, selected, prompt_json):
     return prompt_data
 
 
-def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="", *, legacy=False, roles=None):
+def resolve_gtrc_job_options(
+    models: list[str],
+    task_options: str | dict | None = "",
+    *,
+    suv_threshold: str = "",
+    fdg_suv_threshold: str = "",
+    psma_suv_threshold: str = "",
+    ct_series_key: str = "",
+) -> tuple[dict[str, dict[str, object]], str | None, dict[str, str]]:
+    """Parse and validate per-job GTRC SUVbw threshold options and optional companion CT choices."""
+    raw_opts: dict[str, object] = {}
+    if isinstance(task_options, str) and task_options.strip():
+        try:
+            parsed = json.loads(task_options)
+        except ValueError as exc:
+            raise HTTPException(400, "task_options must be a JSON object") from exc
+        if not isinstance(parsed, dict):
+            raise HTTPException(400, "task_options must be a JSON object")
+        raw_opts = dict(parsed)
+    elif isinstance(task_options, dict):
+        raw_opts = dict(task_options)
+    elif task_options not in ("", None):
+        raise HTTPException(400, "task_options must be a JSON object")
+
+    global_ct_choice: str | None = str(ct_series_key).strip() if ct_series_key and str(ct_series_key).strip() else None
+    per_pet_ct_choice: dict[str, str] = {}
+    if "ct_series_key" in raw_opts and raw_opts["ct_series_key"] is not None:
+        if not isinstance(raw_opts["ct_series_key"], str):
+            raise HTTPException(400, "ct_series_key in task_options must be a string")
+        if raw_opts["ct_series_key"].strip():
+            global_ct_choice = raw_opts["ct_series_key"].strip()
+    if "ct_series_by_pet" in raw_opts and raw_opts["ct_series_by_pet"] is not None:
+        if not isinstance(raw_opts["ct_series_by_pet"], dict) or any(
+            not isinstance(k, str) or not isinstance(v, str)
+            for k, v in raw_opts["ct_series_by_pet"].items()
+        ):
+            raise HTTPException(400, "ct_series_by_pet in task_options must map PET series keys to CT series keys")
+        per_pet_ct_choice.update({k: v.strip() for k, v in raw_opts["ct_series_by_pet"].items() if v.strip()})
+
+    raw_thresholds: dict[str, object] = {}
+    raw_sources: dict[str, str | None] = {}
+    for key, val in raw_opts.items():
+        if key in {"ct_series_key", "ct_series_by_pet", "suv_threshold"}:
+            continue
+        if not is_gtrc_task(key):
+            raise HTTPException(400, f"Unsupported task_options key: {key}")
+        if isinstance(val, dict):
+            if "suv_threshold" in val and val["suv_threshold"] is not None and val["suv_threshold"] != "":
+                raw_thresholds[key] = val["suv_threshold"]
+            if "source" in val and val["source"] is not None:
+                if not isinstance(val["source"], str) or not val["source"].strip():
+                    raise HTTPException(400, f"source for {key} must be a non-empty string")
+                raw_sources[key] = val["source"].strip()
+            if "ct_series_key" in val and val["ct_series_key"] is not None:
+                if not isinstance(val["ct_series_key"], str):
+                    raise HTTPException(400, f"ct_series_key for {key} must be a string")
+                if val["ct_series_key"].strip() and not global_ct_choice:
+                    global_ct_choice = val["ct_series_key"].strip()
+        elif val is not None and val != "":
+            raw_thresholds[key] = val
+            raw_sources[key] = "user-entered"
+
+    top_suv = raw_opts.get("suv_threshold")
+    if suv_threshold and str(suv_threshold).strip():
+        top_suv = str(suv_threshold).strip()
+    if fdg_suv_threshold and str(fdg_suv_threshold).strip():
+        raw_thresholds["gtrc_fdg_petct_ttb"] = str(fdg_suv_threshold).strip()
+        raw_sources["gtrc_fdg_petct_ttb"] = "user-entered"
+    if psma_suv_threshold and str(psma_suv_threshold).strip():
+        raw_thresholds["gtrc_psma_petct_ttb"] = str(psma_suv_threshold).strip()
+        raw_sources["gtrc_psma_petct_ttb"] = "user-entered"
+
+    resolved: dict[str, dict[str, object]] = {}
+    for name in models:
+        if not is_gtrc_task(name):
+            continue
+        explicit_val = raw_thresholds.get(name, top_suv if top_suv not in (None, "") else None)
+        explicit_src = raw_sources.get(name)
+        if explicit_src is None and explicit_val is not None:
+            explicit_src = "user-entered"
+        try:
+            val, src = resolve_job_suv_threshold(
+                name,
+                explicit_threshold=explicit_val,
+                explicit_source=explicit_src,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        resolved[name] = {"suv_threshold": val, "source": src}
+
+    return resolved, global_ct_choice, per_pet_ct_choice
+
+
+def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="", *, legacy=False, roles=None,
+                         task_options="", suv_threshold="", fdg_suv_threshold="", psma_suv_threshold="",
+                         ct_series_key=""):
     # Serialize consumption and submission so requests cannot consume the same upload twice.
     with submission_lock:
         if not re.fullmatch(r"upload-[A-Za-z0-9-]+", uid):
@@ -2695,6 +2802,14 @@ def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="
                 raise HTTPException(400, f"Series {series['key']}: {exc}") from exc
         items = validate_job_selection(models, tasks(), assessed=True, batch=not legacy)
         models = list(dict.fromkeys(models))
+        gtrc_options, global_ct_choice, per_pet_ct_choice = resolve_gtrc_job_options(
+            models,
+            task_options,
+            suv_threshold=suv_threshold,
+            fdg_suv_threshold=fdg_suv_threshold,
+            psma_suv_threshold=psma_suv_threshold,
+            ct_series_key=ct_series_key,
+        )
         prompted = [name for name in models if items[name].get("prompt")]
         if prompted and len(selected) != 1:
             raise HTTPException(400, "Select a single series to use interactive models: " + ", ".join(prompted))
@@ -2707,10 +2822,16 @@ def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="
             roles = {}
         if not isinstance(roles, dict) or set(roles) - set(series_keys):
             raise HTTPException(400, "roles must map selected primary series keys to role selections")
+        roles = {k: dict(v) if isinstance(v, dict) else v for k, v in roles.items()}
         for series in selected:
             choices = roles.get(series['key'], {})
             if not isinstance(choices, dict):
                 raise HTTPException(400, "Each primary series role selection must be an object")
+            if "ct" in choices and any(items[name].get("requires_ct") for name in models):
+                ct_val = choices.pop("ct")
+                if not isinstance(ct_val, str) or not ct_val.strip():
+                    raise HTTPException(400, f"Series {series['key']}: companion CT role must be a non-empty series key")
+                per_pet_ct_choice[series['key']] = ct_val.strip()
             allowed = {}
             try:
                 for name in models:
@@ -2766,10 +2887,33 @@ def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="
                 raise HTTPException(400, f"Series {label}: {exc.detail}") from exc
             companion = None
             if any(items[name].get("requires_ct") for name in subset):
-                companion = next((candidate for candidate in data["series"] if candidate["modality"] == "CT"
+                candidates = [
+                    candidate for candidate in data["series"]
+                    if candidate["modality"] == "CT"
                     and series.get("study_uid") and series.get("frame_uid")
                     and candidate.get("study_uid") == series["study_uid"]
-                    and candidate.get("frame_uid") == series["frame_uid"]), None)
+                    and candidate.get("frame_uid") == series["frame_uid"]
+                ]
+                explicit_ct = per_pet_ct_choice.get(series["key"]) or global_ct_choice
+                if explicit_ct:
+                    companion = next(
+                        (c for c in candidates if c["key"] == explicit_ct or c.get("series_uid") == explicit_ct),
+                        None,
+                    )
+                    if companion is None:
+                        raise HTTPException(
+                            400,
+                            f"Series {label}: selected companion CT {explicit_ct!r} is not a CT series in the same Study and Frame of Reference",
+                        )
+                elif len(candidates) > 1 and any(is_gtrc_task(name) for name in subset):
+                    gtrc_names = ", ".join(name for name in subset if is_gtrc_task(name))
+                    raise HTTPException(
+                        400,
+                        f"Series {label}: {len(candidates)} CT series match StudyInstanceUID and FrameOfReferenceUID for {gtrc_names}; "
+                        "select the matching CT series or upload only the matching CT series",
+                    )
+                else:
+                    companion = candidates[0] if candidates else None
                 if companion is None:
                     paired = ", ".join(name for name in subset if items[name].get("requires_ct"))
                     raise HTTPException(400, f"Series {label}: {paired} requires a CT series in the same Study and Frame of Reference")
@@ -2832,8 +2976,11 @@ def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="
                 role_data = {'input_roles': role_records} if role_records else {}
                 if role_records:
                     role_data['input_identity'] = input_identity({**role_data, 'input_manifest': manifest})
+                subset_task_options = {name: gtrc_options[name] for name in subset if name in gtrc_options}
                 (job / "job.json").write_text(json.dumps({"id": jid, "status": "staging", "detail": "Preparing input",
                     **role_data, **({'skipped_models': skipped} if skipped else {}),
+                    **({'task_options': subset_task_options} if subset_task_options else {}),
+                    **({'paired_series_key': companion['key']} if companion else {}),
                     "input_manifest": manifest, "staging_upload": uid,
                     "models": subset, "report_status": "pending" if REPORT_TASK in subset else None,
                     "created": time.time(), "error": None, "prompted": bool(prompt_data), "postprocess": postprocessing,
@@ -2877,15 +3024,30 @@ def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="
 
 @app.post("/api/v1/uploads/{uid}/jobs", status_code=202, tags=["automation"])
 def start_assessed_batch(uid: str, series_keys: list[str]=Form(...), models: list[str]=Form(...),
-                         prompt_json: str=Form(""), postprocess: str=Form(""), roles: str=Form("")):
-    return create_assessed_jobs(uid, series_keys, models, prompt_json, postprocess, roles=roles)
+                         prompt_json: str=Form(""), postprocess: str=Form(""), roles: str=Form(""),
+                         task_options: str=Form(""), suv_threshold: str=Form(""),
+                         fdg_suv_threshold: str=Form(""), psma_suv_threshold: str=Form(""),
+                         ct_series_key: str=Form("")):
+    return create_assessed_jobs(
+        uid, series_keys, models, prompt_json, postprocess, roles=roles,
+        task_options=task_options, suv_threshold=suv_threshold,
+        fdg_suv_threshold=fdg_suv_threshold, psma_suv_threshold=psma_suv_threshold,
+        ct_series_key=ct_series_key,
+    )
 
 
 @app.post("/api/uploads/{uid}/start")
 async def start_assessed(uid: str, series_key: str=Form(...), models: list[str]=Form(...),
-                         prompt_json: str=Form(""), postprocess: str=Form("")):
-    result = await run_in_threadpool(create_assessed_jobs, uid, [series_key], models, prompt_json,
-                                     postprocess, legacy=True)
+                         prompt_json: str=Form(""), postprocess: str=Form(""),
+                         task_options: str=Form(""), suv_threshold: str=Form(""),
+                         fdg_suv_threshold: str=Form(""), psma_suv_threshold: str=Form(""),
+                         ct_series_key: str=Form("")):
+    result = await run_in_threadpool(
+        create_assessed_jobs, uid, [series_key], models, prompt_json, postprocess,
+        legacy=True, task_options=task_options, suv_threshold=suv_threshold,
+        fdg_suv_threshold=fdg_suv_threshold, psma_suv_threshold=psma_suv_threshold,
+        ct_series_key=ct_series_key,
+    )
     return {"id": result["ids"][0]}
 
 def queue_ready_job(job: Path, data: dict):

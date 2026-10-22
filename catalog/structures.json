@@ -1563,6 +1563,24 @@
     "source": "GOUHFI output lookup table",
     "note": "Only structures found in the scan are written to the RTSTRUCT."
   },
+  "gtrc_fdg_petct_ttb": {
+    "kind": "fixed",
+    "names": [
+      "GTRC_FDG_TTB"
+    ],
+    "count": 1,
+    "source": "GTRC-Net consensus exporter label map",
+    "note": "Whole-burden total tumour burden ROI on the PET grid; normal-uptake class 2 is suppressed after consensus postprocessing. Empty results are valid."
+  },
+  "gtrc_psma_petct_ttb": {
+    "kind": "fixed",
+    "names": [
+      "GTRC_PSMA_TTB"
+    ],
+    "count": 1,
+    "source": "GTRC-Net consensus exporter label map",
+    "note": "Whole-burden total tumour burden ROI on the PET grid; normal-uptake class 2 is suppressed after consensus postprocessing. Empty results are valid."
+  },
   "hd_bet_mr": {
     "kind": "fixed",
     "names": [

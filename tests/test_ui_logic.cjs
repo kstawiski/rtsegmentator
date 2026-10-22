@@ -486,3 +486,31 @@ test('models accepted with no structures are shown as completed with their durat
   const rows=ui.modelChecklist({status:'complete',models:['total'],no_structures_found:['total'],task_timings:{total:{status:'failed',duration:15}}});
   assert.equal(rows[0].text,'✓ total · done · 15s');
 });
+
+test('GTRC PET/CT options require user-entered FDG threshold, allow PSMA default/override, and resolve multiple matching CTs',()=>{
+  const petSeries={...pet,key:'pet1'};
+  const ct1={...ct,key:'ct1'};
+  const ct2={...ct,key:'ct2'};
+  assert.equal(ui.matchingCTSeries(petSeries,[petSeries,ct1,ct2]).length,2);
+
+  // FDG requires user-entered threshold in [0.1, 100.0]
+  assert.match(ui.validateGtrcOptions(new Set(['gtrc_fdg_petct_ttb']),[petSeries],[petSeries,ct1],{fdgThreshold:''}).error,/requires a patient-specific FDG SUVbw threshold/);
+  assert.match(ui.validateGtrcOptions(new Set(['gtrc_fdg_petct_ttb']),[petSeries],[petSeries,ct1],{fdgThreshold:'0.02'}).error,/between 0.1 and 100.0/);
+  const fdgValid=ui.validateGtrcOptions(new Set(['gtrc_fdg_petct_ttb']),[petSeries],[petSeries,ct1],{fdgThreshold:'2.97'});
+  assert.equal(fdgValid.error,'');
+  assert.deepEqual(fdgValid.taskOptions,{gtrc_fdg_petct_ttb:{suv_threshold:2.97,source:'user-entered'}});
+
+  // PSMA uses published-default 3.0 unless edited/overridden
+  const psmaDefault=ui.validateGtrcOptions(new Set(['gtrc_psma_petct_ttb']),[petSeries],[petSeries,ct1],{psmaThreshold:'3.0',psmaEdited:false});
+  assert.equal(psmaDefault.error,'');
+  assert.deepEqual(psmaDefault.taskOptions,{gtrc_psma_petct_ttb:{suv_threshold:3.0,source:'published-default'}});
+  const psmaOverride=ui.validateGtrcOptions(new Set(['gtrc_psma_petct_ttb']),[petSeries],[petSeries,ct1],{psmaThreshold:'2.5',psmaEdited:true});
+  assert.equal(psmaOverride.error,'');
+  assert.deepEqual(psmaOverride.taskOptions,{gtrc_psma_petct_ttb:{suv_threshold:2.5,source:'user-entered'}});
+
+  // Multiple matching CTs require explicit companion selection
+  assert.match(ui.validateGtrcOptions(new Set(['gtrc_psma_petct_ttb']),[petSeries],[petSeries,ct1,ct2],{psmaThreshold:'3.0'}).error,/Multiple CT series/);
+  const explicitCt=ui.validateGtrcOptions(new Set(['gtrc_psma_petct_ttb']),[petSeries],[petSeries,ct1,ct2],{psmaThreshold:'3.0',ctSeriesKey:'ct2'});
+  assert.equal(explicitCt.error,'');
+  assert.equal(explicitCt.taskOptions.gtrc_psma_petct_ttb.ct_series_key,'ct2');
+});

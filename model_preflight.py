@@ -26,6 +26,19 @@ from nv_segment_logic import MODES as NV_SEGMENT_MODES, validate_acceptance
 import lnctvseg_bundle
 from prostate_models import TASKS as PROSTATE_TASKS, requirements as prostate_requirements
 from prostate_models import validate_acceptance as prostate_acceptance, validate_orientation as prostate_orientation
+from gtrc_models import (
+    GTRC_COMPLETION_REL,
+    TASKS as GTRC_TASKS,
+    device_key as gtrc_device_key,
+    expected_runtime_lock_sha256 as gtrc_expected_runtime_lock_sha256,
+    installed_source_commit as gtrc_installed_source_commit,
+    requirements as gtrc_requirements,
+    validate_acceptance as gtrc_acceptance,
+    validate_completion as gtrc_completion,
+    validate_orientation as gtrc_orientation,
+    verify_runtime_cuda_compatibility as gtrc_verify_cuda,
+    verify_weight_inventory as gtrc_verify_weights,
+)
 
 MODEL_ROOT = Path(os.environ.get("RTSEG_MODEL_ROOT", "/models"))
 RUNTIME_ROOT = Path(os.environ.get("RTSEG_RUNTIME_ROOT", MODEL_ROOT))
@@ -486,6 +499,9 @@ REQUIREMENTS[lnctvseg_bundle.TASK] = [
 for task in PROSTATE_TASKS:
     REQUIREMENTS[task] = prostate_requirements(task)
 
+for task in GTRC_TASKS:
+    REQUIREMENTS[task] = gtrc_requirements(task)
+
 
 def audit(tasks=None) -> dict[str, dict]:
     report = {}
@@ -626,16 +642,67 @@ def audit(tasks=None) -> dict[str, dict]:
                         orientation_ready = False
                     if f"{folder}/{task}.json" not in missing:
                         missing.append(f"{folder}/{task}.json (inconsistent {folder} contents)")
+        cuda_ready = True
+        if task in GTRC_TASKS:
+            spec = GTRC_TASKS[task]
+            try:
+                commit = gtrc_installed_source_commit(MODEL_ROOT / spec["source_dir"])
+                if commit != spec["source_commit"]:
+                    missing.append(
+                        f"{spec['source_dir']}/RTSEG_MANIFEST.json (commit mismatch: expected {spec['source_commit']}, got {commit!r})"
+                    )
+            except ValueError as exc:
+                missing.append(f"{spec['source_dir']} ({exc})")
+            try:
+                gtrc_expected_runtime_lock_sha256(MODEL_ROOT)
+            except ValueError as exc:
+                if "runtime-envs/gtrc/requirements.lock.txt" not in missing:
+                    missing.append(f"runtime-envs/gtrc/requirements.lock.txt ({exc})")
+            ok_w, msg_w, _ = gtrc_verify_weights(task, MODEL_ROOT, verify_hashes=True)
+            if not ok_w:
+                missing.append(f"{spec['weights_root']} ({msg_w})")
+            cuda_ok, cuda_msg, live_gpu = gtrc_verify_cuda(MODEL_ROOT, env_name=spec["runtime_env"])
+            if cuda_ok:
+                try:
+                    gtrc_device_key(live_gpu)
+                except ValueError as exc:
+                    cuda_ok = False
+                    cuda_msg = str(exc)
+            cuda_ready = bool(cuda_ok)
+            if not cuda_ready:
+                missing.append(f"runtime-envs/{spec['runtime_env']} ({cuda_msg})")
+            try:
+                gtrc_completion(MODEL_ROOT, gpu=live_gpu if cuda_ok else None)
+            except (OSError, ValueError, TypeError, AttributeError, KeyError):
+                acceptance_ready = False
+                orientation_ready = False
+                if GTRC_COMPLETION_REL not in missing:
+                    missing.append(f"{GTRC_COMPLETION_REL} (inconsistent completion contents)")
+            for folder, validator in (
+                ("validation", lambda record, g=live_gpu if cuda_ok else None: gtrc_acceptance(record, task, MODEL_ROOT, gpu=g)),
+                ("orientation-validation", lambda record, g=live_gpu if cuda_ok else None: gtrc_orientation(record, task, MODEL_ROOT, gpu=g)),
+            ):
+                try:
+                    validator(json.loads((MODEL_ROOT / folder / f"{task}.json").read_text()))
+                    if folder == "validation":
+                        acceptance_ready = True
+                except (OSError, ValueError, TypeError, AttributeError, KeyError):
+                    if folder == "orientation-validation":
+                        orientation_ready = False
+                    if f"{folder}/{task}.json" not in missing:
+                        missing.append(f"{folder}/{task}.json (inconsistent {folder} contents)")
         report[task] = {"ready": not missing, "missing": missing,
                         "orientation_ready": orientation_ready}
         if task == lnctvseg_bundle.TASK:
             report[task]['orientation_ready'] = lnctvseg_bundle.orientation_ready(orientation)
         if task == "nv_reason_ct_report":
             report[task]["acceptance_ready"] = report_acceptance_ready()
-        elif task in NV_SEGMENT_MODES or task == lnctvseg_bundle.TASK or task in PROSTATE_TASKS:
+        elif task in NV_SEGMENT_MODES or task == lnctvseg_bundle.TASK or task in PROSTATE_TASKS or task in GTRC_TASKS:
             report[task]["acceptance_ready"] = acceptance_ready
         elif task == "lnq_atlas" or task in CADS_RESEARCH_IDS:
             report[task]["acceptance_ready"] = content_acceptance
+        if task in GTRC_TASKS:
+            report[task]["cuda_ready"] = cuda_ready
     # Native tasks have the same installed-runtime contract as the production catalog.
     for task in set(tasks or []) - REQUIREMENTS.keys():
         missing = []

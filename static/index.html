@@ -108,6 +108,24 @@
         <div class="section-heading"><div><p class="eyebrow">STEP 4 OF 4</p><h2 id="reviewTitle" tabindex="-1">Review and start</h2><p class="muted">Confirm the series, model inputs and requested outputs.</p></div></div>
         <div id="reviewContent" class="review-grid"></div>
         <section id="postprocessPanel" class="option-panel" hidden><h3>Optional prostate SBRT crop</h3><label class="check-label"><input id="prostatePostprocess" type="checkbox"> Add a CT + RTSTRUCT crop to prostate ±15 cm</label><p class="small muted">Uses the prostate contour from TotalSegmentator total. The full RTSTRUCT is retained. Available with local total inference.</p><p id="postprocessError" class="error" role="alert" hidden></p></section>
+        <section id="gtrcOptionsPanel" class="option-panel" aria-labelledby="gtrcOptionsTitle" hidden>
+          <h3 id="gtrcOptionsTitle">GTRC-Net PET/CT options</h3>
+          <div id="gtrcFdgThresholdRow" hidden>
+            <label for="gtrcFdgThreshold">FDG SUVbw threshold (g/mL, required)</label>
+            <input id="gtrcFdgThreshold" type="number" min="0.1" max="100" step="any" placeholder="e.g. 2.97">
+            <p class="small muted">Patient-specific FDG SUV threshold required for each job (valid range 0.1–100.0 g/mL; no fixed default). JNM 2025;66(11):1811–1817 Methods state 1.5x mean + 2x SD of liver background; DEEP-PSMA challenge pages describe liver mean + 2 SD.</p>
+          </div>
+          <div id="gtrcPsmaThresholdRow" hidden>
+            <label for="gtrcPsmaThreshold">PSMA SUVbw threshold (g/mL, optional override)</label>
+            <input id="gtrcPsmaThreshold" type="number" min="0.1" max="100" step="any" value="3.0" placeholder="3.0">
+            <p class="small muted">Published default is 3.0 g/mL (valid range 0.1–100.0 g/mL). Leave as 3.0 or enter a patient-specific override.</p>
+          </div>
+          <div id="gtrcCtCompanionRow" hidden>
+            <label for="gtrcCtCompanion">Companion CT series (required when multiple CT series match Study and Frame of Reference)</label>
+            <select id="gtrcCtCompanion"><option value="">Select matching CT series</option></select>
+          </div>
+          <p id="gtrcOptionsError" class="error" role="alert" hidden></p>
+        </section>
         <section id="promptPanel" class="prompt-panel" aria-labelledby="promptTitle" hidden>
           <h3 id="promptTitle">Add the interactive prompt</h3><div id="nodalPromptHelp" class="nodal-prompt-help" hidden><label for="promptRegion">Lymph-node prompt region</label><select id="promptRegion"></select><p id="promptRegionNote" class="small"></p><div id="promptSuggestions" class="prompt-suggestions"></div><p id="promptSuggestionsNote" class="small muted"></p></div><div id="promptGuidance" class="notice"></div>
           <p>Choose a slice and click inside the target. A box needs two corners. Coordinates are [column, row, slice], starting at zero.</p>

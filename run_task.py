@@ -41,6 +41,7 @@ from nv_segment_logic import MODES as NV_SEGMENT_MODES
 import lnctvseg_bundle
 from cads_variants import TASK_IDS as CADS_RESEARCH_IDS
 from prostate_models import TASKS as PROSTATE_TASKS, run_task as run_prostate_task
+from gtrc_models import TASKS as GTRC_TASKS, run_task as run_gtrc_task
 from structure_labels import spec_labels, repo_label_path, INLINE_LABELS, sct_matched_name
 from monai_bundle import compatible_config, bundle_command
 from task_progress import Progress, command_stage
@@ -236,6 +237,23 @@ try:
     }
     if task in PROSTATE_TASKS:
         run_prostate_task(task, job, APP_ROOT, MODEL_ROOT, sys.executable, run, acceptance_audit=HELD_MRI_AUDIT)
+    elif task in GTRC_TASKS:
+        # Only the explicit acceptance harness CLI can bootstrap acceptance.
+        # Normal portal and SSH dispatch never supply this argument.
+        gtrc_bootstrap = False
+        if sys.argv[3:] == ["--gtrc-acceptance-bootstrap"]:
+            gtrc_bootstrap = True
+        elif sys.argv[3:]:
+            raise SystemExit("Unexpected GTRC dispatcher arguments")
+        run_gtrc_task(
+            task,
+            job,
+            APP_ROOT,
+            MODEL_ROOT,
+            sys.executable,
+            run,
+            _acceptance_bootstrap=gtrc_bootstrap,
+        )
     elif task == "nv_reason_ct_report":
         from model_preflight import nv_reason_python, NV_REASON_REVISION
         env = os.environ.copy()

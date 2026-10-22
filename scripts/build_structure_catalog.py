@@ -25,6 +25,7 @@ from structure_labels import (INLINE_LABELS, PROMPTED_TASKS, REPO_LABEL_FILES, d
                               unique_roi_names)
 from nv_segment_logic import MODES, generate
 from prostate_models import TASKS as PROSTATE_TASKS, model_folder, validate_umu_dataset
+from gtrc_models import TASKS as GTRC_TASKS, validate_gtrc_dataset
 
 INTERNAL_TOTAL = {"test", "total_highres_test", "total_v1", "vertebrae_pp", "vertebrae_pp_refined"}
 
@@ -170,6 +171,20 @@ def resolve(task, details, ns, bundle, maps, map_path, root=ROOT):
             validate_umu_dataset(json.loads(metadata.read_text()))
             provenance.append(str(metadata))
         return fixed(json.loads(path.read_text()), "Prostate exporter label map"), provenance
+    if task in GTRC_TASKS:
+        spec = GTRC_TASKS[task]
+        path = root / spec["label_map"]
+        metadata = bundle / spec["model_folder"] / "dataset.json"
+        validate_gtrc_dataset(json.loads(metadata.read_text()))
+        provenance = [str(path), str(metadata), "structure_labels.final_roi_names"]
+        return fixed(
+            json.loads(path.read_text()),
+            "GTRC-Net consensus exporter label map",
+            note=(
+                "Whole-burden total tumour burden ROI on the PET grid; "
+                "normal-uptake class 2 is suppressed after consensus postprocessing. Empty results are valid."
+            ),
+        ), provenance
     if details.get("output") == "report":
         return {"kind": "report", "names": [], "count": None, "source": "Report exporter",
                 "note": "JSON, Markdown and HTML; no RTSTRUCT."}, ["run_task.py: nv_reason_ct_report"]
