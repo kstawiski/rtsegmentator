@@ -27,7 +27,7 @@ def check_python_policy():
     prefix = sys.pycache_prefix
     if (not sys.flags.ignore_environment or not sys.flags.no_user_site
             or not sys.dont_write_bytecode or not prefix
-            or sys.flags.optimize or sys.flags.isolated or sys.flags.safe_path
+            or sys.flags.optimize or sys.flags.isolated or getattr(sys.flags, 'safe_path', 0)
             or sys._xoptions != {'pycache_prefix': prefix}):
         raise ValueError('Held MRI requires -E -s -B -X pycache_prefix=<empty-private-directory> at startup')
     path = Path(prefix)

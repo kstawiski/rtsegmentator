@@ -508,3 +508,20 @@ def test_worker_import_environment_change_invalidates(installed,monkeypatch):
         assert binding(task,installed)['runtime_manifest']==records[task]['runtime_manifest']
         with pytest.raises(ValueError,match='worker_runtime_manifest'):
             validate_marker(records[task],task,installed)
+
+
+def test_python_policy_check_runs_on_python_310_flags(monkeypatch, tmp_path):
+    # The portal image runs Python 3.10, whose sys.flags has no safe_path attribute.
+    import types
+    import held_mri_runtime
+    cache = tmp_path / 'held-pycache'
+    cache.mkdir(mode=0o700)
+    flags = types.SimpleNamespace(ignore_environment=1, no_user_site=1, optimize=0, isolated=0)
+    monkeypatch.setattr(sys, 'flags', flags)
+    monkeypatch.setattr(sys, 'pycache_prefix', str(cache))
+    monkeypatch.setattr(sys, 'dont_write_bytecode', True)
+    monkeypatch.setattr(sys, '_xoptions', {'pycache_prefix': str(cache)})
+    held_mri_runtime.check_python_policy()
+    monkeypatch.setattr(sys, 'flags', types.SimpleNamespace(ignore_environment=1, no_user_site=1, optimize=0, isolated=1))
+    with pytest.raises(ValueError, match='requires -E -s -B'):
+        held_mri_runtime.check_python_policy()

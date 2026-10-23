@@ -10,7 +10,7 @@ if len(sys.argv) > 2 and sys.argv[2] in {
         os.mkdir(cache, 0o700)
         os.execv(sys.executable, [sys.executable, '-E', '-s', '-B', '-X',
                                  'pycache_prefix=' + cache, *sys.argv])
-    if (sys.flags.optimize or sys.flags.isolated or sys.flags.safe_path
+    if (sys.flags.optimize or sys.flags.isolated or getattr(sys.flags, 'safe_path', 0)
             or sys._xoptions != {'pycache_prefix': sys.pycache_prefix}
             or not os.path.isdir(sys.pycache_prefix) or os.path.islink(sys.pycache_prefix)
             or os.stat(sys.pycache_prefix).st_uid != os.getuid()

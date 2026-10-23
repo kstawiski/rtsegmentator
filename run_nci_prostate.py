@@ -7,7 +7,7 @@ import sys
 if __name__ == '__main__':
     if (not sys.flags.ignore_environment or not sys.flags.no_user_site
             or not sys.dont_write_bytecode or not sys.pycache_prefix
-            or sys.flags.optimize or sys.flags.isolated or sys.flags.safe_path
+            or sys.flags.optimize or sys.flags.isolated or getattr(sys.flags, 'safe_path', 0)
             or sys._xoptions != {'pycache_prefix': sys.pycache_prefix}
             or not os.path.isdir(sys.pycache_prefix) or os.path.islink(sys.pycache_prefix)
             or os.stat(sys.pycache_prefix).st_uid != os.getuid()
