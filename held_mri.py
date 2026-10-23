@@ -234,11 +234,40 @@ def binding(task, root, *, worker_python=None, uncached=False):
 
 
 def validate_marker(record, task, root, *, gpu=None, worker_python=None, uncached=False, expected=None):
-    from prostate_models import marker_has_failure
+    from prostate_models import marker_has_failure, _preflight_session
     def require(value, message):
         if not value:
             raise ValueError(message)
-    gpu = gpu if gpu is not None else gpu_preflight(task, root)
+    session = None if uncached else _preflight_session()
+    if expected is None:
+        if session is not None:
+            bkey = (task, str(Path(root).resolve()), str(Path(__file__).resolve()),
+                    str(Path(worker_python or sys.executable).resolve()))
+            if bkey not in session['bindings']:
+                try:
+                    session['bindings'][bkey] = ('ok', binding(task, root, worker_python=worker_python, uncached=False))
+                except Exception as exc:
+                    session['bindings'][bkey] = ('err', exc)
+            status, payload = session['bindings'][bkey]
+            if status == 'err':
+                raise payload
+            expected = payload
+        else:
+            expected = binding(task, root, worker_python=worker_python, uncached=uncached)
+    if gpu is None:
+        if session is not None:
+            gkey = (task, str(Path(root).resolve()))
+            if gkey not in session['gpus']:
+                try:
+                    session['gpus'][gkey] = ('ok', gpu_preflight(task, root))
+                except Exception as exc:
+                    session['gpus'][gkey] = ('err', exc)
+            status, payload = session['gpus'][gkey]
+            if status == 'err':
+                raise payload
+            gpu = payload
+        else:
+            gpu = gpu_preflight(task, root)
     key = device_key(gpu)
     if task == UMAMBA:
         require_capability(gpu['compute_capability'])
@@ -250,7 +279,6 @@ def validate_marker(record, task, root, *, gpu=None, worker_python=None, uncache
             'Acceptance task/result mismatch')
     require(not marker_has_failure(record), 'Acceptance contains a failure or deviation')
     require(record.get('acceptance_modes') == ['reference', 'dicom'], 'Both acceptance modes are required')
-    expected = expected if expected is not None else binding(task, root, worker_python=worker_python, uncached=uncached)
     require(expected['source_commit'] == COMMITS[TASKS[task][0]], 'Installed source commit mismatch')
     for key, value in expected.items():
         require(record.get(key) == value, f'Acceptance {key} mismatch')

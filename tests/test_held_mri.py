@@ -18,7 +18,9 @@ from prostate_models import artifact_names, requirements, validate_acceptance, v
 
 
 @pytest.fixture
-def installed(tmp_path,monkeypatch):
+def installed(tmp_path,tmp_path_factory,monkeypatch):
+    cache_dir=tmp_path_factory.mktemp('held-mri-preflight-cache')
+    monkeypatch.setenv('RTSEG_HELD_MRI_PREFLIGHT_CACHE',str(cache_dir))
     for task,(model,env,runner) in TASKS.items():
         source=tmp_path/'sources'/model
         source.mkdir(parents=True)
@@ -525,3 +527,616 @@ def test_python_policy_check_runs_on_python_310_flags(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, 'flags', types.SimpleNamespace(ignore_environment=1, no_user_site=1, optimize=0, isolated=1))
     with pytest.raises(ValueError, match='requires -E -s -B'):
         held_mri_runtime.check_python_policy()
+
+
+def test_second_preflight_process_reuses_persistent_cache_without_rehashing(installed, monkeypatch):
+    import os
+    import subprocess
+    import held_mri
+    import model_preflight
+    import prostate_models
+    for task in TASKS:
+        held_mri.store_device_marker(installed, task, marker(task, installed))
+    monkeypatch.setattr(model_preflight, 'MODEL_ROOT', installed)
+    monkeypatch.setattr(model_preflight, 'RUNTIME_ROOT', installed)
+    monkeypatch.setattr(model_preflight, 'COMMON', [])
+    monkeypatch.setattr(model_preflight, 'REQUIREMENTS', {NCI: [], UMAMBA: []})
+    prostate_models._SHA256_CACHE.clear()
+    real_hash = prostate_models._hash_file_bytes
+    hashed_first = []
+    monkeypatch.setattr(prostate_models, '_hash_file_bytes', lambda path, *a: (hashed_first.append(str(path)), real_hash(path, *a))[1])
+    real_binding = held_mri.binding
+    binding_calls = []
+    monkeypatch.setattr(held_mri, 'binding', lambda *a, **kw: (binding_calls.append(a[0]), real_binding(*a, **kw))[1])
+    first = model_preflight.audit([NCI, UMAMBA])
+    assert first[NCI]['ready'] and first[UMAMBA]['ready']
+    assert len(hashed_first) > 0
+    # Acceptance and orientation validation in the same preflight share one binding evaluation per task.
+    assert binding_calls == [NCI, UMAMBA]
+    cache_file = Path(os.environ['RTSEG_HELD_MRI_PREFLIGHT_CACHE']) / prostate_models.PREFLIGHT_CACHE_FILENAME
+    assert cache_file.is_file()
+    assert (cache_file.stat().st_mode & 0o777) == 0o600
+    # Simulate a second process by clearing the in-memory cache and counting hash calls.
+    prostate_models._SHA256_CACHE.clear()
+    hashed_second = []
+    monkeypatch.setattr(prostate_models, '_hash_file_bytes', lambda path, *a: (hashed_second.append(str(path)), real_hash(path, *a))[1])
+    second = model_preflight.audit([NCI, UMAMBA])
+    assert second[NCI]['ready'] and second[UMAMBA]['ready']
+    assert hashed_second == []
+    # Also verify reuse across a genuinely separate Python subprocess.
+    script = (
+        "import json, pathlib, sys\n"
+        "import held_mri, held_mri_runtime, model_preflight, prostate_models\n"
+        "root = pathlib.Path(sys.argv[1])\n"
+        "held_mri.pinned_source_hashes = lambda task: {p.as_posix(): prostate_models.file_sha256(root / p) for p in held_mri.source_files(task)}\n"
+        "held_mri_runtime.runtime_identity = lambda python: {'version': 'synthetic', 'packages': [], 'stdlib': str(root / 'stdlib'), "
+        "'prefix': str(pathlib.Path(python).parent.parent if pathlib.Path(python).is_relative_to(root) else root / 'worker')}\n"
+        "held_mri.gpu_preflight = lambda task, r: {'compute_capability': [9, 0], 'name': 'NVIDIA H100 synthetic-test-record'}\n"
+        "model_preflight.MODEL_ROOT = root\n"
+        "model_preflight.RUNTIME_ROOT = root\n"
+        "model_preflight.COMMON = []\n"
+        "model_preflight.REQUIREMENTS = {t: [] for t in held_mri.TASKS}\n"
+        "calls = []\n"
+        "real = prostate_models._hash_file_bytes\n"
+        "prostate_models._hash_file_bytes = lambda p, *a: (calls.append(str(p)), real(p, *a))[1]\n"
+        "res = model_preflight.audit(list(held_mri.TASKS))\n"
+        "print(json.dumps({'calls': len(calls), 'ready': {k: v['ready'] for k, v in res.items()}}))\n"
+    )
+    out = json.loads(subprocess.check_output([sys.executable, '-c', script, str(installed)], text=True))
+    assert out == {'calls': 0, 'ready': {NCI: True, UMAMBA: True}}
+
+
+@pytest.mark.parametrize('change', ['size', 'mtime', 'ctime', 'inode'])
+def test_preflight_cache_rehashes_when_size_mtime_ctime_or_inode_changes(installed, monkeypatch, change):
+    import os
+    import held_mri
+    import model_preflight
+    import prostate_models
+    record = marker(NCI, installed)
+    held_mri.store_device_marker(installed, NCI, record)
+    monkeypatch.setattr(model_preflight, 'MODEL_ROOT', installed)
+    monkeypatch.setattr(model_preflight, 'RUNTIME_ROOT', installed)
+    monkeypatch.setattr(model_preflight, 'COMMON', [])
+    monkeypatch.setattr(model_preflight, 'REQUIREMENTS', {NCI: []})
+    prostate_models._SHA256_CACHE.clear()
+    assert model_preflight.audit([NCI])[NCI]['ready'] is True
+    target = installed / 'runtime-envs/nci-monai/lib/python3.11/site-packages/torch/kernel.so'
+    resolved_target = str(target.resolve())
+    before_stat = target.stat()
+    data = target.read_bytes()
+    flipped = bytes([data[0] ^ 1]) + data[1:]
+    if change == 'size':
+        target.write_bytes(data + b'!')
+        os.utime(target, ns=(before_stat.st_atime_ns, before_stat.st_mtime_ns))
+        assert target.stat().st_size != before_stat.st_size
+    elif change == 'mtime':
+        target.write_bytes(flipped)
+        os.utime(target, ns=(before_stat.st_atime_ns, before_stat.st_mtime_ns + 1_000_000))
+        assert target.stat().st_mtime_ns != before_stat.st_mtime_ns
+    elif change == 'ctime':
+        target.write_bytes(flipped)
+        os.utime(target, ns=(before_stat.st_atime_ns, before_stat.st_mtime_ns))
+        after_stat = target.stat()
+        assert after_stat.st_size == before_stat.st_size
+        assert after_stat.st_mtime_ns == before_stat.st_mtime_ns
+        assert after_stat.st_ino == before_stat.st_ino
+        assert after_stat.st_ctime_ns != before_stat.st_ctime_ns
+    elif change == 'inode':
+        replacement = target.with_suffix('.replacement')
+        replacement.write_bytes(flipped)
+        os.utime(replacement, ns=(before_stat.st_atime_ns, before_stat.st_mtime_ns))
+        replacement.replace(target)
+        after_stat = target.stat()
+        assert after_stat.st_size == before_stat.st_size
+        assert after_stat.st_mtime_ns == before_stat.st_mtime_ns
+        assert after_stat.st_ino != before_stat.st_ino
+    prostate_models._SHA256_CACHE.clear()
+    real_hash = prostate_models._hash_file_bytes
+    hashed = []
+    monkeypatch.setattr(prostate_models, '_hash_file_bytes', lambda path, *a: (hashed.append(str(Path(path).resolve())), real_hash(path, *a))[1])
+    after = model_preflight.audit([NCI])[NCI]
+    assert after['ready'] is False
+    assert hashed == [resolved_target]
+
+
+def test_poisoned_persistent_cache_cannot_pass_publication_dispatch_or_runner_start(installed, monkeypatch, tmp_path):
+    import os
+    import held_mri
+    import model_preflight
+    import prostate_models
+    record = marker(NCI, installed)
+    held_mri.store_device_marker(installed, NCI, record)
+    monkeypatch.setattr(model_preflight, 'MODEL_ROOT', installed)
+    monkeypatch.setattr(model_preflight, 'RUNTIME_ROOT', installed)
+    monkeypatch.setattr(model_preflight, 'COMMON', [])
+    monkeypatch.setattr(model_preflight, 'REQUIREMENTS', {NCI: []})
+    prostate_models._SHA256_CACHE.clear()
+    assert model_preflight.audit([NCI])[NCI]['ready'] is True
+    target = installed / 'runtime-envs/nci-monai/lib/python3.11/site-packages/torch/kernel.so'
+    resolved = str(target.resolve())
+    old_digest = prostate_models.file_sha256(target, uncached=True)
+    data = target.read_bytes()
+    target.write_bytes(bytes([data[0] ^ 1]) + data[1:])
+    st = target.stat()
+    # Poison both the persistent cache on disk and the in-process cache with the old digest for the new stat signature.
+    cache_file = Path(os.environ['RTSEG_HELD_MRI_PREFLIGHT_CACHE']) / prostate_models.PREFLIGHT_CACHE_FILENAME
+    payload = json.loads(cache_file.read_text())
+    payload['entries'][resolved] = [st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns, old_digest]
+    cache_file.write_text(json.dumps(payload))
+    cache_file.chmod(0o600)
+    key = (resolved, st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+    prostate_models._SHA256_CACHE[key] = old_digest
+    # Preflight trusts the cache and reports ready, proving the poisoned entry matches.
+    assert model_preflight.audit([NCI])[NCI]['ready'] is True
+    # Publication, dispatch, and runner start must all bypass the cache and reject the modified file.
+    with prostate_models.preflight_digest_cache(installed):
+        with pytest.raises(ValueError, match='runtime_manifest'):
+            held_mri.store_device_marker(installed, NCI, record)
+        commands = []
+        with pytest.raises(ValueError, match='runtime_manifest'):
+            prostate_models.run_task(NCI, tmp_path / 'job', Path(__file__).parents[1], installed, sys.executable, commands.append)
+        assert not commands
+        monkeypatch.setattr('held_mri_runtime.check_python_policy', lambda: None)
+        monkeypatch.setattr(held_mri.sys, 'prefix', str(installed / 'runtime-envs/nci-monai'))
+        monkeypatch.setattr(held_mri.os.path, 'samefile', lambda *args: True)
+        monkeypatch.setattr(held_mri, 'runtime_gpu', lambda task: record['gpu'])
+        with pytest.raises(ValueError, match='runtime_manifest'):
+            held_mri.runtime_start(NCI, installed, worker_python=sys.executable)
+
+
+@pytest.mark.parametrize('defect', ['other_uid_file', 'other_uid_dir', 'group_writable_file', 'world_writable_file',
+                                    'group_writable_dir', 'world_writable_dir', 'symlink_file', 'symlink_dir', 'inside_bundle'])
+def test_preflight_cache_ignores_unsafe_owner_permissions_symlinks_or_bundle_paths(installed, monkeypatch, tmp_path, defect):
+    import os
+    import held_mri
+    import model_preflight
+    import prostate_models
+    record = marker(NCI, installed)
+    held_mri.store_device_marker(installed, NCI, record)
+    monkeypatch.setattr(model_preflight, 'MODEL_ROOT', installed)
+    monkeypatch.setattr(model_preflight, 'RUNTIME_ROOT', installed)
+    monkeypatch.setattr(model_preflight, 'COMMON', [])
+    monkeypatch.setattr(model_preflight, 'REQUIREMENTS', {NCI: []})
+    prostate_models._SHA256_CACHE.clear()
+    assert model_preflight.audit([NCI])[NCI]['ready'] is True
+    cache_dir = Path(os.environ['RTSEG_HELD_MRI_PREFLIGHT_CACHE'])
+    cache_file = cache_dir / prostate_models.PREFLIGHT_CACHE_FILENAME
+    # Poison the cache entry for kernel.so after modifying kernel.so; if the unsafe cache is ignored, preflight will re-hash and fail.
+    target = installed / 'runtime-envs/nci-monai/lib/python3.11/site-packages/torch/kernel.so'
+    resolved = str(target.resolve())
+    old_digest = prostate_models.file_sha256(target, uncached=True)
+    data = target.read_bytes()
+    target.write_bytes(bytes([data[0] ^ 1]) + data[1:])
+    st = target.stat()
+    payload = json.loads(cache_file.read_text())
+    payload['entries'][resolved] = [st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns, old_digest]
+    cache_file.write_text(json.dumps(payload))
+    cache_file.chmod(0o600)
+    real_uid = os.getuid()
+    if defect == 'other_uid_file':
+        orig_load = prostate_models._load_preflight_cache_file
+        def fake_uid_load(path):
+            monkeypatch.setattr(prostate_models.os, 'getuid', lambda: real_uid + 1)
+            try:
+                return orig_load(path)
+            finally:
+                monkeypatch.setattr(prostate_models.os, 'getuid', lambda: real_uid)
+        monkeypatch.setattr(prostate_models, '_load_preflight_cache_file', fake_uid_load)
+    elif defect == 'other_uid_dir':
+        monkeypatch.setattr(prostate_models.os, 'getuid', lambda: real_uid + 1)
+    elif defect == 'group_writable_file':
+        cache_file.chmod(0o620)
+    elif defect == 'world_writable_file':
+        cache_file.chmod(0o602)
+    elif defect == 'group_writable_dir':
+        cache_dir.chmod(0o770)
+    elif defect == 'world_writable_dir':
+        cache_dir.chmod(0o777)
+    elif defect == 'symlink_file':
+        external = tmp_path / 'external-cache.json'
+        external.write_text(cache_file.read_text())
+        external.chmod(0o600)
+        cache_file.unlink()
+        cache_file.symlink_to(external)
+    elif defect == 'symlink_dir':
+        link_dir = tmp_path / 'symlink-cache-dir'
+        link_dir.symlink_to(cache_dir)
+        monkeypatch.setenv('RTSEG_HELD_MRI_PREFLIGHT_CACHE', str(link_dir))
+    elif defect == 'inside_bundle':
+        inside = installed / 'cache-inside-bundle'
+        inside.mkdir(mode=0o700)
+        (inside / prostate_models.PREFLIGHT_CACHE_FILENAME).write_text(cache_file.read_text())
+        (inside / prostate_models.PREFLIGHT_CACHE_FILENAME).chmod(0o600)
+        monkeypatch.setenv('RTSEG_HELD_MRI_PREFLIGHT_CACHE', str(inside))
+    prostate_models._SHA256_CACHE.clear()
+    real_hash = prostate_models._hash_file_bytes
+    hashed = []
+    monkeypatch.setattr(prostate_models, '_hash_file_bytes', lambda path, *a: (hashed.append(str(path)), real_hash(path, *a))[1])
+    after = model_preflight.audit([NCI])[NCI]
+    assert after['ready'] is False
+    assert len(hashed) > 0
+
+
+@pytest.mark.parametrize('corrupt_content', [
+    '{not-valid-json',
+    '["not", "an", "object"]',
+    '{"schema_version": 999, "entries": {}}',
+    '{"schema_version": 1, "entries": "not-a-dict"}',
+    '{"schema_version": 1, "entries": {"/some/path": ["bad", "tuple"]}}',
+    '\x00\xff\xfe',
+    pytest.param('[' * 1100 + '0' + ']' * 1100, id='deeply-nested-json'),  # json.loads raises RecursionError
+])
+def test_corrupt_preflight_cache_file_is_ignored_and_repaired(installed, monkeypatch, corrupt_content):
+    import os
+    import held_mri
+    import model_preflight
+    import prostate_models
+    record = marker(NCI, installed)
+    held_mri.store_device_marker(installed, NCI, record)
+    monkeypatch.setattr(model_preflight, 'MODEL_ROOT', installed)
+    monkeypatch.setattr(model_preflight, 'RUNTIME_ROOT', installed)
+    monkeypatch.setattr(model_preflight, 'COMMON', [])
+    monkeypatch.setattr(model_preflight, 'REQUIREMENTS', {NCI: []})
+    cache_dir = Path(os.environ['RTSEG_HELD_MRI_PREFLIGHT_CACHE'])
+    cache_file = cache_dir / prostate_models.PREFLIGHT_CACHE_FILENAME
+    cache_file.write_bytes(corrupt_content.encode('latin1'))
+    cache_file.chmod(0o600)
+    prostate_models._SHA256_CACHE.clear()
+    real_hash = prostate_models._hash_file_bytes
+    hashed = []
+    monkeypatch.setattr(prostate_models, '_hash_file_bytes', lambda path, *a: (hashed.append(str(path)), real_hash(path, *a))[1])
+    first = model_preflight.audit([NCI])[NCI]
+    assert first['ready'] is True
+    assert len(hashed) > 0
+    repaired = json.loads(cache_file.read_text())
+    assert repaired['schema_version'] == prostate_models.PREFLIGHT_CACHE_SCHEMA
+    assert isinstance(repaired['entries'], dict) and len(repaired['entries']) > 0
+    assert (cache_file.stat().st_mode & 0o777) == 0o600
+    prostate_models._SHA256_CACHE.clear()
+    hashed_second = []
+    monkeypatch.setattr(prostate_models, '_hash_file_bytes', lambda path, *a: (hashed_second.append(str(path)), real_hash(path, *a))[1])
+    assert model_preflight.audit([NCI])[NCI]['ready'] is True
+    assert hashed_second == []
+
+
+def test_concurrent_preflight_writers_leave_valid_cache_file(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    import prostate_models
+    scratch_root = tmp_path / 'scratch-root'
+    unwritable_home = tmp_path / 'unwritable-home'
+    unwritable_home.write_text('not-a-directory')
+    monkeypatch.delenv('RTSEG_HELD_MRI_PREFLIGHT_CACHE', raising=False)
+    monkeypatch.delenv('XDG_CACHE_HOME', raising=False)
+    monkeypatch.setenv('HOME', str(unwritable_home))
+    monkeypatch.setenv('RTSEG_SCRATCH_ROOT', str(scratch_root))
+    cache_dir = prostate_models.preflight_cache_directory()
+    assert cache_dir == scratch_root / 'held-mri-preflight-cache'
+    files_root = tmp_path / 'files'
+    files_root.mkdir()
+    files = []
+    for idx in range(24):
+        f = files_root / f'file_{idx}.bin'
+        f.write_bytes(f'payload-{idx}'.encode())
+        files.append(f)
+
+    def worker(worker_id: int) -> list[str]:
+        subset = files[worker_id * 4:(worker_id + 1) * 4] + files[:2]
+        with prostate_models.preflight_digest_cache(tmp_path / 'forbidden'):
+            return [prostate_models.file_sha256(f) for f in subset]
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        results = list(pool.map(worker, range(6)))
+    assert len(results) == 6
+    cache_file = cache_dir / prostate_models.PREFLIGHT_CACHE_FILENAME
+    assert cache_file.is_file()
+    assert (cache_file.stat().st_mode & 0o777) == 0o600
+    assert not list(cache_dir.glob('*.tmp'))
+    payload = json.loads(cache_file.read_text())
+    assert payload['schema_version'] == prostate_models.PREFLIGHT_CACHE_SCHEMA
+    for f in files:
+        resolved = str(f.resolve())
+        assert resolved in payload['entries']
+        assert payload['entries'][resolved][5] == prostate_models.file_sha256(f, uncached=True)
+
+
+def test_preflight_cache_default_location_resolution_order(tmp_path, monkeypatch):
+    import prostate_models
+    bundle = tmp_path / 'bundle'
+    bundle.mkdir(mode=0o700)
+    sample = tmp_path / 'sample.bin'
+    sample.write_bytes(b'location-order-payload')
+    env_cache = tmp_path / 'explicit-env-cache'
+    xdg_root = tmp_path / 'xdg-cache-home'
+    home_root = tmp_path / 'user-home'
+    scratch_root = tmp_path / 'scratch-root'
+    monkeypatch.setenv('RTSEG_HELD_MRI_PREFLIGHT_CACHE', str(env_cache))
+    monkeypatch.setenv('XDG_CACHE_HOME', str(xdg_root))
+    monkeypatch.setenv('HOME', str(home_root))
+    monkeypatch.setenv('RTSEG_SCRATCH_ROOT', str(scratch_root))
+
+    # 1. Explicit RTSEG_HELD_MRI_PREFLIGHT_CACHE wins over XDG, HOME, and scratch.
+    prostate_models._SHA256_CACHE.clear()
+    assert prostate_models.preflight_cache_directory(protected_roots=(bundle,)) == env_cache
+    with prostate_models.preflight_digest_cache(bundle) as session:
+        assert session['cache_dir'] == env_cache.resolve()
+        prostate_models.file_sha256(sample)
+    assert (env_cache / prostate_models.PREFLIGHT_CACHE_FILENAME).is_file()
+    assert not xdg_root.exists() and not home_root.exists() and not scratch_root.exists()
+
+    # 2. When RTSEG_HELD_MRI_PREFLIGHT_CACHE is unset, $XDG_CACHE_HOME/rtsegmentator/held-mri-preflight-cache wins over HOME and scratch.
+    monkeypatch.delenv('RTSEG_HELD_MRI_PREFLIGHT_CACHE', raising=False)
+    expected_xdg = xdg_root / 'rtsegmentator' / 'held-mri-preflight-cache'
+    prostate_models._SHA256_CACHE.clear()
+    assert prostate_models.preflight_cache_directory(protected_roots=(bundle,)) == expected_xdg
+    with prostate_models.preflight_digest_cache(bundle) as session:
+        assert session['cache_dir'] == expected_xdg.resolve()
+        prostate_models.file_sha256(sample)
+    assert (expected_xdg / prostate_models.PREFLIGHT_CACHE_FILENAME).is_file()
+    assert not home_root.exists() and not scratch_root.exists()
+
+    # 3. When XDG_CACHE_HOME is also unset, ~/.cache/rtsegmentator/held-mri-preflight-cache wins over scratch.
+    monkeypatch.delenv('XDG_CACHE_HOME', raising=False)
+    expected_home = home_root / '.cache' / 'rtsegmentator' / 'held-mri-preflight-cache'
+    prostate_models._SHA256_CACHE.clear()
+    assert prostate_models.preflight_cache_directory(protected_roots=(bundle,)) == expected_home
+    with prostate_models.preflight_digest_cache(bundle) as session:
+        assert session['cache_dir'] == expected_home.resolve()
+        prostate_models.file_sha256(sample)
+    assert (expected_home / prostate_models.PREFLIGHT_CACHE_FILENAME).is_file()
+    assert not scratch_root.exists()
+
+    # 4. Fallback to <RTSEG_SCRATCH_ROOT>/held-mri-preflight-cache only when the home cache directory cannot be created or validated.
+    for reason in ('file_home', 'readonly_home', 'world_writable_home', 'symlink_home', 'bundle_home', 'invalid_xdg'):
+        case_dir = tmp_path / f'fallback-{reason}'
+        case_dir.mkdir(mode=0o700)
+        case_scratch = case_dir / 'scratch'
+        monkeypatch.setenv('RTSEG_SCRATCH_ROOT', str(case_scratch))
+        monkeypatch.delenv('XDG_CACHE_HOME', raising=False)
+        if reason == 'file_home':
+            bad_home = case_dir / 'home-is-file'
+            bad_home.write_text('not a directory')
+            monkeypatch.setenv('HOME', str(bad_home))
+        elif reason == 'readonly_home':
+            ro_home = case_dir / 'ro-home'
+            ro_home.mkdir(mode=0o500)
+            monkeypatch.setenv('HOME', str(ro_home))
+        elif reason == 'world_writable_home':
+            ww_home = case_dir / 'ww-home'
+            ww_home.mkdir(mode=0o700)
+            ww_home.chmod(0o777)
+            monkeypatch.setenv('HOME', str(ww_home))
+        elif reason == 'symlink_home':
+            real_home = case_dir / 'real-home'
+            real_home.mkdir(mode=0o700)
+            link_home = case_dir / 'link-home'
+            link_home.symlink_to(real_home)
+            monkeypatch.setenv('HOME', str(link_home))
+        elif reason == 'bundle_home':
+            monkeypatch.setenv('HOME', str(bundle / 'home-inside-bundle'))
+        elif reason == 'invalid_xdg':
+            bad_xdg = case_dir / 'xdg-is-file'
+            bad_xdg.write_text('not a directory')
+            monkeypatch.setenv('XDG_CACHE_HOME', str(bad_xdg))
+            monkeypatch.setenv('HOME', str(home_root))
+        expected_scratch = case_scratch / 'held-mri-preflight-cache'
+        prostate_models._SHA256_CACHE.clear()
+        assert prostate_models.preflight_cache_directory(protected_roots=(bundle,)) == expected_scratch, reason
+        with prostate_models.preflight_digest_cache(bundle) as session:
+            assert session['cache_dir'] == expected_scratch.resolve(), reason
+            prostate_models.file_sha256(sample)
+        assert (expected_scratch / prostate_models.PREFLIGHT_CACHE_FILENAME).is_file(), reason
+        if reason == 'readonly_home':
+            (case_dir / 'ro-home').chmod(0o700)
+
+
+def test_preflight_cache_periodic_flush_writes_before_session_end(tmp_path, monkeypatch):
+    import prostate_models
+    cache_dir = tmp_path / 'periodic-cache'
+    bundle = tmp_path / 'bundle'
+    bundle.mkdir(mode=0o700)
+    monkeypatch.setenv('RTSEG_HELD_MRI_PREFLIGHT_CACHE', str(cache_dir))
+    files_dir = tmp_path / 'files'
+    files_dir.mkdir(mode=0o700)
+    files = []
+    for idx in range(6):
+        f = files_dir / f'item_{idx}.bin'
+        f.write_bytes(f'periodic-content-{idx}'.encode())
+        files.append(f)
+    clock = [1000.0]
+    monkeypatch.setattr(prostate_models.time, 'monotonic', lambda: clock[0])
+    prostate_models._SHA256_CACHE.clear()
+    cache_file = cache_dir / prostate_models.PREFLIGHT_CACHE_FILENAME
+
+    with prostate_models.preflight_digest_cache(bundle):
+        # At t=1000.0 (0 s elapsed) and t=1029.9 (29.9 s elapsed), no periodic flush has occurred yet.
+        prostate_models.file_sha256(files[0])
+        assert not cache_file.exists()
+        clock[0] = 1029.9
+        prostate_models.file_sha256(files[1])
+        assert not cache_file.exists()
+
+        # At t=1030.0 (exactly 30.0 s elapsed), hashing flushes files[0..2] before session end.
+        clock[0] = 1030.0
+        prostate_models.file_sha256(files[2])
+        assert cache_file.is_file()
+        assert (cache_file.stat().st_mode & 0o777) == 0o600
+        mid_payload_1 = json.loads(cache_file.read_text())
+        assert set(mid_payload_1['entries']) == {str(f.resolve()) for f in files[:3]}
+
+        # At t=1045.0 (15.0 s since last flush at 1030.0), files[3] is kept in memory until next interval.
+        clock[0] = 1045.0
+        prostate_models.file_sha256(files[3])
+        assert set(json.loads(cache_file.read_text())['entries']) == {str(f.resolve()) for f in files[:3]}
+
+        # At t=1060.5 (30.5 s since last flush at 1030.0), hashing flushes files[0..4] before session end.
+        clock[0] = 1060.5
+        prostate_models.file_sha256(files[4])
+        mid_payload_2 = json.loads(cache_file.read_text())
+        assert set(mid_payload_2['entries']) == {str(f.resolve()) for f in files[:5]}
+
+        # At t=1070.0 (<30 s since 1060.5), files[5] is hashed and flushed when the session ends.
+        clock[0] = 1070.0
+        prostate_models.file_sha256(files[5])
+        assert set(json.loads(cache_file.read_text())['entries']) == {str(f.resolve()) for f in files[:5]}
+
+    final_payload = json.loads(cache_file.read_text())
+    assert set(final_payload['entries']) == {str(f.resolve()) for f in files}
+
+
+@pytest.mark.parametrize('sig_name', ['SIGTERM', 'SIGHUP'])
+def test_interrupted_preflight_session_flushes_on_sigterm_and_sighup(tmp_path, monkeypatch, sig_name):
+    import os
+    import signal
+    import subprocess
+    import prostate_models
+    sig = getattr(signal, sig_name)
+    cache_dir = tmp_path / f'cache-{sig_name}'
+    bundle = tmp_path / 'bundle'
+    bundle.mkdir(mode=0o700)
+    files_dir = tmp_path / f'files-{sig_name}'
+    files_dir.mkdir(mode=0o700)
+    files = []
+    for idx in range(6):
+        f = files_dir / f'part_{idx}.bin'
+        f.write_bytes(f'signal-payload-{sig_name}-{idx}'.encode())
+        files.append(f)
+
+    # Verify in-process that previous signal handlers are restored after preflight_digest_cache exits.
+    monkeypatch.setenv('RTSEG_HELD_MRI_PREFLIGHT_CACHE', str(cache_dir))
+    prev_term = signal.getsignal(signal.SIGTERM)
+    prev_hup = signal.getsignal(signal.SIGHUP)
+    sentinel_term = lambda s, f: None
+    sentinel_hup = lambda s, f: None
+    signal.signal(signal.SIGTERM, sentinel_term)
+    signal.signal(signal.SIGHUP, sentinel_hup)
+    try:
+        with prostate_models.preflight_digest_cache(bundle):
+            assert signal.getsignal(signal.SIGTERM) is not sentinel_term
+            assert signal.getsignal(signal.SIGHUP) is not sentinel_hup
+        assert signal.getsignal(signal.SIGTERM) is sentinel_term
+        assert signal.getsignal(signal.SIGHUP) is sentinel_hup
+    finally:
+        signal.signal(signal.SIGTERM, prev_term)
+        signal.signal(signal.SIGHUP, prev_hup)
+
+    # Simulate SIGTERM/SIGHUP in a child process mid-hashing (on the 4th file, before the 30 s periodic flush).
+    child_script = (
+        "import json, pathlib, sys, time\n"
+        "import prostate_models\n"
+        "bundle = pathlib.Path(sys.argv[1])\n"
+        "files = [pathlib.Path(p) for p in json.loads(sys.argv[2])]\n"
+        "real_hash = prostate_models._hash_file_bytes\n"
+        "count = 0\n"
+        "def slow_hash(path, *a):\n"
+        "    global count\n"
+        "    count += 1\n"
+        "    if count == 4:\n"
+        "        sys.stdout.write('MID_HASHING\\n')\n"
+        "        sys.stdout.flush()\n"
+        "        time.sleep(30)\n"
+        "    return real_hash(path, *a)\n"
+        "prostate_models._hash_file_bytes = slow_hash\n"
+        "with prostate_models.preflight_digest_cache(bundle):\n"
+        "    for f in files:\n"
+        "        prostate_models.file_sha256(f)\n"
+    )
+    env = {**os.environ, 'RTSEG_HELD_MRI_PREFLIGHT_CACHE': str(cache_dir),
+           'PYTHONPATH': os.pathsep.join([str(Path(__file__).parents[1]), os.environ.get('PYTHONPATH', '')])}
+    cache_file = cache_dir / prostate_models.PREFLIGHT_CACHE_FILENAME
+    assert not cache_file.exists()
+    proc = subprocess.Popen(
+        [sys.executable, '-c', child_script, str(bundle), json.dumps([str(f) for f in files])],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
+    )
+    line = proc.stdout.readline().strip()
+    assert line == 'MID_HASHING'
+    # Before sending the signal, less than 30 s has elapsed so digests.json has not been written yet.
+    assert not cache_file.exists()
+    proc.send_signal(sig)
+    _, stderr = proc.communicate(timeout=15)
+    assert proc.returncode == 128 + int(sig), stderr
+    assert cache_file.is_file()
+    assert (cache_file.stat().st_mode & 0o777) == 0o600
+    assert not list(cache_dir.glob('*.tmp'))
+    payload = json.loads(cache_file.read_text())
+    assert payload['schema_version'] == prostate_models.PREFLIGHT_CACHE_SCHEMA
+    expected_before_signal = {str(f.resolve()) for f in files[:3]}
+    assert set(payload['entries']) == expected_before_signal
+    for f in files[:3]:
+        assert payload['entries'][str(f.resolve())][5] == prostate_models.file_sha256(f, uncached=True)
+
+    # A subsequent session reuses the 3 flushed entries and hashes only the remaining 3 files.
+    prostate_models._SHA256_CACHE.clear()
+    real_hash = prostate_models._hash_file_bytes
+    hashed_after = []
+    monkeypatch.setattr(prostate_models, '_hash_file_bytes',
+                        lambda path, *a: (hashed_after.append(str(Path(path).resolve())), real_hash(path, *a))[1])
+    with prostate_models.preflight_digest_cache(bundle):
+        for f in files:
+            prostate_models.file_sha256(f)
+    assert hashed_after == [str(f.resolve()) for f in files[3:]]
+    assert set(json.loads(cache_file.read_text())['entries']) == {str(f.resolve()) for f in files}
+
+
+def test_existing_read_only_home_cache_falls_back_to_scratch(tmp_path, monkeypatch):
+    # Release review of the cache (round 1): an existing, safe but unwritable default cache must not be selected.
+    import os
+    import prostate_models
+    bundle = tmp_path / 'bundle'
+    bundle.mkdir(mode=0o700)
+    sample = tmp_path / 'sample.bin'
+    sample.write_bytes(b'read-only-home-payload')
+    home_root = tmp_path / 'home'
+    scratch_root = tmp_path / 'scratch'
+    scratch_root.mkdir(mode=0o700)
+    home_cache = home_root / '.cache' / 'rtsegmentator' / 'held-mri-preflight-cache'
+    home_cache.mkdir(parents=True, mode=0o700)
+    for d in (home_root, home_root / '.cache', home_root / '.cache' / 'rtsegmentator'):
+        d.chmod(0o700)
+    home_cache.chmod(0o500)
+    monkeypatch.delenv('RTSEG_HELD_MRI_PREFLIGHT_CACHE', raising=False)
+    monkeypatch.delenv('XDG_CACHE_HOME', raising=False)
+    monkeypatch.setenv('HOME', str(home_root))
+    monkeypatch.setenv('RTSEG_SCRATCH_ROOT', str(scratch_root))
+    try:
+        if os.access(home_cache, os.W_OK):
+            pytest.skip('running with privileges that bypass directory permissions')
+        prostate_models._SHA256_CACHE.clear()
+        with prostate_models.preflight_digest_cache(bundle) as session:
+            assert session['cache_dir'] == (scratch_root / 'held-mri-preflight-cache').resolve()
+            prostate_models.file_sha256(sample)
+        assert (scratch_root / 'held-mri-preflight-cache' / prostate_models.PREFLIGHT_CACHE_FILENAME).is_file()
+        assert not (home_cache / prostate_models.PREFLIGHT_CACHE_FILENAME).exists()
+    finally:
+        home_cache.chmod(0o700)
+
+
+def test_flush_restores_callers_signal_mask(tmp_path):
+    # Release review of the cache (round 1): a signal the caller blocked must stay blocked, and a pending
+    # blocked signal must not be delivered by the cache when the session ends.
+    import os
+    import subprocess
+    script = (
+        "import os, pathlib, signal, sys\n"
+        "import prostate_models\n"
+        "work = pathlib.Path(sys.argv[1])\n"
+        "bundle = work / 'bundle'; bundle.mkdir(mode=0o700)\n"
+        "sample = work / 'sample.bin'; sample.write_bytes(b'mask-payload')\n"
+        "os.environ['RTSEG_HELD_MRI_PREFLIGHT_CACHE'] = str(work / 'cache')\n"
+        "signal.signal(signal.SIGHUP, lambda s, f: print('UNEXPECTED_EARLY_HUP', flush=True))\n"
+        "signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGHUP})\n"
+        "with prostate_models.preflight_digest_cache(bundle):\n"
+        "    prostate_models.file_sha256(sample)\n"
+        "    os.kill(os.getpid(), signal.SIGHUP)\n"
+        "    print('HUP_QUEUED_WHILE_BLOCKED', flush=True)\n"
+        "still_blocked = signal.SIGHUP in signal.pthread_sigmask(signal.SIG_BLOCK, set())\n"
+        "print('STILL_BLOCKED' if still_blocked else 'UNBLOCKED', flush=True)\n"
+        "print('AFTER_CONTEXT', flush=True)\n"
+    )
+    env = {k: v for k, v in os.environ.items() if k != 'RTSEG_HELD_MRI_PREFLIGHT_CACHE'}
+    env['PYTHONPATH'] = str(Path(__file__).resolve().parents[1]) + os.pathsep + env.get('PYTHONPATH', '')
+    env['PYTHONDONTWRITEBYTECODE'] = '1'
+    result = subprocess.run([sys.executable, '-c', script, str(tmp_path)], capture_output=True, text=True,
+                            env=env, timeout=120)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == ['HUP_QUEUED_WHILE_BLOCKED', 'STILL_BLOCKED', 'AFTER_CONTEXT']

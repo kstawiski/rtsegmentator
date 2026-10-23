@@ -24,7 +24,9 @@ from cads_variants import (TASK_IDS as CADS_RESEARCH_IDS, gpu_preflight as cads_
                            validate_orientation as validate_cads_orientation)
 from nv_segment_logic import MODES as NV_SEGMENT_MODES, validate_acceptance
 import lnctvseg_bundle
-from prostate_models import TASKS as PROSTATE_TASKS, requirements as prostate_requirements
+from contextlib import nullcontext
+from prostate_models import (HELD_MRI_TASKS, TASKS as PROSTATE_TASKS, preflight_digest_cache,
+                             requirements as prostate_requirements)
 from prostate_models import validate_acceptance as prostate_acceptance, validate_orientation as prostate_orientation
 from gtrc_models import (
     GTRC_COMPLETION_REL,
@@ -631,17 +633,20 @@ def audit(tasks=None) -> dict[str, dict]:
         orientation = MODEL_ROOT / "orientation-validation" / f"{task}.json"
         orientation_ready = orientation.is_file() and not orientation_invalid
         if task in PROSTATE_TASKS:
-            for folder, validator in (("validation", lambda record: prostate_acceptance(record, task, MODEL_ROOT)),
-                                      ("orientation-validation", lambda record: prostate_orientation(record, task, MODEL_ROOT))):
-                try:
-                    validator(json.loads((MODEL_ROOT / folder / f"{task}.json").read_text()))
-                    if folder == "validation":
-                        acceptance_ready = True
-                except (OSError, ValueError, TypeError, AttributeError, KeyError):
-                    if folder == "orientation-validation":
-                        orientation_ready = False
-                    if f"{folder}/{task}.json" not in missing:
-                        missing.append(f"{folder}/{task}.json (inconsistent {folder} contents)")
+            cache_ctx = (preflight_digest_cache(MODEL_ROOT, APP_ROOT, RUNTIME_ROOT)
+                         if task in HELD_MRI_TASKS else nullcontext())
+            with cache_ctx:
+                for folder, validator in (("validation", lambda record: prostate_acceptance(record, task, MODEL_ROOT)),
+                                          ("orientation-validation", lambda record: prostate_orientation(record, task, MODEL_ROOT))):
+                    try:
+                        validator(json.loads((MODEL_ROOT / folder / f"{task}.json").read_text()))
+                        if folder == "validation":
+                            acceptance_ready = True
+                    except (OSError, ValueError, TypeError, AttributeError, KeyError):
+                        if folder == "orientation-validation":
+                            orientation_ready = False
+                        if f"{folder}/{task}.json" not in missing:
+                            missing.append(f"{folder}/{task}.json (inconsistent {folder} contents)")
         cuda_ready = True
         if task in GTRC_TASKS:
             spec = GTRC_TASKS[task]

@@ -1,11 +1,13 @@
 """Installed-file and import-policy evidence; no CUDA or model execution."""
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import hashlib
 import json
 import os
 from pathlib import Path
+import stat as stat_module
 import subprocess
 import sys
 import tempfile
@@ -51,6 +53,75 @@ def runtime_identity(python):
         raise ValueError('Cannot verify installed MRI runtime identity: ' + str(exc)) from exc
 
 
+def _collect_root_files(roots):
+    def scan_dir(item):
+        prefix, real_cur = item
+        rows = []
+        try:
+            with os.scandir(real_cur) as entries:
+                for entry in entries:
+                    if entry.name == '__pycache__' or (prefix == 'stdlib' and entry.name == 'site-packages'):
+                        continue
+                    try:
+                        lst = entry.stat(follow_symlinks=False)
+                        is_link = stat_module.S_ISLNK(lst.st_mode)
+                        st = entry.stat(follow_symlinks=True) if is_link else lst
+                    except OSError:
+                        continue
+                    real = str(Path(entry.path).resolve()) if is_link else os.path.join(real_cur, entry.name)
+                    if stat_module.S_ISDIR(st.st_mode):
+                        rows.append((entry.name, 'dir', real, st))
+                    elif stat_module.S_ISREG(st.st_mode):
+                        rows.append((entry.name, 'file', real, st))
+        except OSError:
+            return (prefix, real_cur), []
+        rows.sort(key=lambda row: row[0])
+        return (prefix, real_cur), rows
+
+    dir_children = {}
+    frontier = []
+    seen = set()
+    resolved_roots = []
+    for prefix, directory in roots:
+        try:
+            real_root = str(directory.resolve())
+            if not directory.is_dir():
+                continue
+        except OSError:
+            continue
+        resolved_roots.append((prefix, directory, real_root))
+        if (prefix, real_root) not in seen:
+            seen.add((prefix, real_root))
+            frontier.append((prefix, real_root))
+    with ThreadPoolExecutor(max_workers=32) as executor:
+        while frontier:
+            next_frontier = []
+            for key, rows in executor.map(scan_dir, frontier):
+                dir_children[key] = rows
+                prefix = key[0]
+                for _, kind, real_child, _ in rows:
+                    if kind == 'dir' and (prefix, real_child) not in seen:
+                        seen.add((prefix, real_child))
+                        next_frontier.append((prefix, real_child))
+            frontier = next_frontier
+    collected = {}
+    for prefix, directory, real_root in resolved_roots:
+        visited = set()
+        def dfs(cur: Path, real_cur: str, rel_prefix: str):
+            if real_cur in visited:
+                return
+            visited.add(real_cur)
+            for name, kind, real_child, st in dir_children.get((prefix, real_cur), ()):
+                child = cur / name
+                rel = f'{rel_prefix}/{name}' if rel_prefix else name
+                if kind == 'dir':
+                    dfs(child, real_child, rel)
+                elif kind == 'file':
+                    collected[f'{prefix}/{rel}'] = (child, real_child, st)
+        dfs(directory, real_root, '')
+    return collected
+
+
 def runtime_manifest(python, *, uncached=False):
     """Inventory the whole environment, stdlib and every additional import root.
 
@@ -63,36 +134,24 @@ def runtime_manifest(python, *, uncached=False):
     identity = runtime_identity(python)
     env = Path(identity.pop('prefix', python.parent.parent))
     stdlib = Path(identity.pop('stdlib'))
-    paths = {'interpreter': python}
+    paths = {'interpreter': (python, str(python.resolve()), python.stat())}
     libpython = identity.pop('libpython', None)
     if libpython and Path(libpython).is_file():
-        paths['libpython'] = Path(libpython)
+        lp = Path(libpython)
+        paths['libpython'] = (lp, str(lp.resolve()), lp.stat())
     roots = [('environment', env), ('stdlib', stdlib)]
     for index, entry in enumerate(identity.get('import_path', [])):
         path = Path(entry)
         if not path.is_absolute():
             raise ValueError(f'Uncontrolled relative runtime import path: {entry}')
         if path.is_file():
-            paths[f'import-file/{index}'] = path
+            paths[f'import-file/{index}'] = (path, str(path.resolve()), path.stat())
         elif path.is_dir() and not any(path.is_relative_to(base) for _, base in roots):
             roots.append((f'import-root/{index}', path))
-    for prefix, directory in roots:
-        visited = set()
-        for current, directories, names in os.walk(directory, followlinks=True):
-            current = Path(current)
-            resolved = current.resolve()
-            if resolved in visited:
-                directories[:] = []
-                continue
-            visited.add(resolved)
-            directories[:] = sorted(name for name in directories if name != '__pycache__'
-                                    and not (prefix == 'stdlib' and name == 'site-packages'))
-            for name in names:
-                path = current / name
-                if path.is_file():
-                    paths[f'{prefix}/{path.relative_to(directory).as_posix()}'] = path
-    files = {key: {'size': path.stat().st_size, 'sha256': file_sha256(path, uncached=uncached)}
-             for key, path in sorted(paths.items())}
+    paths.update(_collect_root_files(roots))
+    files = {key: {'size': st.st_size,
+                   'sha256': file_sha256(path, uncached=uncached, _stat=st, _resolved=real)}
+             for key, (path, real, st) in sorted(paths.items())}
     return {'schema_version': 2, 'identity': identity, 'python_policy': PYTHON_POLICY, 'files': files}
 
 

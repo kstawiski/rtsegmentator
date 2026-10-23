@@ -229,9 +229,29 @@ and RTSTRUCT creation. Each inventories the whole environment (including all
 site-packages), standard library, extension binaries and additional site import
 paths. The worker executable and effective import environment are bound in each
 device record. Changes to worker dependencies invalidate both tasks' evidence.
-Hashes are cached by resolved path, device, inode, size, nanosecond mtime and
-nanosecond ctime. Publication and execution startup read all bound bytes again,
-without using the digest cache. Unchanged lock text alone is insufficient.
+Hashes are cached by resolved path, `st_dev`, `st_ino`, `st_size`, `st_mtime_ns`
+and `st_ctime_ns`. `model_preflight.py` maintains a persistent, preflight-only
+digest cache (`digests.json`) for the two held-MRI tasks in the per-user
+writable directory resolved in order from `RTSEG_HELD_MRI_PREFLIGHT_CACHE` if
+set, else `$XDG_CACHE_HOME/rtsegmentator/held-mri-preflight-cache`, else
+`~/.cache/rtsegmentator/held-mri-preflight-cache`, falling back to
+`<RTSEG_SCRATCH_ROOT>/held-mri-preflight-cache` (where `RTSEG_SCRATCH_ROOT`
+defaults to `/scratch`) only when the home cache directory cannot be created or
+validated. The cache directory must lie outside the application root, model
+bundle and worker runtime root, and both the directory chain and cache file must
+be regular non-symlink paths owned by the current UID and not writable by group
+or others; updates acquire an exclusive lock and write a mode-`0600` temporary
+file followed by `os.replace`. New entries are flushed incrementally (at least
+every 30 s of hashing), at session end, and on `SIGTERM` or `SIGHUP` before
+process exit (with previous signal handlers restored afterwards). Unsafe,
+unreadable or corrupt cache files are ignored and recomputed. Trust boundary:
+the persistent and in-memory digest caches are used **only by preflight**.
+Acceptance publication (`store_device_marker`), production dispatch
+(`prostate_models.run_task`) and runner execution startup
+(`held_mri.runtime_start`) always read and hash all bound bytes uncached
+(`uncached=True`), so a stale or poisoned cache entry can at worst cause
+preflight to report ready while execution and publication still reject modified
+bytes. Unchanged lock text alone is insufficient.
 All production Python modules, catalogue/label contracts and upstream source
 modules are bound, including DICOM conversion and RTSTRUCT geometry code.
 
