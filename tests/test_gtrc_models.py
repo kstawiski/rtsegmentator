@@ -1326,7 +1326,7 @@ def test_catalogue_and_structure_catalog_contracts():
         assert entry["requires_ct"] is True
         assert entry["requires_preflight"] is True
         assert entry["enabled"] is True
-        assert entry["status"] == "acceptance_pending"
+        assert entry["status"] == "technical_checks_recorded"
         assert entry["output_artifacts"] == [
             f"{task}_RTSTRUCT.dcm",
             f"{task}_RTSTRUCT.dcm.lesions.json",

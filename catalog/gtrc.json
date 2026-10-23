@@ -4,7 +4,7 @@
     "requires_ct": true,
     "requires_preflight": true,
     "enabled": true,
-    "status": "acceptance_pending",
+    "status": "technical_checks_recorded",
     "suv_threshold_required": false,
     "default_suv_threshold": 3.0,
     "suv_threshold_bounds": [
@@ -36,7 +36,7 @@
     "requires_ct": true,
     "requires_preflight": true,
     "enabled": true,
-    "status": "acceptance_pending",
+    "status": "technical_checks_recorded",
     "suv_threshold_required": true,
     "default_suv_threshold": null,
     "suv_threshold_bounds": [
