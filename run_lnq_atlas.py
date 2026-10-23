@@ -197,8 +197,12 @@ def require_task256_metadata(weights_root):
 
 
 def sha256(path):
+    # hashlib.file_digest needs Python 3.11; the portal image runs 3.10.
+    digest=hashlib.sha256()
     with Path(path).open('rb') as stream:
-        return hashlib.file_digest(stream, 'sha256').hexdigest()
+        for block in iter(lambda: stream.read(1 << 20), b''):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _capability(major, minor):
