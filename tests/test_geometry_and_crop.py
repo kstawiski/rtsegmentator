@@ -69,6 +69,45 @@ def test_crop_rejects_subtraction_only_target(synthetic_ct, tmp_path):
     assert not (tmp_path / "output").exists()
 
 
+
+def make_targets(ct, dest, slices):
+    """RTSTRUCT whose ROI names map to the CT slice indices they cover (empty: no contours)."""
+    rt = RTStructBuilder.create_new(dicom_series_path=str(ct))
+    for name, covered in slices.items():
+        mask = np.zeros((32, 32, 12), dtype=bool)
+        for k in covered:
+            mask[5:10, 5:10, k] = True
+        rt.add_roi(mask=mask, name=name)
+    rt.save(str(dest))
+    ds = pydicom.dcmread(dest)
+    ds.FrameOfReferenceUID = pydicom.dcmread(next(ct.iterdir())).FrameOfReferenceUID
+    ds.save_as(dest, enforce_file_format=True)
+
+
+def test_crop_range_covers_every_filled_target(synthetic_ct, tmp_path):
+    first, second = tmp_path / "plan_a.dcm", tmp_path / "plan_b.dcm"
+    make_targets(synthetic_ct, first, {"PTV1": [2, 3], "PTV 2": [8, 9], "Bowel - PTV": range(12), "PTV3": []})
+    make_targets(synthetic_ct, second, {"ptv_4": [5], "CTV": [6]})
+    report = crop_ct_rtstruct(sorted(synthetic_ct.iterdir()), [first, second], tmp_path / "out", margin_mm=0)
+    assert report["selected_roi_names"] == ["CTV", "PTV 2", "PTV1", "ptv_4"]
+    extents = {t["roi_name"]: (t["rtstruct"], t["zmin"], t["zmax"], t["contours"]) for t in report["selected_rois"]}
+    assert extents == {"PTV1": ("plan_a_cropped.dcm", 4.0, 6.0, 2), "PTV 2": ("plan_a_cropped.dcm", 16.0, 18.0, 2),
+                       "ptv_4": ("plan_b_cropped.dcm", 10.0, 10.0, 1), "CTV": ("plan_b_cropped.dcm", 12.0, 12.0, 1)}
+    assert [e["roi_name"] for e in report["ignored_empty_rois"]] == ["PTV3"]
+    assert report["kept_z_range"] == [4.0, 18.0] and report["slices_kept"] == 8
+    assert {m["roi"] for m in report["validation"]["masks_checked"]} == set(extents)
+    text = (tmp_path / "out" / "crop_report.txt").read_text()
+    assert "plan_a_cropped.dcm / 2 / PTV 2: z 16 to 18 mm, 2 contours" in text
+    assert "Selected ROIs without contours (ignored):" in text and "PTV3" in text
+
+
+def test_crop_reports_unfilled_targets(synthetic_ct, tmp_path):
+    path = tmp_path / "struct.dcm"
+    make_targets(synthetic_ct, path, {"PTV1": [], "PTV 2": [], "BODY": range(12)})
+    with pytest.raises(NoSelectedROIError, match=r"without contours: PTV 2, PTV1"):
+        crop_ct_rtstruct(sorted(synthetic_ct.iterdir()), [path], tmp_path / "output")
+    assert not (tmp_path / "output").exists()
+
 def test_direct_mapping_roundtrip_for_asymmetric_mask(synthetic_ct, tmp_path):
     data = np.zeros((32, 32, 12), dtype=np.int16)
     data[18:25, 3:9, 4:7] = 1

@@ -18,7 +18,7 @@ Upload DICOM CT, MR or PET series, select compatible segmentation models, and do
 - Run automatic NV-Segment-CT and NV-Segment-CTMR CT body, MRI body and T1 brain tasks after per-task technical acceptance. CT modes expose 117 foreground labels, MRI body 50 and brain 132. CTMR weights permit noncommercial research or evaluation only; see the [model ledger](EXTERNAL_MODELS.md).
 - Generate NVIDIA NV-Reason-CT research draft reports for covered chest/abdomen CT, alone or after segmentation. Download JSON/Markdown/HTML with crop thumbnails and contour summaries. CBCT is refused; a separate technical acceptance marker controls availability.
 - Route selected tasks to an SSH GPU worker with `REMOTE_GPU_TASKS` while other tasks use the local GPU.
-- Crop axial CT and matching RTSTRUCTs for prostate SBRT on CPU. The standalone tool selects PTV*/CTV* contours with a default 150 mm superior/inferior margin. Optional local `total` postprocessing selects the prostate ROI. The crop keeps pixel data and creates matching new Study, Frame, Series and SOP UIDs by default.
+- Crop axial CT and matching RTSTRUCTs for prostate SBRT on CPU. The standalone tool crops around every contoured PTV*/CTV* structure (for example PTV1, PTV 2 and CTV together) with a default 150 mm superior/inferior margin. Optional local `total` postprocessing selects the prostate ROI. The crop keeps pixel data and creates matching new Study, Frame, Series and SOP UIDs by default.
 
 The captured deployment catalog contains 253 tasks, 182 enabled. These are snapshot counts, not guarantees for a fresh installation. The installed TotalSegmentator version, model assets, enabled list and orientation markers determine `/api/v1/models`. Disabled models remain visible with their restrictions.
 

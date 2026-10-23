@@ -1481,7 +1481,10 @@ def process_prostate_sbrt_crop(job: Path):
         incoming.replace(job / "rtstruct-results.zip")
         shutil.rmtree(job / "input", ignore_errors=True)
         low, high = report["kept_z_range"]
-        detail = f"Prostate SBRT crop ready: {report['slices_kept']}/{report['slices_total']} slices, z {low:g} to {high:g} mm"
+        names = report["selected_roi_names"]
+        around = ", ".join(names[:8]) + (f" and {len(names) - 8} more" if len(names) > 8 else "")
+        detail = (f"Prostate SBRT crop ready: {report['slices_kept']}/{report['slices_total']} slices, "
+                  f"z {low:g} to {high:g} mm, around {around}")
         save_metadata(job, status="complete", detail=detail, progress=100, error=None)
     except Exception as exc:
         incoming.unlink(missing_ok=True)

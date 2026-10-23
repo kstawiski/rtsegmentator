@@ -71,7 +71,7 @@ The writer retains rt-utils' complete OpenCV contour set, including one-point, t
 
 ## Prostate SBRT crop
 
-The CPU tool crops single-frame axial CT and matching RTSTRUCTs along patient z only. It accepts slice normals within 1 degree of patient z. It uses contours named PTV* or CTV*, excluding subtraction helpers such as `Bowel - PTV`, with a default 150 mm margin. The optional local `total` postprocess selects the ROI named `prostate` and retains the original full RTSTRUCT.
+The CPU tool crops single-frame axial CT and matching RTSTRUCTs along patient z only. It accepts slice normals within 1 degree of patient z. The range spans every ROI with contour points whose name starts with PTV or CTV, such as `PTV`, `PTV1`, `PTV 2` and `CTV`, across all supplied RTSTRUCTs, with a default 150 mm margin. Subtraction helpers such as `Bowel - PTV` are excluded. Matching ROIs without contours are listed as ignored. The report gives each target's z extent, and validation requires every target to keep all of its contours. The optional local `total` postprocess selects the ROI named `prostate` and retains the original full RTSTRUCT.
 
 Pixel data are unchanged. Whole contours outside the retained slice range are removed. New Study, Frame, Series and SOP UIDs are the default, with RTSTRUCT references rewritten to match, including each ROI's ReferencedFrameOfReferenceUID. `keep_uids` is a debugging option. Downloads include a crop report. Review the cropped image range and contours before any clinical use.
 

@@ -70,7 +70,8 @@ def _references(ds, series_uid, frame_uid):
 
 def _selected(name, mode):
     """prostate mode: the ROI named "prostate". ptvctv mode: names starting with PTV or CTV (PTV*, CTV*),
-    so subtraction helpers such as "Bowel - PTV" are not treated as target volumes."""
+    including numbered targets such as "PTV1", "PTV 2" or "ptv_3", so subtraction helpers such as
+    "Bowel - PTV" are not treated as target volumes."""
     name = name.strip().casefold()
     return name == "prostate" if mode == "prostate" else name.startswith(("ptv", "ctv"))
 
@@ -80,6 +81,31 @@ def _contour_z(contour):
     if values.size % 3 or not np.isfinite(values).all():
         raise ValueError("Malformed or non-finite ContourData")
     return values[2::3]
+
+
+def _target_rois(structs, rt_names, mode):
+    """Every selected ROI with contour points, in every RTSTRUCT.
+
+    All filled-in targets (for example PTV, PTV1, PTV 2 and CTV) define the
+    crop range together. Selected ROIs without contour points are returned
+    separately and do not affect the range.
+    """
+    targets, empty = [], []
+    for (_, ds), rt_name in zip(structs, rt_names):
+        names = {int(r.ROINumber): str(r.ROIName) for r in ds.get("StructureSetROISequence", [])}
+        contours = {number: [] for number, name in names.items() if _selected(name, mode)}
+        for roi in ds.get("ROIContourSequence", []):
+            number = int(roi.ReferencedROINumber)
+            if number in contours:
+                contours[number].extend(z for z in map(_contour_z, roi.get("ContourSequence", [])) if z.size)
+        for number, zs in contours.items():
+            entry = {"rtstruct": rt_name, "roi_number": number, "roi_name": names[number]}
+            if not zs:
+                empty.append(entry)
+                continue
+            z = np.concatenate(zs)
+            targets.append({**entry, "contours": len(zs), "zmin": float(z.min()), "zmax": float(z.max())})
+    return targets, empty
 
 
 def _nodes(ds):
@@ -145,7 +171,7 @@ def _describe(ds, margin_mm, rtstruct=False):
         ds.StructureSetDescription = (str(ds.StructureSetDescription) + suffix)[:1024]
 
 
-def _validate(output, rt_names, kept, uid_map, mode, study_uid=None, frame_uid=None):
+def _validate(output, rt_names, kept, uid_map, targets, study_uid=None, frame_uid=None):
     from rt_utils import RTStructBuilder
 
     output_uids = set(uid_map.values())
@@ -162,11 +188,19 @@ def _validate(output, rt_names, kept, uid_map, mode, study_uid=None, frame_uid=N
             raise ValueError("Validation failed: output CT FrameOfReferenceUID mismatch")
     zs = [float(ds.ImagePositionPatient[2]) for _, ds in kept]
     spacing = float(np.median(np.diff(zs))) if len(zs) > 1 else abs(float(kept[0][1].get("SliceThickness", 1)))
-    validated_masks = []
-    mask_error = "no selected ROI retains contours in the kept slice range"
+    validated_masks, failed_masks = [], []
     for name in rt_names:
         path = output / name
         ds = pydicom.dcmread(path)
+        expected = {t["roi_number"]: t for t in targets if t["rtstruct"] == name}
+        retained = dict.fromkeys(expected, 0)
+        for roi in ds.get("ROIContourSequence", []):
+            number = int(roi.ReferencedROINumber)
+            if number in retained:
+                retained[number] += sum(1 for c in roi.get("ContourSequence", []) if _contour_z(c).size)
+        for number, target in expected.items():
+            if retained[number] != target["contours"]:
+                raise ValueError(f"Validation failed: target ROI {target['roi_name']!r} lost contours in the crop")
         if study_uid is not None and str(ds.get("StudyInstanceUID", "")) != study_uid:
             raise ValueError("Validation failed: RTSTRUCT StudyInstanceUID does not match output CT")
         if (frame_uid is not None and "FrameOfReferenceUID" in ds
@@ -197,28 +231,25 @@ def _validate(output, rt_names, kept, uid_map, mode, study_uid=None, frame_uid=N
             # rt_utils silently skips images it cannot decode. Require all slices.
             if {str(s.SOPInstanceUID) for s in rt.series_data} != output_uids:
                 raise ValueError("rt_utils could not decode every output CT slice")
-            names = {int(r.ROINumber): str(r.ROIName) for r in ds.StructureSetROISequence}
-            candidates = [names[int(r.ReferencedROINumber)] for r in ds.ROIContourSequence
-                          if r.get("ContourSequence") and _selected(names[int(r.ReferencedROINumber)], mode)]
-            for candidate in candidates:
+            for candidate in dict.fromkeys(t["roi_name"] for t in expected.values()):
                 try:
                     mask = rt.get_roi_mask_by_name(candidate)
                     if mask.ndim != 3 or mask.shape[2] != len(kept):
                         raise ValueError("rt_utils returned an unexpected mask shape")
                 except Exception as exc:
-                    mask_error = str(exc)
                     # A selected POINT ROI may not be rasterizable by rt_utils.
-                    # The contract requires one working selected mask, not all.
+                    # The contract requires one working target mask, not all.
+                    failed_masks.append({"rtstruct": name, "roi": candidate, "error": str(exc)})
                     continue
                 validated_masks.append({"rtstruct": name, "roi": candidate})
                 del mask
-                break
             del rt
         except Exception as exc:
             raise ValueError(f"Validation failed: rt_utils reload/mask: {exc}") from exc
     if not validated_masks:
-        raise ValueError(f"Validation failed: no working rt_utils selected ROI mask: {mask_error}")
-    return validated_masks
+        error = failed_masks[-1]["error"] if failed_masks else "no target ROI retains contours"
+        raise ValueError(f"Validation failed: no working rt_utils selected ROI mask: {error}")
+    return validated_masks, failed_masks
 
 
 def crop_ct_rtstruct(ct_files, rtstruct_files, out_dir, roi_mode="ptvctv",
@@ -227,6 +258,7 @@ def crop_ct_rtstruct(ct_files, rtstruct_files, out_dir, roi_mode="ptvctv",
 
     Several uploaded CT series are accepted only when the RTSTRUCT references
     identify exactly one. Explicit series references take precedence over frames.
+    The crop range spans every selected ROI with contours in every RTSTRUCT.
     Contours are retained whole, never geometrically clipped or interpolated.
     """
     if roi_mode not in {"ptvctv", "prostate"}:
@@ -291,28 +323,22 @@ def crop_ct_rtstruct(ct_files, rtstruct_files, out_dir, roi_mode="ptvctv",
     if any(float(b[1].ImagePositionPatient[2]) - float(a[1].ImagePositionPatient[2]) <= TOL_MM
            for a, b in zip(slices, slices[1:])):
         raise ValueError("CT series contains duplicate slice z positions")
-    selected_names, selected_z = set(), []
-    for _, ds in structs:
-        names = {int(r.ROINumber): str(r.ROIName) for r in ds.get("StructureSetROISequence", [])}
-        for roi in ds.get("ROIContourSequence", []):
-            name = names.get(int(roi.ReferencedROINumber), "")
-            if _selected(name, roi_mode):
-                selected_names.add(name)
-                for contour in roi.get("ContourSequence", []):
-                    selected_z.extend(_contour_z(contour).tolist())
-    if not selected_z:
+    rt_names = [f"{p.stem}_cropped.dcm" for p, _ in structs]
+    if len(set(rt_names)) != len(rt_names):
+        raise ValueError("RTSTRUCT filenames must have distinct stems to avoid output collisions")
+    targets, empty = _target_rois(structs, rt_names, roi_mode)
+    if not targets:
         label = "prostate" if roi_mode == "prostate" else "PTV/CTV"
-        raise NoSelectedROIError(f"No selected {label} ROI with contour data was found")
-    zmin, zmax = min(selected_z), max(selected_z)
+        unfilled = sorted({e["roi_name"] for e in empty})
+        note = f" (matching ROIs without contours: {', '.join(unfilled)})" if unfilled else ""
+        raise NoSelectedROIError(f"No selected {label} ROI with contour data was found{note}")
+    zmin, zmax = min(t["zmin"] for t in targets), max(t["zmax"] for t in targets)
     requested = [zmin - margin_mm, zmax + margin_mm]
     kept = [(p, ds) for p, ds in slices
             if requested[0] - TOL_MM <= float(ds.ImagePositionPatient[2]) <= requested[1] + TOL_MM]
     if not kept:
         raise ValueError("Crop range contains no CT slices")
     low, high = float(kept[0][1].ImagePositionPatient[2]), float(kept[-1][1].ImagePositionPatient[2])
-    rt_names = [f"{p.stem}_cropped.dcm" for p, _ in structs]
-    if len(set(rt_names)) != len(rt_names):
-        raise ValueError("RTSTRUCT filenames must have distinct stems to avoid output collisions")
     out_dir = Path(out_dir)
     if out_dir.exists() and (not out_dir.is_dir() or any(out_dir.iterdir())):
         raise ValueError("Output directory must be absent or empty")
@@ -368,9 +394,11 @@ def crop_ct_rtstruct(ct_files, rtstruct_files, out_dir, roi_mode="ptvctv",
                               study_uid, output_study_uid, frame_uid, output_frame_uid)
             _describe(ds, margin_mm, rtstruct=True)
             ds.save_as(output / name, enforce_file_format=True)
-        masks = _validate(output, rt_names, kept, uid_map, roi_mode,
-                          study_uid=output_study_uid, frame_uid=output_frame_uid)
-        report = {"roi_mode": roi_mode, "selected_roi_names": sorted(selected_names),
+        masks, failed_masks = _validate(output, rt_names, kept, uid_map, targets,
+                                        study_uid=output_study_uid, frame_uid=output_frame_uid)
+        report = {"roi_mode": roi_mode,
+                  "selected_roi_names": sorted({t["roi_name"] for t in targets}),
+                  "selected_rois": targets, "ignored_empty_rois": empty,
                   "zmin": zmin, "zmax": zmax, "margin_mm": margin_mm,
                   "requested_z_range": requested, "kept_z_range": [low, high],
                   "slices_kept": len(kept), "slices_total": len(slices),
@@ -383,20 +411,28 @@ def crop_ct_rtstruct(ct_files, rtstruct_files, out_dir, roi_mode="ptvctv",
                   "file_counts": {"CT": len(kept), "RTSTRUCT": len(structs), "report": 1,
                                   "total": len(kept) + len(structs) + 1},
                   "validation": {"pydicom": "passed", "references": "passed", "contour_range": "passed",
-                                 "rt_utils": "passed", "masks_checked": masks}}
+                                 "targets_retained": "passed", "rt_utils": "passed",
+                                 "masks_checked": masks, "masks_failed": failed_masks}}
         lines = ["Prostate SBRT CT + RTSTRUCT crop report", "",
                  f"Selected ROIs ({roi_mode}): {', '.join(report['selected_roi_names'])}",
-                 f"Selected contour z: {zmin:g} to {zmax:g} mm",
-                 f"Margin: {margin_mm:g} mm ({margin_mm / 10:g} cm)",
-                 f"Requested z range: {requested[0]:g} to {requested[1]:g} mm",
-                 f"Kept slice z range: {low:g} to {high:g} mm",
-                 f"Slices kept: {len(kept)} / {len(slices)}",
-                 f"UID policy: {report['uid_policy']}",
-                 "Pixel data unchanged; whole contours outside the kept slice range removed.",
-                 "Contours removed per ROI:"]
+                 "Crop range covers every selected ROI with contours:"]
+        lines.extend(f"  {t['rtstruct']} / {t['roi_number']} / {t['roi_name']}: z {t['zmin']:g} to {t['zmax']:g} mm, "
+                     f"{t['contours']} contours" for t in targets)
+        if empty:
+            lines.append("Selected ROIs without contours (ignored):")
+            lines.extend(f"  {e['rtstruct']} / {e['roi_number']} / {e['roi_name']}" for e in empty)
+        lines.extend([f"Selected contour z: {zmin:g} to {zmax:g} mm",
+                      f"Margin: {margin_mm:g} mm ({margin_mm / 10:g} cm)",
+                      f"Requested z range: {requested[0]:g} to {requested[1]:g} mm",
+                      f"Kept slice z range: {low:g} to {high:g} mm",
+                      f"Slices kept: {len(kept)} / {len(slices)}",
+                      f"UID policy: {report['uid_policy']}",
+                      "Pixel data unchanged; whole contours outside the kept slice range removed.",
+                      "Contours removed per ROI:"])
         lines.extend(f"  {r['rtstruct']} / {r['roi_number']} / {r['roi_name']}: {r['contours_removed']}" for r in removed)
         lines.extend([f"File counts: {json.dumps(report['file_counts'])}",
-                      "Validation: pydicom, image references, contour z range and rt_utils reload/mask passed.",
+                      "Validation: pydicom, image references, contour z range, retention of every selected ROI's "
+                      "contours and rt_utils reload/mask passed.",
                       "", "Machine-readable report:", json.dumps(report, indent=2, ensure_ascii=False)])
         (output / "crop_report.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
         if out_dir.exists():
