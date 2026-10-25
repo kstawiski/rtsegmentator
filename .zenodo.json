@@ -1,0 +1,26 @@
+{
+  "title": "RTsegmentator: a DICOM RT segmentation portal and API",
+  "upload_type": "software",
+  "creators": [
+    {"name": "RTsegmentator contributors"}
+  ],
+  "license": "Apache-2.0",
+  "access_right": "open",
+  "description": "RTsegmentator is a web portal and versioned REST API that runs open segmentation models on uploaded DICOM CT, MR and PET series and returns DICOM RTSTRUCT contours checked against the source image geometry. Every result package carries a manifest with model licences, ROI inventories, the source series and SHA-256 checksums. The licence covers the original RTsegmentator source code only; external models, checkpoints and datasets remain under their own licences.",
+  "keywords": [
+    "radiotherapy",
+    "DICOM RT",
+    "RTSTRUCT",
+    "auto-segmentation",
+    "medical image segmentation",
+    "research software"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/kstawiski/rtpipeline",
+      "relation": "isSupplementedBy",
+      "resource_type": "software",
+      "scheme": "url"
+    }
+  ]
+}

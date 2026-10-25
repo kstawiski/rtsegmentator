@@ -43,7 +43,16 @@ APPROVED_BINARIES = {
 }
 
 
+# The suite's public repository and documentation addresses name the GitHub account that
+# publishes them, not a deployment host or path. Only these exact URL prefixes are exempt.
+PUBLIC_SUITE_URL = re.compile(
+    r"https://(?:github[.]com/ksta[w]iski|ksta[w]iski[.]github[.]io)/(?:rtsegmentator|rtpipeline)"
+    r"(?![\w-])[^\s\"'<>)]*"
+)
+
+
 def site_matches(name, line):
+    line = PUBLIC_SUITE_URL.sub("", line)
     if name == "catalog/structures.json" and line.strip().rstrip(",") == CATALOG_SACRAL_NAME:
         return []
     if name in {"labels/nv_segment_ct_auto.json", "labels/nv_segment_ctmr_ct_body.json"} and line.strip() == NV_SACRAL_LABEL:
@@ -107,3 +116,13 @@ def test_structure_catalog_sacral_exception_is_limited_to_an_exact_anatomical_na
     assert site_matches("docs/API.md", CATALOG_SACRAL_NAME)
     assert site_matches("catalog/structures.json", CATALOG_SACRAL_NAME + " host")
     assert site_matches("catalog/structures.json", '"note": ' + CATALOG_SACRAL_NAME)
+
+
+def test_public_suite_url_exception_is_limited_to_the_two_repositories():
+    account = "ksta" + "wiski"
+    for url in (f"https://github.com/{account}/rtpipeline", f"https://{account}.github.io/rtsegmentator/api/",
+                f"https://github.com/{account}/rtsegmentator/releases"):
+        assert not site_matches("README.md", url)
+    for text in (f"https://github.com/{account}/other", f"https://github.com/{account}/rtpipeline-private",
+                 f"/home/{account}/rtpipeline", f"{account}@host", f"https://hub.docker.com/r/{account}/x"):
+        assert site_matches("README.md", text)

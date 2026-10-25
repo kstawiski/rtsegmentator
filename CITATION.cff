@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+message: >-
+  If you use RTsegmentator 1.0.0, cite this software by version and by the DOI
+  archived for its release. Contours come from third-party models: also cite each
+  model's own publication and respect its licence, as listed in EXTERNAL_MODELS.md
+  and in the rtsegmentator_manifest.json of every result package.
+title: "RTsegmentator: a DICOM RT segmentation portal and API"
+type: software
+version: 1.0.0
+date-released: 2026-10-25
+license: Apache-2.0
+authors:
+  - name: RTsegmentator contributors
+repository-code: https://github.com/kstawiski/rtsegmentator
+url: https://kstawiski.github.io/rtsegmentator/
+abstract: >-
+  RTsegmentator is a web portal and versioned REST API that runs open
+  segmentation models on uploaded DICOM CT, MR and PET series and returns DICOM
+  RTSTRUCT contours. Before export, each mask is mapped directly onto the source
+  image grid and checked by a contour-to-mask round trip against the referenced
+  images. Every result package carries a manifest that lists the model, its
+  licence and limitations, the exact ROI names written, the source series and a
+  SHA-256 checksum for each file. A standard-library Python client submits
+  series in batch and verifies downloaded packages; RTpipeline imports the
+  verified packages as a segmentation source for dose-volume and radiomics
+  analysis.
+keywords:
+  - radiotherapy
+  - DICOM RT
+  - RTSTRUCT
+  - auto-segmentation
+  - medical image segmentation
+  - deep learning
+  - research software

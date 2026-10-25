@@ -18,7 +18,10 @@ The response contains the job `id`. Poll it and download the result after `statu
 ```bash
 curl -fsS http://localhost:8080/api/v1/jobs/JOB_ID
 curl -fLo rtstruct.zip http://localhost:8080/api/v1/jobs/JOB_ID/result
+curl -fsS http://localhost:8080/api/v1/jobs/JOB_ID/manifest
 ```
+
+Every segmentation result ZIP contains `rtsegmentator_manifest.json`, returned alone by the `manifest` route: the source series, each model's outcome and exact ROI names, licence and limitation text, and the size and SHA-256 of every packaged file. See [result manifest](result-manifest.md). The route returns HTTP `409` until the job completes and `404` for packages without a manifest, such as the prostate SBRT crop tool. [`rtseg_client.py`](client.md) wraps these routes and verifies packages.
 
 Other routes:
 
