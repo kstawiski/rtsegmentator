@@ -1,0 +1,31 @@
+# BiomedParse v2
+
+`biomedparse_prompted` accepts one CT, MR or PET series and one supported target in `prompt.json` as `{"text":"spleen"}`. CT targets select a README window automatically. An explicit `ct_window` can select `soft_tissue`, `lung`, `brain` or `bone`. `catalog/biomedparse-prompts.json` records every accepted target, its modality and upstream example aliases. The upstream README gives the v2 task list; `target_dist.json` belongs to v1 detection statistics. Arbitrary text and `[SEP]` multi-target queries are rejected.
+
+The adapter preserves the authors' 512-pixel square padding and bicubic slice resize, neighboring-slice channels, slice batch of four, Boltzmann sampling, per-slice sigmoid existence >0.5, probability/background comparison at 0.5, nearest-neighbor label restoration and unpadding. The selected axis comes from upstream `get_axis`, not a fixed voxel spacing. Raw portal inputs always receive CT windowing or MR/PET 0.5th/99.5th percentile clipping, followed by linear scaling to [0,255] and uint8 truncation. CT windows are W/L 400/40, 1500/-160, 80/40 or 1800/400; an explicit `ct_window` always takes effect. Numeric bounds alone do not identify a preprocessed image. Constant raw images fail clearly. Only `--npz` accepts upstream preprocessed examples without intensity normalization. No SUV conversion is added. The model uses a local copy of the original CLIP tokenizer with networking disabled.
+
+The pinned [README preprocessing instructions](https://github.com/microsoft/BiomedParse/blob/e02096c03af0d79c6994ffc2d60a49eeb0361e1f/README.md#recommended-preprocessing-important), [DATASET.md](https://github.com/microsoft/BiomedParse/blob/e02096c03af0d79c6994ffc2d60a49eeb0361e1f/assets/readmes/DATASET.md), 3D notebook and [challenge dataset card](https://huggingface.co/datasets/junma/CVPR-BiomedSegFM) do not specify rounding versus truncation when producing the shipped uint8 examples. The legacy `inference_utils/processing_utils.py` ends with `astype(np.uint8)` and v2 `process_2D.py` also casts preprocessed arrays this way. We retain truncation, but its use to generate the shipped v2 examples is unverified. These sources also do not confirm the original AMOS example's CT window. Its abdominal origin alone does not establish W400/L40.
+
+All 41 single-target sentences in the pinned CT/MR NPZ examples validate (AMOS 14, TotalSeg 23, BraTS 4). The AMOS `prostate/uterus` sentence is deliberately excluded because it combines two anatomical targets; choose prostate or uterus explicitly. The manifest records the exact excluded sentence and reason.
+
+The RTSTRUCT contains one target-named ROI (ASCII letters, digits and underscores, at most 64 characters). Several disconnected regions may share that ROI. Dispatch validates the source grid and FrameOfReferenceUID consistency before inference, including for empty predictions. The converter restores source DICOM geometry and runs its strict physical contour round-trip validation. An empty prediction produces no RTSTRUCT; `.dcm.biomedparse.json` records either `object not detected` or `empty segmentation despite positive slice existence`, with scores per slice and voxel count. The sidecar is included in the result artifact allowlist.
+
+The manager must create these paths relative to `RTSEG_MODEL_ROOT`:
+
+- `sources/BiomedParse/`: unchanged v2 source at `e02096c03af0d79c6994ffc2d60a49eeb0361e1f`, including public examples.
+- `weights/biomedparse/hf-main-20261025/biomedparse_v2.ckpt`: SHA-256 `6ea0bee43b983a7490e0b48689add96440c4405ca4b50b9f2fe21d5d03fd9440`.
+- `weights/biomedparse/clip-vit-base-patch32/`: original tokenizer `vocab.json`, `merges.txt`, `tokenizer_config.json`, `special_tokens_map.json`, `config.json`.
+- `runtime-envs/biomedparse-v2/`: Python environment, `requirements.lock` and installed detectron2 source build. Recreate or relocate the environment with working interpreter and package paths.
+- `validation/biomedparse_prompted-sm90.json` and `orientation-validation/biomedparse_prompted-sm90.json` for H100; corresponding `-sm61.json` files for P6000. Only the acceptance harness writes them.
+
+On the H100, after installation, use the worker's conversion Python environment and a new authorized work directory:
+
+```bash
+"$RTSEG_WORKER_PYTHON" "$RTSEG_APP_ROOT/acceptance_biomedparse.py" --bundle-root "$RTSEG_MODEL_ROOT" --work "$RTSEG_ACCEPTANCE_WORK/biomedparse-sm90" --worker-python "$RTSEG_WORKER_PYTHON" --device sm90
+```
+
+On the P6000 host, the same command ends with `--work "$RTSEG_ACCEPTANCE_WORK/biomedparse-sm61" --worker-python "$RTSEG_WORKER_PYTHON" --device sm61`. Neither command has been run by the integration worker. No change to that host is authorized in this implementation task.
+
+Acceptance requires exact masks and exact existence scores with seed 20261025; the seed and deterministic kernels preserve stochastic Boltzmann sampling rather than disabling it. If deterministic execution is unsupported, the harness fails; it cannot relax tolerance. It calls the unchanged upstream `inference.main` once, correcting only stale config/checkpoint locations and using the local tokenizer. Two adapter runs must match that reference. Two dispatched DICOM jobs must also match the reference and pass the strict RTSTRUCT validation. The public AMOS NPZ is encoded as synthetic HU: stored integer `2*p+1`, RescaleSlope `200/255`, RescaleIntercept `-160`. W400/L40 yields `p+0.5` before clipping and truncation, recovering each uint8 pixel exactly with room for floating-point error. The harness verifies this through the real converter and raw normalizer. Because the original AMOS window is unconfirmed, this tests our raw transport and synthetic geometry; it does not reproduce the authors' original raw preprocessing or validate clinical accuracy. No unrelated `testdata` is used. Both requested-device markers are deleted before the first runtime probe; any unsuccessful attempt also removes temporary marker files. Counts are validated separately: reference 1, adapter 2, DICOM 2.
+
+Code is Apache-2.0; weights are CC BY-NC-SA 4.0 for research and development only, not clinical decisions. Owner accepted these terms on 2026-10-22. Local drafting and offline tests do not establish clinical or manuscript readiness.

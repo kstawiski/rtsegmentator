@@ -14,10 +14,10 @@ of contours. *Unresolved* entries have no exporter label contract and cannot be 
 
 | Role | Tasks |
 | --- | ---: |
-| informational or blocked | 56 |
+| informational or blocked | 55 |
 | no exporter label contract | 9 |
 | report task | 1 |
-| segmentation task | 213 |
+| segmentation task | 214 |
 
 | Modality | Tasks |
 | --- | ---: |
@@ -57,7 +57,7 @@ terms behind each entry.
 | `bamf_liver_t1_mr` | MR | fixed (1) | Not recorded in the catalog; see the reference | [link](https://zenodo.org/records/8290124) | segmentation task |
 | `bamf_nsclc_lungs_nodules_ct` | CT | fixed (2) | Not recorded in the catalog; see the reference | [link](https://zenodo.org/records/8290169) | segmentation task |
 | `bamf_prostate_t2_mr` | MR | fixed (1) | Not recorded in the catalog; see the reference | [link](https://zenodo.org/records/8290093) | segmentation task |
-| `biomedparse_prompted` | CT | unresolved | Code: Unverified in the inspected release; weights: CC BY-NC-SA 4.0 (non-commercial) | [link](https://github.com/microsoft/BiomedParse) | informational: weights_unavailable |
+| `biomedparse_prompted` | CT | prompted | Code: Apache-2.0; weights: CC BY-NC-SA 4.0 (non-commercial) | [link](https://github.com/microsoft/BiomedParse/tree/v2) | segmentation task |
 | `body` | CT | fixed (2) | TotalSegmentator terms; some tasks need a licence key | [link](https://github.com/wasserth/TotalSegmentator) | segmentation task |
 | `body_mr` | MR | fixed (2) | TotalSegmentator terms; some tasks need a licence key | [link](https://github.com/wasserth/TotalSegmentator) | segmentation task |
 | `brain_aneurysm` | MR | fixed (1) | TotalSegmentator terms; some tasks need a licence key | [link](https://github.com/wasserth/TotalSegmentator) | segmentation task |

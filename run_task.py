@@ -1023,6 +1023,44 @@ try:
              "--dicom", str(job / "input"), "--output", str(output),
              "--labels", str(repo_label_path(task, APP_ROOT))])
         shutil.rmtree(work, ignore_errors=True)
+    elif task == "biomedparse_prompted":
+        from biomedparse import CHECKPOINT, ENV, SOURCE, TOKENIZER, artifact_names, roi_name
+        work = job / "external" / task
+        work.mkdir(parents=True, exist_ok=True)
+        nifti, prediction = work / "input.nii.gz", work / "prediction.nii.gz"
+        sidecar = job / "output" / artifact_names(task)[0]
+        # Modality comes from the staged DICOM, never browser-supplied metadata.
+        from dicom_series import ordered_dicom_files
+        modality = str(pydicom.dcmread(ordered_dicom_files(job / "input")[0], stop_before_pixels=True).Modality)
+        run([sys.executable, str(APP_ROOT / "dicom_series_to_nifti.py"), str(job / "input"), str(nifti)])
+        # Apply the exporter's source-grid checks before any model result,
+        # including a valid empty prediction, can be accepted.
+        import nibabel as nib
+        from orientation_contract import exact_orientation
+        from rtstruct_geometry import dicom_grid
+        reference = nib.load(nifti)
+        shape, affine, _ = dicom_grid(job / "input", reference)
+        # The converter may store the grid as an exact flip/permutation (e.g. RAS -> LPS);
+        # accept only that relation, as the exporter does, and reject shifts or resampling.
+        exact_orientation(reference.shape, reference.affine, shape, affine)
+        run([str(MODEL_ROOT / ENV / "bin/python"), str(APP_ROOT / "run_biomedparse.py"),
+             "--input", str(nifti), "--output", str(prediction), "--sidecar", str(sidecar),
+             "--prompt", str(job / "prompt.json"), "--modality", modality,
+             "--source", str(MODEL_ROOT / SOURCE), "--checkpoint", str(MODEL_ROOT / CHECKPOINT),
+             "--tokenizer", str(MODEL_ROOT / TOKENIZER), "--bundle-root", str(MODEL_ROOT)])
+        result = json.loads(sidecar.read_text())
+        if result["empty"]:
+            # The portal recognizes this declared empty result and retains its sidecar.
+            message = result["message"]
+            shutil.rmtree(work, ignore_errors=True)
+            raise SystemExit(message + ": empty prediction: no RTSTRUCT created")
+        labels = work / "labels.json"
+        labels.write_text(json.dumps({"1": roi_name(result["prompt"])}))
+        run([sys.executable, str(APP_ROOT / "convert_validate_rtstruct.py"),
+             "--prediction", str(prediction), "--model-input", str(nifti),
+             "--dicom", str(job / "input"), "--output", str(output), "--labels", str(labels)])
+        if os.environ.get("RTSEG_BIOMEDPARSE_ACCEPTANCE_AUDIT") != "1":
+            shutil.rmtree(work, ignore_errors=True)
     elif task in {"pam_prompted", "sam_med2d_prompted", "sam_med3d_turbo_prompted", "medsam_vit_b_box_2d", "medical_sam3_3d_prompted", "medsam2_ct_lesion_prompted", "medical_sam2_prompted_ct", "sat3d_prompted", "nninteractive_v1_prompted", "vista3d_prompted_ct", "voxtell_v1_1_text_prompted", "segvol_prompted_ct"}:
         root = MODEL_ROOT
         work = job / "external" / task

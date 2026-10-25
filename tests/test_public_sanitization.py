@@ -30,6 +30,7 @@ MEDICAL_OR_ARCHIVE = re.compile(r"\.(?:dcm|dicom|nii(?:\.gz)?|nrrd|mha|mhd|raw|n
 ANATOMIC_LABEL = '"structures": "C1–C7, T1–T12, L1–L5 and S' + '1 vertebrae",'
 CATALOG_SACRAL_NAME = '"vertebrae S' + '1"'
 NV_SACRAL_LABEL = '"127": "vertebrae S' + '1"'
+BIOMEDPARSE_SACRAL_TARGET = '"target": "vertebra S' + '1",'
 
 
 # The published cuRAND package uses four version components, which resemble an IPv4 address.
@@ -57,6 +58,8 @@ def site_matches(name, line):
     if name == "catalog/structures.json" and line.strip().rstrip(",") == CATALOG_SACRAL_NAME:
         return []
     if name in {"labels/nv_segment_ct_auto.json", "labels/nv_segment_ctmr_ct_body.json"} and line.strip() == NV_SACRAL_LABEL:
+        return []
+    if name == "catalog/biomedparse-prompts.json" and line.strip() == BIOMEDPARSE_SACRAL_TARGET:
         return []
     if name == "requirements-nv-reason-ct.txt" and line.strip() == NV_CURAND_PIN:
         return []

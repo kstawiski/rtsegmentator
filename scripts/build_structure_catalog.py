@@ -188,6 +188,10 @@ def resolve(task, details, ns, bundle, maps, map_path, root=ROOT):
     if details.get("output") == "report":
         return {"kind": "report", "names": [], "count": None, "source": "Report exporter",
                 "note": "JSON, Markdown and HTML; no RTSTRUCT."}, ["run_task.py: nv_reason_ct_report"]
+    if task == "biomedparse_prompted":
+        return {"kind": "prompted", "names": [], "count": None,
+                "source": "BiomedParse v2 supported target and dynamic ROI exporter",
+                "note": "One ROI named from the validated target (ASCII letters, digits and underscores; at most 64 characters). An empty result has no RTSTRUCT."}, ["biomedparse.roi_name", "catalog/biomedparse-prompts.json", "run_task.py"]
     if task in PROMPTED_TASKS:
         path = repo_label_path(task, root)
         names = final_roi_names(json.loads(path.read_text()))

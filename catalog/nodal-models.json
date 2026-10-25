@@ -547,14 +547,17 @@
     "weights_license_unresolved": false
   },
   "biomedparse_prompted": {
-    "code_license": "Unverified in the inspected release",
+    "code_license": "Apache-2.0",
     "weights_license": "CC BY-NC-SA 4.0",
-    "description": "BiomedParse: checkpoint access is blocked; no active text suggestions.",
-    "limitations": "One binary Prompted_Target ROI. No verified elective nodal atlas contract.",
-    "evidence_note": "No nodal-region accuracy established by the historical local object/geometry checks.",
+    "description": "BiomedParse v2 segments one supported text-selected organ, lesion or other target from one CT, MR or PET series. It returns one ROI named from that target, with per-slice existence scores and the foreground voxel count. An existence-negative result is reported as object not detected.",
+    "limitations": "Research and development use only; not for clinical decisions. Owner accepted these terms on 2026-10-22. One prompt-selected target, which may have several disconnected components; not an elective nodal atlas. Only documented modality-specific targets are accepted. CT uses the README window for the selected anatomy; MR and PET use 0.5–99.5 percentile clipping, with no SUV conversion. The authors do not publish how they converted their v2 training images to 8-bit or which window they used for their AMOS example, so our raw-image normalization follows the README but is not confirmed to match their training data. Runs on the H100 only: on 2026-10-25 it matched the authors' unmodified inference exactly on their public AMOS spleen example, and that example, stored as raw HU in synthetic DICOM geometry, produced a validated RTSTRUCT. That check covers our conversion and contour geometry, not accuracy. No P6000 acceptance exists. Not tested on patient data.",
+    "evidence_note": "The Nature Methods 2025 paper describes v1: Extended Data Fig. 4 reports better segmentation than SegVol across 27,779 CT target samples (paired test p < 2.23×10^-308). This is not a v2 volumetric result. The BoltzFormer author preprint (arXiv:2503.02841v2; CVPR 2025 paper), Table 1 and Appendix B, reports mean Dice 75.4% for Focal-L on 1,733 LIDC-IDRI nodule samples, versus 73.8% for pretrained BiomedParse. These are processed 2D benchmark samples, not patients, and do not establish the accuracy of the released v2 3D checkpoint. The v2 README reports first place in the CVPR 2025 challenge; challenge score and evaluation cohort remain unverified.",
     "evidence_sources": [
-      "https://github.com/microsoft/BiomedParse",
-      "prompted-target-label.json"
+      "https://www.nature.com/articles/s41592-024-02499-w",
+      "https://openaccess.thecvf.com/content/CVPR2025/html/Zhao_Boltzmann_Attention_Sampling_for_Image_Analysis_with_Small_Objects_CVPR_2025_paper.html",
+      "https://arxiv.org/html/2503.02841v2#S4.T1",
+      "https://github.com/microsoft/BiomedParse/blob/e02096c03af0d79c6994ffc2d60a49eeb0361e1f/README.md#supported-tasks",
+      "https://huggingface.co/microsoft/BiomedParse"
     ],
     "noncommercial": true,
     "weights_license_unresolved": false

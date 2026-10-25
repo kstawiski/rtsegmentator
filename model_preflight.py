@@ -10,6 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import biomedparse
 from choi_ontology import confirmed_labels
 from run_lnq_atlas import (lnq_python, total_python as lnq_total_python, total_weights_root as lnq_total_weights,
                            MODEL_RELATIVE as LNQ_MODEL, ATLAS_FILES as LNQ_ATLAS_FILES,
@@ -505,6 +506,8 @@ for task in GTRC_TASKS:
     REQUIREMENTS[task] = gtrc_requirements(task)
 
 
+REQUIREMENTS[biomedparse.TASK] = biomedparse.requirements()
+
 def audit(tasks=None) -> dict[str, dict]:
     report = {}
     cads_gpu = None
@@ -696,13 +699,28 @@ def audit(tasks=None) -> dict[str, dict]:
                         orientation_ready = False
                     if f"{folder}/{task}.json" not in missing:
                         missing.append(f"{folder}/{task}.json (inconsistent {folder} contents)")
+        if task == biomedparse.TASK:
+            acceptance_ready = orientation_ready = False
+            try:
+                gpu = biomedparse.probe_device(MODEL_ROOT / biomedparse.ENV / "bin/python")
+                # Reuse the persistent, stat-bound digest cache across remote preflights.
+                with preflight_digest_cache(MODEL_ROOT, APP_ROOT, RUNTIME_ROOT):
+                    for folder in ("validation", "orientation-validation"):
+                        marker = biomedparse.marker_path(MODEL_ROOT, gpu, folder)
+                        biomedparse.validate_marker(json.loads(marker.read_text()), MODEL_ROOT, gpu, APP_ROOT)
+                        if folder == "validation":
+                            acceptance_ready = True
+                        else:
+                            orientation_ready = True
+            except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
+                missing.append("BiomedParse per-device acceptance: " + str(exc)[:300])
         report[task] = {"ready": not missing, "missing": missing,
                         "orientation_ready": orientation_ready}
         if task == lnctvseg_bundle.TASK:
             report[task]['orientation_ready'] = lnctvseg_bundle.orientation_ready(orientation)
         if task == "nv_reason_ct_report":
             report[task]["acceptance_ready"] = report_acceptance_ready()
-        elif task in NV_SEGMENT_MODES or task == lnctvseg_bundle.TASK or task in PROSTATE_TASKS or task in GTRC_TASKS:
+        elif task in NV_SEGMENT_MODES or task == lnctvseg_bundle.TASK or task in PROSTATE_TASKS or task in GTRC_TASKS or task == biomedparse.TASK:
             report[task]["acceptance_ready"] = acceptance_ready
         elif task == "lnq_atlas" or task in CADS_RESEARCH_IDS:
             report[task]["acceptance_ready"] = content_acceptance

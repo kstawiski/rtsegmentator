@@ -39,6 +39,7 @@ from rtseg_version import __version__
 from viewer import ViewerService
 from mri_inputs import (mr_instance, image_types, finish_mr_series, public_mr_fields, role_contract,
                         resolve_roles, input_directories, input_identity)
+from biomedparse import artifact_names as biomedparse_artifact_names, validate_prompt as validate_biomedparse_prompt
 from prostate_models import artifact_names as prostate_artifact_names
 from gtrc_models import (
     artifact_names as gtrc_artifact_names,
@@ -670,10 +671,15 @@ INFORMATIONAL_MODELS = {
         "status":"validated_slice_wise", "structures":"One prompt-selected 2D object contour on each explicitly prompted slice",
         "description":"SAM-Med2D slice-wise segmentation from positive/negative points or a box. Add prompts on every slice that should be contoured; it does not infer unprompted slices. Tested end-to-end on MR with a strictly validated RTSTRUCT.",
         "reference":"https://github.com/OpenGVLab/SAM-Med2D"},
-    "biomedparse_prompted": {"modality":"CT", "modalities":["CT","MR","PT"], "enabled":False, "prompt":"text",
-        "status":"weights_unavailable", "structures":"Text-selected biomedical object or tumour volume",
-        "description":"BiomedParse text-prompted segmentation; checkpoint repository is approval-gated.",
-        "reference":"https://github.com/microsoft/BiomedParse"},
+
+}
+
+EXTERNAL_TASKS["biomedparse_prompted"] = {
+    "modality": "CT", "modalities": ["CT", "MR", "PT"], "enabled": True,
+    "prompt": "text", "requires_preflight": True, "status": "acceptance_required",
+    "structures": "One supported text-selected target; the ROI name is derived from the target",
+    "description": "BiomedParse v2 segments one documented target from a CT, MR or PET volume. Per-slice object-existence detection may return no object. GPU and geometry acceptance are required.",
+    "reference": "https://github.com/microsoft/BiomedParse/tree/v2",
 }
 
 def task_is_mr(name: str) -> bool:
@@ -1379,7 +1385,8 @@ def colab_capable(task: str) -> bool:
 
 EMPTY_PREDICTION_MARKERS = ("empty prediction: no RTSTRUCT created",
                             "all supplied masks are empty: no RTSTRUCT created",
-                            "no contourable structures: no RTSTRUCT created")
+                            "no contourable structures: no RTSTRUCT created",
+                            "object not detected: no RTSTRUCT created")
 
 def is_empty_prediction(exc: Exception) -> bool:
     """Recognize completed empty predictions or explicitly reported un-contourable ROIs."""
@@ -1414,6 +1421,13 @@ def finalize_results(job: Path, empty=()):
     if not results and not empty and report is None:
         raise RuntimeError("Worker completed without producing an RTSTRUCT file")
     omissions = conversion_notes(job)
+    if "biomedparse_prompted" in empty:
+        sidecar = job / "output" / biomedparse_artifact_names("biomedparse_prompted")[0]
+        if sidecar.is_file():
+            result = json.loads(sidecar.read_text())
+            if result.get("empty") is True and result.get("message") in {
+                    "object not detected", "empty segmentation despite positive slice existence"}:
+                omissions.append("BiomedParse v2: " + result["message"])
     save_metadata(job, status="retrieving", detail="Preparing results for download", progress=None,
                   stage="Exporting results", stage_key="export", stage_started=time.time(),
                   stage_done=None, stage_total=None, stall_warning=False)
@@ -1421,7 +1435,7 @@ def finalize_results(job: Path, empty=()):
     nested = sorted(path for path in output.rglob("*") if path.is_file() and path.parent != output)
     sidecars = sorted(output.glob("*.dcm.orientation.json")) + sorted(output.glob("*.dcm.lesions.json"))
     declared = [output / name for task in metadata(job).get("models", [])
-                for name in (*prostate_artifact_names(task), *gtrc_artifact_names(task))
+                for name in (*prostate_artifact_names(task), *gtrc_artifact_names(task), *biomedparse_artifact_names(task))
                 if (output / name).is_file()]
     artifacts = sorted(set(results + sidecars + nested + declared))
     if any(path.is_symlink() or output.resolve() not in path.resolve().parents for path in artifacts):
@@ -2155,6 +2169,8 @@ def apply_model_gates(item, check, enabled):
         if not orientation_ready:
             item.update(enabled=False, status="orientation_revalidation_pending")
     if item.get("enabled", False):
+        if name == "biomedparse_prompted":
+            item["status"] = "technical_checks_recorded"
         if WORKER_MODE == "local" and name not in enabled:
             item.update(enabled=False, status="not_enabled_on_this_server")
         elif WORKER_MODE == "colab" and name not in COLAB_EXTERNAL_TASKS:
@@ -2691,6 +2707,13 @@ def validate_assessed_prompt(models, items, selected, prompt_json):
             text_prompt = prompt_data.get("text")
             if not isinstance(text_prompt, str) or not text_prompt.strip():
                 raise HTTPException(400,"Medical-SAM3 requires a non-empty medical concept text prompt")
+        if "biomedparse_prompted" in prompt_models:
+            try:
+                validated = validate_biomedparse_prompt(prompt_data.get("text"), selected.get("modality"),
+                                                       prompt_data.get("ct_window"))
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            prompt_data["biomedparse"] = validated
         if "voxtell_v1_1_text_prompted" in prompt_models:
             text_prompt = prompt_data.get("text")
             if not isinstance(text_prompt, str) or not text_prompt.strip():
@@ -3010,7 +3033,7 @@ def create_assessed_jobs(uid, series_keys, models, prompt_json="", postprocess="
                     **({'paired_series_key': companion['key']} if companion else {}),
                     "input_manifest": manifest, "staging_upload": uid,
                     "models": subset, "report_status": "pending" if REPORT_TASK in subset else None,
-                    "created": time.time(), "error": None, "prompted": bool(prompt_data), "postprocess": postprocessing,
+                    "created": time.time(), "error": None, "prompted": bool(prompt_data), "prompt": prompt_data, "postprocess": postprocessing,
                     "batch_id": batch_id, "batch_index": index, "batch_size": len(plans), "series": public_series}, indent=2))
                 results.append({"id": jid, "series_key": series["key"], "models": subset, **({"skipped_models": skipped} if skipped else {})})
             # Copies precede every move: selected CT can also accompany several PET jobs.

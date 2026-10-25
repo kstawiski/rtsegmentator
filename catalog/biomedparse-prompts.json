@@ -1,0 +1,942 @@
+{
+  "source_commit": "e02096c03af0d79c6994ffc2d60a49eeb0361e1f",
+  "source": "https://github.com/microsoft/BiomedParse/blob/e02096c03af0d79c6994ffc2d60a49eeb0361e1f/README.md#supported-tasks",
+  "policy": "Only documented v2 targets; expanded side/vertebral abbreviations. Example aliases are verbatim. target_dist.json is v1 and is not used. Free text and multiple [SEP] prompts are rejected.",
+  "examples": {
+    "CT_AMOS_amos_0018.npz": {
+      "sha256": "2e3f8af1ea187d30f43081fcc919c102c22b1ec0aac58ade188a0ef2b723d881",
+      "source": "https://github.com/microsoft/BiomedParse/blob/e02096c03af0d79c6994ffc2d60a49eeb0361e1f/examples/imgs/CT_AMOS_amos_0018.npz"
+    },
+    "MR_BraTS-T1c_bratsgli_0017.npz": {
+      "sha256": "099cd8f730b696b59e1477314cb869d89673f78d3531b5c1b56272948efdd162",
+      "source": "https://github.com/microsoft/BiomedParse/blob/e02096c03af0d79c6994ffc2d60a49eeb0361e1f/examples/imgs/MR_BraTS-T1c_bratsgli_0017.npz"
+    },
+    "CT_TotalSeg_muscles_s1029.npz": {
+      "sha256": "652073634ff862559c152f4a979f82e85183a44e79de9b5dbd72cfc6d0843c0c",
+      "source": "https://github.com/microsoft/BiomedParse/blob/e02096c03af0d79c6994ffc2d60a49eeb0361e1f/examples/imgs/CT_TotalSeg_muscles_s1029.npz"
+    }
+  },
+  "targets": {
+    "CT": [
+      {
+        "target": "adrenocortical carcinoma",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "liver tumor",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "pancreas tumor",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "head-neck cancer",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "colon cancer primary",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "COVID-19",
+        "ct_window": "lung"
+      },
+      {
+        "target": "whole-body lesion",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "lymph nodes",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "trachea",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "airway tree",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "spleen",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "CT imaging of the spleen within the abdomen"
+        ]
+      },
+      {
+        "target": "liver",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "Visualization of the liver in abdominal CT imaging"
+        ]
+      },
+      {
+        "target": "gallbladder",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "CT scan of the gallbladder in the abdominal region"
+        ]
+      },
+      {
+        "target": "stomach",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "CT imaging of the stomach in the abdomen"
+        ]
+      },
+      {
+        "target": "pancreas",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "CT scan of the pancreas in the abdominal region"
+        ]
+      },
+      {
+        "target": "duodenum",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "Visualization of the duodenum in abdominal CT imaging"
+        ]
+      },
+      {
+        "target": "small bowel",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "colon",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "esophagus",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "CT scan of the esophagus in the abdominal region"
+        ]
+      },
+      {
+        "target": "bladder",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "Bladder observed in abdominal CT scans"
+        ]
+      },
+      {
+        "target": "prostate",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "uterus",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "aorta",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "Abdominal CT showing aortic structures"
+        ]
+      },
+      {
+        "target": "aortic tree",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "superior vena cava",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "inferior vena cava",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "Inferior vena cava in abdominal CT"
+        ]
+      },
+      {
+        "target": "pulmonary vein",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "brachiocephalic trunk",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "left atrial appendage",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "portal vein",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "splenic vein",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "heart",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "thyroid",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "larynx glottic",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "larynx supraglottic",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "lips",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "buccal mucosa",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "oral cavity",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "cervical esophagus",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "cricopharyngeal inlet",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "arytenoids",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "optic chiasm",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "pituitary",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "brainstem",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "spinal cord",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "Spinal cord in whole body CT"
+        ]
+      },
+      {
+        "target": "left kidney",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "Abdominal CT showing the left kidney"
+        ]
+      },
+      {
+        "target": "left kidney lesion",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "left kidney cyst",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "left kidney tumor",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "left adrenal gland",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "CT imaging of the left adrenal gland in the abdomen"
+        ]
+      },
+      {
+        "target": "left lung",
+        "ct_window": "lung"
+      },
+      {
+        "target": "left subclavian artery",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "left carotid artery",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "left brachiocephalic vein",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "left iliac artery",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "left iliac vein",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "left submandibular gland",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "left parotid gland",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "left lacrimal gland",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "left anterior eyeball",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "left posterior eyeball",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "left optic nerve",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "left cochlea",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "left humerus",
+        "ct_window": "bone",
+        "aliases": [
+          "Left humerus in whole body CT"
+        ]
+      },
+      {
+        "target": "left scapula",
+        "ct_window": "bone",
+        "aliases": [
+          "CT-based segmentation of the left scapula"
+        ]
+      },
+      {
+        "target": "left clavicle",
+        "ct_window": "bone",
+        "aliases": [
+          "Left clavicula segmentation in whole body CT"
+        ]
+      },
+      {
+        "target": "left femur",
+        "ct_window": "bone",
+        "aliases": [
+          "Left femur in whole body CT"
+        ]
+      },
+      {
+        "target": "left hip",
+        "ct_window": "bone",
+        "aliases": [
+          "Left hip anatomy in whole body CT"
+        ]
+      },
+      {
+        "target": "left gluteus maximus",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "Left gluteus Maximus in whole body CT"
+        ]
+      },
+      {
+        "target": "left gluteus medius",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "Whole body CT showing left gluteus medius structures"
+        ]
+      },
+      {
+        "target": "left gluteus minimus",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "Left gluteus minimus anatomy in whole body CT"
+        ]
+      },
+      {
+        "target": "left autochthon",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "Left autochthon anatomy in whole body CT"
+        ]
+      },
+      {
+        "target": "left iliopsoas",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "CT scan of the whole body depicting the left iliopsoas"
+        ]
+      },
+      {
+        "target": "right kidney",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "Presence of the right kidney detected in abdominal CT images"
+        ]
+      },
+      {
+        "target": "right kidney lesion",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "right kidney cyst",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "right kidney tumor",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "right adrenal gland",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "CT imaging of the right adrenal gland in the abdomen"
+        ]
+      },
+      {
+        "target": "right lung",
+        "ct_window": "lung"
+      },
+      {
+        "target": "right subclavian artery",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "right carotid artery",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "right brachiocephalic vein",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "right iliac artery",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "right iliac vein",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "right submandibular gland",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "right parotid gland",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "right lacrimal gland",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "right anterior eyeball",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "right posterior eyeball",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "right optic nerve",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "right cochlea",
+        "ct_window": "soft_tissue"
+      },
+      {
+        "target": "right humerus",
+        "ct_window": "bone",
+        "aliases": [
+          "CT visualization of the right humeral shaft"
+        ]
+      },
+      {
+        "target": "right scapula",
+        "ct_window": "bone",
+        "aliases": [
+          "Right shoulder blade in CT imaging"
+        ]
+      },
+      {
+        "target": "right clavicle",
+        "ct_window": "bone",
+        "aliases": [
+          "Right clavicula observed in whole body CT imaging"
+        ]
+      },
+      {
+        "target": "right femur",
+        "ct_window": "bone",
+        "aliases": [
+          "Right femoral anatomy in whole body CT"
+        ]
+      },
+      {
+        "target": "right hip",
+        "ct_window": "bone",
+        "aliases": [
+          "Right hip in whole body CT"
+        ]
+      },
+      {
+        "target": "right gluteus maximus",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "CT-based identification of the right gluteus maximus in the whole body"
+        ]
+      },
+      {
+        "target": "right gluteus medius",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "Right gluteus medius segmentation in whole body CT"
+        ]
+      },
+      {
+        "target": "right gluteus minimus",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "Right gluteus minimus anatomy in whole body CT"
+        ]
+      },
+      {
+        "target": "right autochthon",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "Right autochthon segmentation in whole body CT"
+        ]
+      },
+      {
+        "target": "right iliopsoas",
+        "ct_window": "soft_tissue",
+        "aliases": [
+          "Visualization of the right iliopsoas in whole body CT scans"
+        ]
+      },
+      {
+        "target": "lung lesion",
+        "ct_window": "lung"
+      },
+      {
+        "target": "left upper lung lobe",
+        "ct_window": "lung"
+      },
+      {
+        "target": "left lower lung lobe",
+        "ct_window": "lung"
+      },
+      {
+        "target": "right upper lung lobe",
+        "ct_window": "lung"
+      },
+      {
+        "target": "right middle lung lobe",
+        "ct_window": "lung"
+      },
+      {
+        "target": "right lower lung lobe",
+        "ct_window": "lung"
+      },
+      {
+        "target": "brain",
+        "ct_window": "brain",
+        "aliases": [
+          "CT imaging of the brain in the whole body region"
+        ]
+      },
+      {
+        "target": "Circle of Willis CTA",
+        "ct_window": "brain"
+      },
+      {
+        "target": "skull",
+        "ct_window": "bone",
+        "aliases": [
+          "Skull observed in whole body CT imaging"
+        ]
+      },
+      {
+        "target": "sacrum",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra C1",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra C2",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra C3",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra C4",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra C5",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra C6",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra C7",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra T1",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra T2",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra T3",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra T4",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra T5",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra T6",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra T7",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra T8",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra T9",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra T10",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra T11",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra T12",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra L1",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra L2",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra L3",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra L4",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra L5",
+        "ct_window": "bone"
+      },
+      {
+        "target": "vertebra S1",
+        "ct_window": "bone"
+      }
+    ],
+    "MR": [
+      {
+        "target": "spleen"
+      },
+      {
+        "target": "liver"
+      },
+      {
+        "target": "gallbladder"
+      },
+      {
+        "target": "stomach"
+      },
+      {
+        "target": "pancreas"
+      },
+      {
+        "target": "duodenum"
+      },
+      {
+        "target": "small bowel"
+      },
+      {
+        "target": "colon whole"
+      },
+      {
+        "target": "esophagus"
+      },
+      {
+        "target": "bladder"
+      },
+      {
+        "target": "prostate"
+      },
+      {
+        "target": "uterus"
+      },
+      {
+        "target": "cecum"
+      },
+      {
+        "target": "appendix"
+      },
+      {
+        "target": "ascending colon"
+      },
+      {
+        "target": "transverse colon"
+      },
+      {
+        "target": "descending colon"
+      },
+      {
+        "target": "sigmoid colon"
+      },
+      {
+        "target": "rectum"
+      },
+      {
+        "target": "prostate transition zone"
+      },
+      {
+        "target": "prostate lesion"
+      },
+      {
+        "target": "left ventricle"
+      },
+      {
+        "target": "right ventricle"
+      },
+      {
+        "target": "myocardium"
+      },
+      {
+        "target": "left atrium"
+      },
+      {
+        "target": "right atrium"
+      },
+      {
+        "target": "aorta"
+      },
+      {
+        "target": "pulmonary artery"
+      },
+      {
+        "target": "superior vena cava"
+      },
+      {
+        "target": "inferior vena cava"
+      },
+      {
+        "target": "portal vein"
+      },
+      {
+        "target": "splenic vein"
+      },
+      {
+        "target": "brain"
+      },
+      {
+        "target": "brain tumor"
+      },
+      {
+        "target": "stroke lesion"
+      },
+      {
+        "target": "GTVp tumor"
+      },
+      {
+        "target": "GTVn tumor"
+      },
+      {
+        "target": "intra-meatal vestibular schwannoma"
+      },
+      {
+        "target": "extra-meatal vestibular schwannoma"
+      },
+      {
+        "target": "non-enhancing tumor core",
+        "aliases": [
+          "Visualization of non-enhancing tumor core in head post-contrast T1-weighted MR"
+        ]
+      },
+      {
+        "target": "non-enhancing FLAIR hyperintensity",
+        "aliases": [
+          "Segmentation of surrounding non-enhancing FLAIR hyperintensity in head post-contrast T1-weighted MR"
+        ]
+      },
+      {
+        "target": "enhancing tissue",
+        "aliases": [
+          "Segmentation of enhancing tissue in head post-contrast T1-weighted MR"
+        ]
+      },
+      {
+        "target": "resection cavity",
+        "aliases": [
+          "Segmentation of resection cavity in head post-contrast T1-weighted MR"
+        ]
+      },
+      {
+        "target": "white matter hyperintensities FLAIR"
+      },
+      {
+        "target": "white matter hyperintensities T1"
+      },
+      {
+        "target": "Circle of Willis MRA"
+      },
+      {
+        "target": "sacrum"
+      },
+      {
+        "target": "vertebrae"
+      },
+      {
+        "target": "intervertebral discs"
+      },
+      {
+        "target": "spinal canal"
+      },
+      {
+        "target": "spinal cord"
+      },
+      {
+        "target": "left lung"
+      },
+      {
+        "target": "left iliac artery"
+      },
+      {
+        "target": "left iliac vein"
+      },
+      {
+        "target": "left carotid artery"
+      },
+      {
+        "target": "left jugular vein"
+      },
+      {
+        "target": "left cochlea"
+      },
+      {
+        "target": "left humerus"
+      },
+      {
+        "target": "left femur"
+      },
+      {
+        "target": "left hip"
+      },
+      {
+        "target": "left gluteus maximus"
+      },
+      {
+        "target": "left gluteus medius"
+      },
+      {
+        "target": "left gluteus minimus"
+      },
+      {
+        "target": "left autochthon"
+      },
+      {
+        "target": "left iliopsoas"
+      },
+      {
+        "target": "right lung"
+      },
+      {
+        "target": "right iliac artery"
+      },
+      {
+        "target": "right iliac vein"
+      },
+      {
+        "target": "right carotid artery"
+      },
+      {
+        "target": "right jugular vein"
+      },
+      {
+        "target": "right cochlea"
+      },
+      {
+        "target": "right humerus"
+      },
+      {
+        "target": "right femur"
+      },
+      {
+        "target": "right hip"
+      },
+      {
+        "target": "right gluteus maximus"
+      },
+      {
+        "target": "right gluteus medius"
+      },
+      {
+        "target": "right gluteus minimus"
+      },
+      {
+        "target": "right autochthon"
+      },
+      {
+        "target": "right iliopsoas"
+      }
+    ],
+    "PT": [
+      {
+        "target": "whole-body lesion"
+      }
+    ]
+  },
+  "excluded_example_prompts": {
+    "CT_AMOS_amos_0018.npz": {
+      "15": {
+        "text": "CT scan of the prostate/uterus in the abdominal region",
+        "reason": "Composite prostate/uterus label; this task requires one supported anatomical target. Select prostate or uterus explicitly."
+      }
+    }
+  }
+}

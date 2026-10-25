@@ -328,7 +328,7 @@
       "group": "interactive"
     },
     "biomedparse_prompted": {
-      "title": "BiomedParse · text-selected object",
+      "title": "BiomedParse v2 · supported text target",
       "group": "interactive"
     },
     "isrt_ct_resunet": {
@@ -993,7 +993,7 @@
       "medical_sam2_prompted_ct": "Medical-SAM2: points or a box on one axial slice; box overrides points. Only the largest 3D component is retained. The checkpoint was trained on organs.",
       "sam_med2d_prompted": "SAM-Med2D: prompt every intended slice; no propagation to other slices.",
       "medsam_vit_b_box_2d": "MedSAM ViT-B: one box on one slice; no volume propagation.",
-      "biomedparse_prompted": "BiomedParse: checkpoint access is blocked; no active text suggestions."
+      "biomedparse_prompted": "BiomedParse v2: one supported CT, MR or PET target. An empty result can mean object not detected."
     }
   }
 }

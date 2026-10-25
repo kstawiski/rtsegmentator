@@ -22,6 +22,7 @@ const PROMPT_HELP = {
   nninteractive_v1_prompted: 'nnInteractive: place a positive point or an axial box. Negative points can exclude adjacent structures.',
   vista3d_prompted_ct: 'VISTA3D: at least one positive point is required. Negative points can exclude adjacent structures.',
   segvol_prompted_ct: 'SegVol: use text, points or a 3D box. Text and spatial prompts can be combined; edit a 3D box in the JSON panel.',
+  biomedparse_prompted: 'BiomedParse v2: enter one documented target for this modality (for example spleen on CT or whole-body lesion on PET). Unsupported text is rejected. CT uses the target-specific README window; optional ct_window in JSON: soft_tissue, lung, brain or bone.',
   voxtell_v1_1_text_prompted: 'VoxTell: enter one structure, tumour, lesion or clinical description (up to 512 printable characters). Points and boxes are ignored.'
 };
 function humanize(name) {
@@ -340,7 +341,7 @@ function validatePrompt(value, tasks, series) {
   if (has('sat3d_prompted', 'vista3d_prompted_ct') && !positives.length) return 'SAT3D and VISTA3D require at least one positive point.';
   if (has('sam_med2d_prompted', 'medsam2_ct_lesion_prompted', 'medical_sam2_prompted_ct') && !coords.length) return 'The selected model requires points or a box.';
   if (has('medsam_vit_b_box_2d', 'medical_sam3_3d_prompted') && !box) return 'MedSAM ViT-B and Medical-SAM3 require a two-corner box.';
-  if (has('medical_sam3_3d_prompted', 'voxtell_v1_1_text_prompted') && !text) return 'Enter the required medical concept in Target description.';
+  if (has('medical_sam3_3d_prompted', 'voxtell_v1_1_text_prompted', 'biomedparse_prompted') && !text) return 'Enter the required medical concept in Target description.';
   if (has('voxtell_v1_1_text_prompted') && (value.text.length > 512 || /[\x00-\x1f\x7f]/.test(value.text))) return 'VoxTell text must be at most 512 printable characters.';
   if (box && box[0][2] !== box[1][2] && tasks.some(t => t.name !== 'segvol_prompted_ct')) return 'Both box corners must be on the same slice for these models.';
   return '';

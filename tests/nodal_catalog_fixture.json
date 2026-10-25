@@ -307,7 +307,7 @@
   },
   {
     "name": "biomedparse_prompted",
-    "enabled": false,
+    "enabled": true,
     "modality": "CT",
     "modalities": [
       "CT",
@@ -315,7 +315,7 @@
       "PT"
     ],
     "prompt": "text",
-    "status": "weights_unavailable",
+    "status": "acceptance_required",
     "noncommercial": true
   }
 ]
