@@ -5,6 +5,15 @@ import hashlib
 import json
 from pathlib import Path
 
+
+def _stream_sha256(stream):
+    # hashlib.file_digest needs Python 3.11; the portal image runs 3.10.
+    digest = hashlib.sha256()
+    for block in iter(lambda: stream.read(1 << 20), b''):
+        digest.update(block)
+    return digest.hexdigest()
+
+
 TASK = 'lnctvseg_nnunet_v1'
 INTEGRATED_TASKS = (TASK,)
 APP = Path(__file__).resolve().parent
@@ -103,7 +112,7 @@ def validate_assets(root):
         if path.stat().st_size != expected['bytes']:
             raise ValueError(f'LNCTVSeg asset size mismatch: {name}')
         with path.open('rb') as stream:
-            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+            digest = _stream_sha256(stream)
         if digest != expected['sha256']:
             raise ValueError(f'LNCTVSeg asset checksum mismatch: {name}')
     return spec
