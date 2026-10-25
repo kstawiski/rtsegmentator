@@ -23,7 +23,7 @@ host serve several projects.
                                              ▼
                Segmentation_CustomModels/rtseg_<model>/rtstruct.dcm
                                              │
-                     DVH · radiomics · robustness · QC tables
+                     DVH · radiomics · robustness tables
 ```
 
 ## Online: RTpipeline calls the portal

@@ -212,3 +212,167 @@ def test_select_series_never_chooses_unavailable(tmp_path):
     assert [row["key"] for row in rtseg_client.select_series(rows, modalities=["ct"])] == ["a"]
     with pytest.raises(rtseg_client.ClientError, match="2"):
         rtseg_client.select_series(rows, series_uids=["2"])
+
+
+def package_with(tmp_path, members, name="pkg.zip"):
+    files = [{"path": path, "size": len(data), "sha256": result_manifest.sha256_bytes(data)}
+             for path, data in members]
+    manifest = {"schema": rtseg_client.MANIFEST_SCHEMA, "schema_version": "1.0", "files": files}
+    package = tmp_path / name
+    with zipfile.ZipFile(package, "w") as archive:
+        for path, data in members:
+            archive.writestr(path, data)
+        archive.writestr(rtseg_client.MANIFEST_NAME, json.dumps(manifest))
+    return package
+
+
+@pytest.mark.parametrize("members", [
+    [("report.json", b"a"), ("./report.json", b"b")],       # same target after normalisation
+    [("Report.json", b"a"), ("report.json", b"b")],         # same target on case-insensitive filesystems
+    [("a//b.json", b"a")],
+])
+def test_noncanonical_or_colliding_names_are_rejected(tmp_path, members):
+    with pytest.raises(rtseg_client.ManifestError, match="unsafe member name|duplicate member names"):
+        rtseg_client.extract_result_zip(package_with(tmp_path, members), tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
+def test_extract_never_overwrites(tmp_path):
+    package = package_with(tmp_path, [("total_RTSTRUCT.dcm", b"rt")])
+    rtseg_client.extract_result_zip(package, tmp_path / "out")
+    with pytest.raises(rtseg_client.ManifestError, match="overwrite"):
+        rtseg_client.extract_result_zip(package, tmp_path / "out")
+
+
+class FakeResponse(io.BytesIO):
+    status = 200
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+def test_job_creation_is_not_replayed_after_an_ambiguous_failure(monkeypatch):
+    calls = []
+
+    def urlopen(request):
+        calls.append(request.get_method())
+        raise rtseg_client.urllib.error.HTTPError(request.full_url, 504, "gateway", {}, io.BytesIO(b""))
+    client = rtseg_client.RTsegClient("http://portal.test", sleep=lambda _: None)
+    monkeypatch.setattr(client, "_open", urlopen)
+    with pytest.raises(rtseg_client.ClientError, match="HTTP 504"):
+        client.submit("upload-1", ["key"], ["total"])
+    assert calls == ["POST"]
+    calls.clear()
+    with pytest.raises(rtseg_client.ClientError, match="HTTP 504"):
+        client.job("job-1")
+    assert calls == ["GET"] * (client.retries + 1)
+
+    def refused(request):
+        calls.append(request.get_method())
+        raise rtseg_client.urllib.error.URLError("connection reset")
+    monkeypatch.setattr(client, "_open", refused)
+    calls.clear()
+    with pytest.raises(rtseg_client.ClientError, match="may have taken effect"):
+        client.submit("upload-1", ["key"], ["total"])
+    assert calls == ["POST"]
+
+
+def test_download_streams_to_disk_atomically(monkeypatch, tmp_path):
+    payload = b"z" * (3 * rtseg_client.STREAM_BLOCK + 17)
+    client = rtseg_client.RTsegClient("http://portal.test")
+    monkeypatch.setattr(client, "_open", lambda request: FakeResponse(payload))
+    target = client.download("job-1", tmp_path / "nested" / "job-1.zip")
+    assert target.read_bytes() == payload
+    assert not list(target.parent.glob("*.partial"))
+
+
+def test_cross_origin_redirects_are_refused():
+    handler = rtseg_client._SameOriginRedirects()
+    request = rtseg_client.urllib.request.Request("https://portal.test/api/v1/jobs/x",
+                                                   headers={"Authorization": "Bearer secret"})
+    for target in ("https://elsewhere.test/api", "http://portal.test/api", "https://portal.test:8443/api"):
+        with pytest.raises(rtseg_client.ClientError, match="another origin"):
+            handler.redirect_request(request, None, 302, "Found", {}, target)
+    assert handler.redirect_request(request, None, 302, "Found", {}, "https://portal.test/api/v1/jobs/y")
+
+
+@pytest.mark.parametrize("job_id", ["../../etc/passwd", "a/b", "", None, "x.zip"])
+def test_job_ids_from_the_portal_are_validated(job_id, tmp_path):
+    client = rtseg_client.RTsegClient("http://portal.test")
+    with pytest.raises(rtseg_client.ClientError, match="Invalid job ID"):
+        client.download(job_id, tmp_path / "x.zip")
+
+
+def test_upload_refuses_a_file_that_shrinks(tmp_path):
+    chunk = 1 << 16  # larger than the read buffer, so each chunk is read from the file
+    path = tmp_path / "slice.dcm"
+    path.write_bytes(b"x" * (4 * chunk))
+    client = rtseg_client.RTsegClient("http://portal.test")
+
+    def request(method, route, **kwargs):
+        if method == "POST":
+            return {"session_id": "session-1", "max_request_bytes": chunk}
+        with path.open("r+b") as handle:  # the file shrinks after the first chunk
+            handle.truncate(chunk)
+        return {"received": kwargs["query"]["offset"] + len(kwargs["body"])}
+    client._request = request
+    with pytest.raises(rtseg_client.ClientError, match="changed size"):
+        client.upload_files([path])
+
+
+def test_non_json_reply_is_a_client_error(monkeypatch):
+    client = rtseg_client.RTsegClient("http://portal.test")
+    monkeypatch.setattr(client, "_open", lambda request: FakeResponse(b"<html>Sign in</html>"))
+    with pytest.raises(rtseg_client.ClientError, match="non-JSON"):
+        client.health()
+
+
+def test_default_series_selection_follows_model_modalities():
+    catalog = [{"name": "total", "modality": "CT"}, {"name": "pet_pair", "modalities": ["PT"]},
+               {"name": "total_mr", "modality": "MR"}]
+    assert rtseg_client.model_modalities(catalog, ["total", "pet_pair"]) == {"CT", "PT"}
+
+
+def test_manifest_keeps_requested_models_notes_and_unreadable_headers(portal, synthetic_ct, monkeypatch):
+    jid = "20260101-000000-00000000000000000002-abcd1234"
+    job = portal.BASE / jid
+    (job / "input").mkdir(parents=True)
+    (job / "output/lnctvseg_nnunet_v1").mkdir(parents=True)
+    write_rtstruct(synthetic_ct, job / "output/total_RTSTRUCT.dcm")
+    (job / "output/lnctvseg_nnunet_v1/OMITTED_LABELS.txt").write_text("Omitted class 7 (12 voxels).\n")
+    # An auto-mode Colab fallback narrows job.json models to the subset it sends to Colab.
+    (job / "job.json").write_text(json.dumps({
+        "id": jid, "status": "processing", "created": 1767225600.0, "models": ["lung_nodules"],
+        "requested_models": ["total", "lung_nodules"]}))
+
+    def unreadable(path, arcname):
+        raise OSError("truncated header")
+    monkeypatch.setattr(portal.result_manifest, "rtstruct_record", unreadable)
+    portal.finalize_results(job, ["lung_nodules"])
+    with zipfile.ZipFile(job / "rtstruct-results.zip") as archive:
+        manifest = json.loads(archive.read(result_manifest.MANIFEST_NAME))
+    jsonschema.validate(manifest, SCHEMA)
+    assert manifest["job"]["models"] == ["total", "lung_nodules"]
+    total, nodules = manifest["models"]
+    assert (total["outcome"], "requested" in total) == ("rtstruct", False)
+    assert total["rtstruct"]["roi_names"] == [] and "truncated header" in total["rtstruct"]["error"]
+    assert nodules["outcome"] == "no_structures_found"
+    assert "Omitted class 7 (12 voxels)." in manifest["notes"]
+
+
+def test_directory_entries_with_content_and_unlisted_rtstructs_are_rejected(tmp_path):
+    files = [{"path": "a.txt", "size": 1, "sha256": result_manifest.sha256_bytes(b"a")}]
+    manifest = {"schema": rtseg_client.MANIFEST_SCHEMA, "schema_version": "1.0", "files": files,
+                "models": [{"name": "total", "outcome": "rtstruct", "rtstruct": {"path": "hidden.dcm/"}}]}
+    package = tmp_path / "dir.zip"
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("a.txt", b"a")
+        archive.writestr(zipfile.ZipInfo("hidden.dcm/"), b"unchecked RTSTRUCT bytes")
+        archive.writestr(rtseg_client.MANIFEST_NAME, json.dumps(manifest))
+    with pytest.raises(rtseg_client.ManifestError) as raised:
+        rtseg_client.verify_result_zip(package)
+    assert "directory entry with content" in str(raised.value)
+    assert "not a listed member" in str(raised.value)

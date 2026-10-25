@@ -32,7 +32,7 @@ Each `models` entry contains:
 | `name` | Portal task name. |
 | `outcome` | `rtstruct` (an RTSTRUCT was written), `no_structures_found` (the model ran and found nothing in this series), `report` (the task produces a document) or `no_rtstruct`. |
 | `rtstruct` | For `rtstruct`: the member path, SOPInstanceUID, the exact ROI names in RTSTRUCT order, the referenced Frame of Reference UIDs and the referenced SeriesInstanceUIDs. |
-| `structure_kind`, `catalog_structures` | The task's label contract from `catalog/structures.json`. For a *fixed* task, catalog labels missing from `roi_names` were not found in the scan. |
+| `structure_kind`, `catalog_structures` | The task's label contract from `catalog/structures.json`. For a *fixed* task, a catalog label missing from `roi_names` was not written: the model did not find it, or the exporter omitted it, in which case `notes` names it. |
 | `sidecars` | Files that share the `<task>_RTSTRUCT.dcm.` prefix: orientation evidence, lesion tables, provenance records and spatial maps. |
 | `license`, `code_license`, `weights_license`, `noncommercial`, `licensed`, `limitations`, `reference`, `description` | The catalog's descriptive text for the model, copied when present. |
 | `requested` | `false` for an RTSTRUCT whose task was not in the job's model list. Absent otherwise. |

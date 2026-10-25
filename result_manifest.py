@@ -125,10 +125,17 @@ def build_manifest(job: Mapping, members: Iterable[tuple[str, bytes | Path]], *,
         size, digest = _member_bytes(source)
         files.append({"path": name, "size": size, "sha256": digest})
         if "/" not in name and name.endswith(RTSTRUCT_SUFFIX) and isinstance(source, Path):
-            rtstructs[name.removesuffix(RTSTRUCT_SUFFIX)] = rtstruct_record(source, name)
+            try:
+                rtstructs[name.removesuffix(RTSTRUCT_SUFFIX)] = rtstruct_record(source, name)
+            except Exception as exc:  # an unreadable header must not fail a finished job
+                rtstructs[name.removesuffix(RTSTRUCT_SUFFIX)] = {
+                    "path": name, "sop_instance_uid": None, "roi_names": [], "roi_count": 0,
+                    "frame_of_reference_uids": [], "referenced_series_instance_uids": [],
+                    "error": f"RTSTRUCT header unreadable: {type(exc).__name__}: {exc}"[:500]}
     empty = set(empty_models)
     models = []
-    for name in job.get("models") or []:
+    requested = list(job.get("requested_models") or job.get("models") or [])
+    for name in requested:
         details = catalog.get(name, {})
         contract = structure_catalog.get(name, {})
         entry = {
@@ -170,7 +177,7 @@ def build_manifest(job: Mapping, members: Iterable[tuple[str, bytes | Path]], *,
             "batch_id": job.get("batch_id"),
             "batch_index": job.get("batch_index"),
             "batch_size": job.get("batch_size"),
-            "models": list(job.get("models") or []),
+            "models": requested,
             "postprocess": list(job.get("postprocess") or []),
         },
         "source_series": _source_series(job),

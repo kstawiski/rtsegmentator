@@ -39,12 +39,16 @@ First public release.
   (schema `rtsegmentator.result-manifest` 1.0, published in
   `schemas/result-manifest-1.0.schema.json`). It lists each file with its size and
   SHA-256, the source series, and per model the outcome, the exact ROI names
-  written, the catalog label contract, and the licence and limitation text.
+  written, the catalog label contract, and the catalog's licence and limitation
+  text where recorded.
   `GET /api/v1/jobs/{id}/manifest` returns it for completed jobs.
 - `rtseg_client.py`, a standard-library Python client and command-line tool,
-  uploads series, submits jobs, waits, downloads results and verifies every package
-  against its manifest. RTpipeline vendors the same file to import RTsegmentator
-  results as a segmentation source.
+  uploads series, submits jobs, waits, streams results to disk and verifies every
+  package against its manifest and against the manifest the portal serves for the
+  job. It never replays a job submission after an ambiguous failure, refuses
+  redirects to another origin so proxy credentials stay with the portal, and
+  rejects noncanonical or colliding member names. RTpipeline vendors the same file
+  to import RTsegmentator results as a segmentation source.
 
 ### Distribution
 

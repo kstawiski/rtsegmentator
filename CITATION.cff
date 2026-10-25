@@ -18,9 +18,9 @@ abstract: >-
   segmentation models on uploaded DICOM CT, MR and PET series and returns DICOM
   RTSTRUCT contours. Before export, each mask is mapped directly onto the source
   image grid and checked by a contour-to-mask round trip against the referenced
-  images. Every result package carries a manifest that lists the model, its
-  licence and limitations, the exact ROI names written, the source series and a
-  SHA-256 checksum for each file. A standard-library Python client submits
+  images. Every segmentation result package carries a manifest that lists each
+  model with its catalog licence and limitation text where recorded, the exact ROI
+  names written, the source series and a SHA-256 checksum for each file. A standard-library Python client submits
   series in batch and verifies downloaded packages; RTpipeline imports the
   verified packages as a segmentation source for dose-volume and radiomics
   analysis.

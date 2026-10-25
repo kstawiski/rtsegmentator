@@ -20,10 +20,10 @@ with one RTSTRUCT per model. The same steps run unattended through the
   the acquired DICOM grid. Before an RTSTRUCT is released, export checks the
   referenced SOP instances, the physical bounds and a contour-to-mask round trip
   (Dice ≥ 0.95, plane tolerance 0.05 voxel). See [technical checks](validation.md).
-- **Describes every result.** Each result ZIP carries a
+- **Describes every result.** Each segmentation result ZIP carries a
   [manifest](result-manifest.md) with the source series, each model's outcome and
-  exact ROI names, its licence and limitation text, and a SHA-256 checksum for every
-  file.
+  exact ROI names, the catalog's licence and limitation text where recorded, and a
+  SHA-256 checksum for every file.
 - **Feeds analysis pipelines.** [RTpipeline](rt-suite.md) sends a course's planning
   CT to the portal, verifies the returned package and uses the structures for
   dose-volume histograms and radiomics.
@@ -59,7 +59,8 @@ RTsegmentator checks that each RTSTRUCT is geometrically consistent with its sou
 images and that each model ran under its documented input contract. These checks do
 not establish that a model's contours are anatomically or clinically correct for a
 given patient, scanner or protocol. Model-specific restrictions are recorded in the
-[model ledger](external-models.md) and are returned with every result.
+[model ledger](external-models.md); the manifest of each result copies the catalog's
+licence and limitation fields where they are recorded.
 
 The Apache-2.0 licence covers the original RTsegmentator source code. Each model's
 code, weights and training data remain under their authors' terms.

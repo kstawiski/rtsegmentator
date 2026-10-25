@@ -78,7 +78,8 @@
               "roi_names": {"type": "array", "items": {"type": "string"}},
               "roi_count": {"type": "integer", "minimum": 0},
               "frame_of_reference_uids": {"type": "array", "items": {"type": "string"}},
-              "referenced_series_instance_uids": {"type": "array", "items": {"type": "string"}}
+              "referenced_series_instance_uids": {"type": "array", "items": {"type": "string"}},
+              "error": {"type": "string"}
             }
           },
           "sidecars": {"type": "array", "items": {"type": "string"}},

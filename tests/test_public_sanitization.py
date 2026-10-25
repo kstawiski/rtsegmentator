@@ -44,10 +44,11 @@ APPROVED_BINARIES = {
 
 
 # The suite's public repository and documentation addresses name the GitHub account that
-# publishes them, not a deployment host or path. Only these exact URL prefixes are exempt.
+# publishes them, not a deployment host or path. Only the exact prefix up to the repository
+# name is exempt; anything after it is still scanned.
 PUBLIC_SUITE_URL = re.compile(
     r"https://(?:github[.]com/ksta[w]iski|ksta[w]iski[.]github[.]io)/(?:rtsegmentator|rtpipeline)"
-    r"(?![\w-])[^\s\"'<>)]*"
+    r"(?=[/#?\s\"'<>)\]`]|$)"
 )
 
 
@@ -124,5 +125,8 @@ def test_public_suite_url_exception_is_limited_to_the_two_repositories():
                 f"https://github.com/{account}/rtsegmentator/releases"):
         assert not site_matches("README.md", url)
     for text in (f"https://github.com/{account}/other", f"https://github.com/{account}/rtpipeline-private",
+                 f"https://github.com/{account}/rtpipeline.private", f"https://github.com/{account}/rtpipeline_x",
+                 f"https://github.com/{account}/rtpipeline?path=/home/{'kon' + 'rad'}",
+                 f"https://github.com/{account}/rtsegmentator/blob/main/{account}.md",
                  f"/home/{account}/rtpipeline", f"{account}@host", f"https://hub.docker.com/r/{account}/x"):
-        assert site_matches("README.md", text)
+        assert site_matches("README.md", text), text

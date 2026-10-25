@@ -42,7 +42,10 @@ cannot be switched off.
 `verify` and `download` fail when the ZIP has no `rtsegmentator_manifest.json`, when
 a listed file is missing or its size or SHA-256 differs, when the ZIP contains a file
 the manifest does not list, or when a member name could escape the extraction
-directory. A package that passes has exactly the bytes the portal recorded.
+directory. `submit --out` and `download` also compare the packaged manifest with the
+one the portal serves for the job. The manifest is not signed: these checks detect
+corruption, incomplete transfers and a package that does not belong to the job, not
+deliberate tampering by someone who can rewrite both the files and the manifest.
 
 ## Python use
 

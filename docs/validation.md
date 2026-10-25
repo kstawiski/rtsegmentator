@@ -38,5 +38,6 @@ checks run separately with `tests/ui_browser_server.py`.
 
 Passing these checks does not show that a model segments a given anatomy, disease,
 scanner or protocol correctly. Model-specific evidence, known failure modes and
-restrictions are recorded in the [model ledger](external-models.md) and travel with
-every result in its manifest.
+restrictions are recorded in the [model ledger](external-models.md). Each result's
+manifest copies the catalog's licence and limitation fields where they are recorded;
+the [model catalog](models.md) shows which tasks lack them.

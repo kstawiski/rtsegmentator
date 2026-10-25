@@ -1340,6 +1340,9 @@ def run_colab_job_on_nfs_worker(job: Path, tasks: list[str] | None = None, final
     session = f"rtseg-{job.name[-12:]}"
     if tasks:
         data = metadata(job)
+        # The NFS orchestrator reads the model subset from job.json; keep the original
+        # request so the result manifest still describes every requested model.
+        data.setdefault("requested_models", data.get("models", []))
         data["models"] = tasks
         (job / "job.json").write_text(json.dumps(data, indent=2))
     command = [REMOTE_PYTHON, str(Path(REMOTE_APP_ROOT) / "run_colab_remote.py"),
@@ -1433,10 +1436,14 @@ def finalize_results(job: Path, empty=()):
     if omissions:
         members.append(("CONVERSION_NOTES.txt", ("\n".join(omissions) + "\n").encode()))
     record = metadata(job)
+    manifest_notes = list(record.get("postprocess_notes", [])) + omissions
+    omitted_labels = output / "lnctvseg_nnunet_v1/OMITTED_LABELS.txt"
+    if omitted_labels.is_file():
+        manifest_notes.append(omitted_labels.read_text().strip())
     manifest = result_manifest.build_manifest(
-        record, members, version=__version__, catalog=manifest_catalog(record.get("models", [])),
-        structure_catalog=STRUCTURE_CATALOG, empty_models=empty,
-        notes=list(record.get("postprocess_notes", [])) + omissions, created=time.time())
+        record, members, version=__version__,
+        catalog=manifest_catalog(record.get("requested_models") or record.get("models", [])),
+        structure_catalog=STRUCTURE_CATALOG, empty_models=empty, notes=manifest_notes, created=time.time())
     with zipfile.ZipFile(job/"rtstruct-results.zip","w",zipfile.ZIP_DEFLATED) as z:
         for name, source in members:
             if isinstance(source, Path):
@@ -3197,6 +3204,8 @@ def get_result_manifest(jid: str):
             content = archive.read(result_manifest.MANIFEST_NAME)
     except KeyError:
         raise HTTPException(404, "This result package has no manifest")
+    except (zipfile.BadZipFile, OSError):
+        raise HTTPException(500, "The stored result package is unreadable")
     return Response(content, media_type="application/json")
 
 
