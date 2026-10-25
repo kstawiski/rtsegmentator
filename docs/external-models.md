@@ -1,0 +1,1 @@
+--8<-- "EXTERNAL_MODELS.md"

@@ -21,6 +21,15 @@ from scipy.spatial import cKDTree
 
 from choi_ontology import REGIONS
 
+
+def _stream_sha256(stream):
+    # hashlib.file_digest needs Python 3.11; the portal image runs 3.10.
+    digest = hashlib.sha256()
+    for block in iter(lambda: stream.read(1 << 20), b''):
+        digest.update(block)
+    return digest.hexdigest()
+
+
 NEIGHBOURS = ('aorta', 'inferior_vena_cava', 'iliac_artery_left', 'iliac_artery_right',
               'iliac_vena_left', 'iliac_vena_right', 'femur_left', 'femur_right',
               'hip_left', 'hip_right', 'sacrum', 'humerus_left', 'humerus_right',
@@ -48,7 +57,7 @@ confidence. Missing labels are unresolved; a one-to-one assignment is never forc
 
 def digest(path):
     with Path(path).open('rb') as stream:
-        return hashlib.file_digest(stream, 'sha256').hexdigest()
+        return _stream_sha256(stream)
 
 
 def load_image(path, reference=None, *, labels=False):

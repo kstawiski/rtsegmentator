@@ -19,6 +19,15 @@ sys.path.insert(0, str(APP))
 import lnctvseg_bundle
 from audit_lnctvseg_dice import compare
 
+
+def _stream_sha256(stream):
+    # hashlib.file_digest needs Python 3.11; the portal image runs 3.10.
+    digest = hashlib.sha256()
+    for block in iter(lambda: stream.read(1 << 20), b''):
+        digest.update(block)
+    return digest.hexdigest()
+
+
 spec = importlib.util.spec_from_file_location('orientation_audit', APP / 'scripts/run-orientation-audit.py')
 orientation_audit = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(orientation_audit)
@@ -30,7 +39,7 @@ def fixture_dice(prediction, model, output):
     reference = model / 'testdata/lnctvseg-example-hn-ct/reference-labels.nii.gz'
     spec = json.loads((APP / 'models/manifests/lnctvseg-fixture.json').read_text())
     with reference.open('rb') as stream:
-        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+        digest = _stream_sha256(stream)
     if digest != spec['reference_labels_sha256']:
         raise ValueError('LNCTVSeg reference-label checksum mismatch')
     result = compare(prediction, reference)

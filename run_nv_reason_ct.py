@@ -23,6 +23,14 @@ from nv_reason_ct_report import (TASK, REVISION, REGION_ORGANS, detect_cbct, hu_
     mask_stats, covered_regions, check_consistency, thumbnail, rtstruct_summary, write_report, wait_for_free_memory)
 
 
+def _stream_sha256(stream):
+    # hashlib.file_digest needs Python 3.11; the portal image runs 3.10.
+    digest = hashlib.sha256()
+    for block in iter(lambda: stream.read(1 << 20), b''):
+        digest.update(block)
+    return digest.hexdigest()
+
+
 class Refusal(Exception):
     """Expected input/resource refusal; never fail a segmentation job."""
 
@@ -210,7 +218,7 @@ def main():
                         'dynamic-network-architectures', 'flash-linear-attention'):
             report['package_versions'][package] = importlib.metadata.version(package)
         for name in ('model.safetensors', 'model.py', 'processor.py'):
-            with (args.model_dir / name).open('rb') as f: report['sha256'][name] = hashlib.file_digest(f, 'sha256').hexdigest()
+            with (args.model_dir / name).open('rb') as f: report['sha256'][name] = _stream_sha256(f)
         headers_and_summary(job, report)
         nifti = work / 'input.nii.gz'; masks = work / 'coverage'
         step = time.perf_counter()

@@ -1,0 +1,72 @@
+site_name: RTsegmentator
+site_description: DICOM RT segmentation portal and API with geometry-checked RTSTRUCT export and checksummed result manifests
+site_url: https://kstawiski.github.io/rtsegmentator/
+repo_url: https://github.com/kstawiski/rtsegmentator
+repo_name: rtsegmentator
+edit_uri: ""
+copyright: RTsegmentator contributors · Apache-2.0 (source code only; models keep their own licences)
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: teal
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: teal
+      accent: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Using the portal:
+    - Operations and safety: OPERATIONS.md
+    - Automation API: API.md
+    - Python client: client.md
+    - Result manifest: result-manifest.md
+    - RTpipeline integration: rt-suite.md
+  - Models:
+    - Model catalog: models.md
+    - Model ledger: external-models.md
+    - Prostate models: PROSTATE_MODELS.md
+    - GTRC-Net PET/CT: GTRC_NET.md
+    - LNQ atlas adapter: LNQ_ATLAS_ADAPTER.md
+    - HippUnfold: HIPPUNFOLD.md
+    - Choi label review: CHOI_LABEL_REVIEW.md
+  - Deployment:
+    - Deployment: DEPLOYMENT.md
+    - Containers: CONTAINERS.md
+    - Public release checklist: PUBLIC_RELEASE_CHECKLIST.md
+  - Technical checks: validation.md
+  - Citing: citing.md
+  - Changelog: changelog.md

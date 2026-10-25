@@ -1,0 +1,37 @@
+{
+  "@context": "https://w3id.org/codemeta/3.0",
+  "@type": "SoftwareSourceCode",
+  "name": "RTsegmentator",
+  "description": "Web portal and versioned REST API that runs open segmentation models on DICOM CT, MR and PET series and returns geometry-checked DICOM RTSTRUCT contours with a checksummed provenance manifest.",
+  "version": "1.0.0",
+  "softwareVersion": "1.0.0",
+  "dateModified": "2026-10-25",
+  "license": "https://spdx.org/licenses/Apache-2.0",
+  "codeRepository": "https://github.com/kstawiski/rtsegmentator",
+  "url": "https://kstawiski.github.io/rtsegmentator/",
+  "issueTracker": "https://github.com/kstawiski/rtsegmentator/issues",
+  "programmingLanguage": ["Python", "JavaScript"],
+  "runtimePlatform": "Python 3.10+",
+  "operatingSystem": "Linux",
+  "applicationCategory": "Medical imaging research software",
+  "developmentStatus": "active",
+  "author": [
+    {"@type": "Organization", "name": "RTsegmentator contributors"}
+  ],
+  "softwareRequirements": [
+    "fastapi==0.116.1",
+    "uvicorn==0.35.0",
+    "pydicom==3.0.1",
+    "rt-utils==1.2.7",
+    "SimpleITK==2.5.6",
+    "numpy>=1.26,<3"
+  ],
+  "keywords": [
+    "radiotherapy",
+    "DICOM RT",
+    "RTSTRUCT",
+    "auto-segmentation",
+    "medical image segmentation"
+  ],
+  "isPartOf": "https://github.com/kstawiski/rtpipeline"
+}

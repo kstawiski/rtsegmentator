@@ -1,8 +1,12 @@
-# DICOM RT Segmentation Portal
+# RTsegmentator
 
-Upload DICOM CT, MR or PET series, select compatible segmentation models, and download RTSTRUCT contours checked against the source images. Run the portal with a local GPU or an SSH GPU worker.
+RTsegmentator is a DICOM RT segmentation portal and API. Upload DICOM CT, MR or PET series, select compatible segmentation models, and download RTSTRUCT contours checked against the source images. Run the portal with a local GPU or an SSH GPU worker.
+
+[Documentation](https://kstawiski.github.io/rtsegmentator/) · [Model catalog](docs/models.md) · [Automation API](docs/API.md) · [Python client](docs/client.md) · [Changelog](CHANGELOG.md)
 
 > **Research use only.** Review every contour before clinical use. Technical execution and geometry checks do not establish clinical accuracy or manuscript readiness.
+
+RTsegmentator is the segmentation component of a two-part radiotherapy research toolkit. [RTpipeline](https://github.com/kstawiski/rtpipeline) organizes treatment-planning exports into patient courses and computes dose-volume, radiomics and quality-control tables; it sends each course's planning CT to RTsegmentator and imports the verified results (see [RTpipeline integration](docs/rt-suite.md)).
 
 ## Features
 
@@ -19,8 +23,10 @@ Upload DICOM CT, MR or PET series, select compatible segmentation models, and do
 - Generate NVIDIA NV-Reason-CT research draft reports for covered chest/abdomen CT, alone or after segmentation. Download JSON/Markdown/HTML with crop thumbnails and contour summaries. CBCT is refused; a separate technical acceptance marker controls availability.
 - Route selected tasks to an SSH GPU worker with `REMOTE_GPU_TASKS` while other tasks use the local GPU.
 - Crop axial CT and matching RTSTRUCTs for prostate SBRT on CPU. The standalone tool crops around every contoured PTV*/CTV* structure (for example PTV1, PTV 2 and CTV together) with a default 150 mm superior/inferior margin. Optional local `total` postprocessing selects the prostate ROI. The crop keeps pixel data and creates matching new Study, Frame, Series and SOP UIDs by default.
+- Package every result with `rtsegmentator_manifest.json`: the source series, each model's outcome and exact ROI names, the catalog's licence and limitation text where recorded, and a SHA-256 checksum for every file ([result manifest](docs/result-manifest.md), JSON Schema in `schemas/`).
+- Submit series in batch and verify downloaded packages with `rtseg_client.py`, a standard-library Python client and command-line tool ([client](docs/client.md)).
 
-The captured deployment catalog contains 253 tasks, 182 enabled. These are snapshot counts, not guarantees for a fresh installation. The installed TotalSegmentator version, model assets, enabled list and orientation markers determine `/api/v1/models`. Disabled models remain visible with their restrictions.
+The committed metadata describes 279 tasks ([model catalog](docs/models.md)). One captured deployment catalog contained 253 tasks, 182 enabled. These are snapshot counts, not guarantees for a fresh installation. The installed TotalSegmentator version, model assets, enabled list and orientation markers determine `/api/v1/models`. Disabled models remain visible with their restrictions.
 
 ## Quick start: local GPU container
 
@@ -36,6 +42,16 @@ Open `http://localhost:8080`. Configure authenticated TLS before accepting medic
 
 Model weights, runtimes, licenses and patient images are excluded from the source tree. The base image is not a complete external-model installation. See [deployment](docs/DEPLOYMENT.md) and [containers](docs/CONTAINERS.md) for mounts and SSH configuration.
 
+## Python client
+
+```bash
+python rtseg_client.py --url http://localhost:8080 models --enabled
+python rtseg_client.py --url http://localhost:8080 submit ./CT_SERIES --model total --out ./results
+python rtseg_client.py verify ./results/JOB_ID.zip
+```
+
+The client uploads through resumable sessions, creates one job per selected series, waits, downloads each ZIP and checks it against its manifest. Headers for an authenticating proxy go in `--header` or `RTSEG_CLIENT_HEADERS`.
+
 ## Local development and checks
 
 Use Python 3.11 or newer:
@@ -50,6 +66,8 @@ WORKER_MODE=local .venv/bin/uvicorn app:app --host 127.0.0.1 --port 8080
 
 `Licence key required` identifies TotalSegmentator tasks that require a key (`licensed`). `Non-commercial weights` uses the separate catalog field `noncommercial`. Full licence notes remain in model details; research-draft wording alone does not set either badge.
 
+Build the documentation website with `pip install -r requirements-docs.txt` and `mkdocs build --strict`. Regenerate the model catalog page with `python scripts/build_model_docs.py`; a test fails when it is stale.
+
 Run the browser UI regression checks with `python3 tests/ui_browser_server.py`, open `http://127.0.0.1:18743/__qa`, and choose **Run checks**. The harness serves synthetic API responses and checks the real UI at 1024, 1280 and 1440 pixels. It does not run models. Run it in a foreground tab or a headless browser: background tabs pause the ResizeObserver that reserves space for the selection tray, so the tray checks fail there.
 
 CPU tests use synthetic images. Inference needs the separate model/runtime bundle and compatible GPU software. Colab and automatic fallback code are retained for compatibility; the documented deployment examples use local or SSH workers.
@@ -62,4 +80,12 @@ CPU tests use synthetic images. Inference needs the separate model/runtime bundl
 - `convert_validate_rtstruct.py`, `convert_masks_validate_rtstruct.py`, `rtstruct_roundtrip.py`: direct conversion and geometry checks, including overlapping masks.
 - `crop_prostate_sbrt.py`: standalone CPU crop tool.
 - `catalog/`, `labels/`, `models/manifests/`, `models/patches/`: task definitions, labels and upstream compatibility records.
+- `result_manifest.py`, `schemas/result-manifest-1.0.schema.json`: the result manifest and its JSON Schema.
+- `rtseg_client.py`: standard-library API client and command-line tool (vendored unchanged by RTpipeline).
 - [API](docs/API.md), [operations](docs/OPERATIONS.md), [model ledger](EXTERNAL_MODELS.md), [public release checklist](docs/PUBLIC_RELEASE_CHECKLIST.md).
+
+## Citing and licence
+
+Cite the RTsegmentator version you used and its archived release DOI; `CITATION.cff` carries the metadata and GitHub's "Cite this repository" formats it. Also cite each model's own publication, listed in the [model catalog](docs/models.md), the [model ledger](EXTERNAL_MODELS.md) and every result manifest.
+
+The [Apache-2.0 licence](LICENSE) covers original RTsegmentator source code only. External models, checkpoints, datasets and incorporated software remain under their own licences. See [contributing](CONTRIBUTING.md), the [code of conduct](CODE_OF_CONDUCT.md) and the [security policy](SECURITY.md).

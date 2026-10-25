@@ -1,0 +1,29 @@
+name: Model integration request
+description: Propose a segmentation model for the catalog
+labels: [model]
+body:
+  - type: input
+    id: model
+    attributes:
+      label: Model and upstream reference
+      description: Repository or publication URL.
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Input and output contract
+      description: Modality and protocol, expected anatomy, label ontology and preprocessing.
+    validations:
+      required: true
+  - type: input
+    id: license
+    attributes:
+      label: Code and weight licences
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Public validation data
+      description: Public cases that can establish orientation and RTSTRUCT geometry for this model.

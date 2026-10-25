@@ -29,6 +29,15 @@ from orientation_contract import restore_image
 from rtstruct_geometry import dicom_grid
 import viewer
 
+
+def _stream_sha256(stream):
+    # hashlib.file_digest needs Python 3.11; the portal image runs 3.10.
+    digest = hashlib.sha256()
+    for block in iter(lambda: stream.read(1 << 20), b''):
+        digest.update(block)
+    return digest.hexdigest()
+
+
 # Select tasks on fixtures that contain the labelled anatomy. All four storage
 # variants plus the original DICOM are run for each assigned task.
 TASKS = {
@@ -237,7 +246,7 @@ def main(argv=None):
                                 author = model / 'testdata' / fixture / 'reference-labels.nii.gz'
                                 expected = json.loads((APP / 'models/manifests/lnctvseg-fixture.json').read_text())
                                 with author.open('rb') as stream:
-                                    digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+                                    digest = _stream_sha256(stream)
                                 if digest != expected['reference_labels_sha256']:
                                     raise ValueError('Author reference checksum differs from the pinned fixture')
                                 row['author_dice'] = author_dice(raw, author)

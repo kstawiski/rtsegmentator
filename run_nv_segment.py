@@ -36,7 +36,12 @@ def run(command, *, cwd, env):
     if code: raise RuntimeError(f'Child exited {code}: {command[0]}')
 
 def sha256(path):
-    with Path(path).open('rb') as f: return hashlib.file_digest(f,'sha256').hexdigest()
+    # hashlib.file_digest needs Python 3.11; the portal image runs 3.10.
+    digest = hashlib.sha256()
+    with Path(path).open('rb') as f:
+        for block in iter(lambda: f.read(1 << 20), b''):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def job_environment(work, device, scratch=None):

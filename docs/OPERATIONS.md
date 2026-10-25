@@ -104,7 +104,7 @@ curl -fsS http://localhost:8080/api/v1/health
 curl -fsS http://localhost:8080/api/v1/models
 ```
 
-See [EXTERNAL_MODELS.md](../EXTERNAL_MODELS.md) for the retained numerical results and model-specific restrictions.
+See [EXTERNAL_MODELS.md](https://github.com/kstawiski/rtsegmentator/blob/main/EXTERNAL_MODELS.md) for the retained numerical results and model-specific restrictions.
 
 ## NV-Reason-CT draft reports
 
@@ -122,7 +122,7 @@ Install the isolated runtime with `scripts/bootstrap-nv-reason-ct-runtime.sh /ru
 
 Use sm_80-class or newer CUDA hardware. The worker waits up to 120 seconds for 14 GiB free before coverage/model loading and checks for 4 GiB free before generation. Resource refusal returns a reason. Model caches use `RTSEG_NV_REASON_CT_CACHE`, defaulting to `RTSEG_SCRATCH_ROOT/nv-reason-ct-cache`; use writable persistent storage for warm Triton/Inductor caches. This supports read-only model/runtime mounts. When `RTSEG_SCRATCH_ROOT` is unset, the dispatcher creates a short per-job `rtseg-*` directory under system temp and removes it on exit. Configured scratch longer than 60 bytes uses a separate short directory for child `TMPDIR`, `TEMP` and `TMP`; an unwritable setting also redirects scratch there. The runner logs each configured-path fallback. This leaves room for nnU-Net's multiprocessing Unix sockets. Output locations are unchanged; configured scratch and persistent caches are not deleted. Forced termination with SIGKILL cannot run exit cleanup, so inspect abandoned `rtseg-*` directories after a forced stop.
 
-Enable the task through `ENABLED_EXTERNAL_MODELS` or the enabled-model file in local mode. The marker at `validation/nv_reason_ct_report.json` requires `status: "passed"`, the pinned `revision`, checks `chest`, `abdomen`, `pelvis`, `cbct`, and `coverage_mode` matching the configured mode. Older markers without a mode attest only `full`. Remote tasks use the remote worker's marker. Reports and input share job retention; retained remote results after failed retrieval also need operator retention. See the [ledger](../EXTERNAL_MODELS.md) for observed diagnostic failures and historical GPU measurements.
+Enable the task through `ENABLED_EXTERNAL_MODELS` or the enabled-model file in local mode. The marker at `validation/nv_reason_ct_report.json` requires `status: "passed"`, the pinned `revision`, checks `chest`, `abdomen`, `pelvis`, `cbct`, and `coverage_mode` matching the configured mode. Older markers without a mode attest only `full`. Remote tasks use the remote worker's marker. Reports and input share job retention; retained remote results after failed retrieval also need operator retention. See the [ledger](https://github.com/kstawiski/rtsegmentator/blob/main/EXTERNAL_MODELS.md) for observed diagnostic failures and historical GPU measurements.
 
 
 ## Automatic NV-Segment tasks
@@ -156,7 +156,7 @@ Delete job asks for confirmation and removes the job's images, results and logs.
 
 ## NPC nodal CTV technical audit
 
-`lnctvseg_nnunet_v1` has a pinned, strictly loadable nnU-Net v1 checkpoint and job-local model staging. It exports IDs 1–6 unchanged with their published names. The checkpoint also predicts an undocumented class 7, which is omitted without merging or relabelling. Every job records its voxel count and volume in conversion notes, job details and `lnctvseg_nnunet_v1/OMITTED_LABELS.txt` in the result ZIP, including zero volume. Preflight and execution require GPU acceptance tied to the current manifest digest. SwinUNETR loads strictly but lacks a verified LNCTVSeg preprocessing contract; it and the two UX-Net variants remain informational. The authors distribute weights without a separate weight licence. See the [model ledger](../EXTERNAL_MODELS.md).
+`lnctvseg_nnunet_v1` has a pinned, strictly loadable nnU-Net v1 checkpoint and job-local model staging. It exports IDs 1–6 unchanged with their published names. The checkpoint also predicts an undocumented class 7, which is omitted without merging or relabelling. Every job records its voxel count and volume in conversion notes, job details and `lnctvseg_nnunet_v1/OMITTED_LABELS.txt` in the result ZIP, including zero volume. Preflight and execution require GPU acceptance tied to the current manifest digest. SwinUNETR loads strictly but lacks a verified LNCTVSeg preprocessing contract; it and the two UX-Net variants remain informational. The authors distribute weights without a separate weight licence. See the [model ledger](https://github.com/kstawiski/rtsegmentator/blob/main/EXTERNAL_MODELS.md).
 
 The public `lnctvseg-example-hn-ct/dicom` fixture covers the head and neck. It is assigned to LNCTVSeg, HNLNL, LN-Seg-FM and compatible H&N OAR tasks in `catalog/orientation-audit-fixtures.json`. A fixture assignment is not a successful inference result. The case belongs to the authors' development cohort.
 
@@ -174,7 +174,7 @@ The audit records elapsed time and peak task-process GPU allocation sampled ever
 
 The Ubuntu 22.04 image installs `libxrender1` for `libXrender.so.1`, needed by OpenCV in the CERR prostate runtime. The [Jammy package file list](https://packages.ubuntu.com/jammy/amd64/libxrender1/filelist) confirms the mapping. The Dockerfile keeps each image-library package on its own line; its regression test maintains the required package set. Rebuild the image to apply this change.
 
-The catalog flag `postprocess_on_cpu` moves `pred` to CPU immediately before the first postprocessing inversion/resampling operation. `Invertd` also returns its tensor on CPU. The network, sliding-window inference and preceding softmax retain their official devices. JSON and YAML bundles receive a job-local JSON compatibility copy; installed bundle files remain unchanged. Host RAM replaces VRAM for multi-channel inversion, with possible numerical differences and longer postprocessing. This does not address GPU memory use in inference or softmax. See the per-bundle decisions in [EXTERNAL_MODELS.md](../EXTERNAL_MODELS.md#monai-postprocessing-device-decisions).
+The catalog flag `postprocess_on_cpu` moves `pred` to CPU immediately before the first postprocessing inversion/resampling operation. `Invertd` also returns its tensor on CPU. The network, sliding-window inference and preceding softmax retain their official devices. JSON and YAML bundles receive a job-local JSON compatibility copy; installed bundle files remain unchanged. Host RAM replaces VRAM for multi-channel inversion, with possible numerical differences and longer postprocessing. This does not address GPU memory use in inference or softmax. See the per-bundle decisions in [EXTERNAL_MODELS.md](https://github.com/kstawiski/rtsegmentator/blob/main/EXTERNAL_MODELS.md#monai-postprocessing-device-decisions).
 
 A manager can compare the production invocation with the flag off and on on an authorized GPU host:
 
