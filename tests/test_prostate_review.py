@@ -139,7 +139,8 @@ def test_review_m3_all_declared_artifacts_are_packaged(portal, empty):
     (job / 'output/unselected_RTSTRUCT.dcm.provenance.json').write_text('{}')
     portal.finalize_results(job, tasks if empty else ())
     with zipfile.ZipFile(job / 'rtstruct-results.zip') as archive:
-        assert set(archive.namelist()) == expected | ({'NO_STRUCTURES_FOUND.txt'} if empty else set())
+        assert set(archive.namelist()) == expected | {'rtsegmentator_manifest.json'} | (
+            {'NO_STRUCTURES_FOUND.txt'} if empty else set())
 
 
 def test_review_m3_download_size_bound(portal, monkeypatch):

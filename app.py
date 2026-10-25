@@ -34,6 +34,8 @@ from starlette.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 
 from crop_prostate_sbrt import NoSelectedROIError, crop_ct_rtstruct, discover_dicom
+import result_manifest
+from rtseg_version import __version__
 from viewer import ViewerService
 from mri_inputs import (mr_instance, image_types, finish_mr_series, public_mr_fields, role_contract,
                         resolve_roles, input_directories, input_identity)
@@ -87,7 +89,7 @@ TASK_MONITOR_SECONDS = 5
 TASK_STOP_GRACE_SECONDS = int(os.environ.get("TASK_STOP_GRACE_SECONDS", "45"))
 BASE.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="DICOM RT Segmentation Portal", version="1.0.0",
+app = FastAPI(title="RTsegmentator DICOM RT Segmentation Portal", version=__version__,
               docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json")
 STRUCTURE_CATALOG = json.loads((Path(__file__).resolve().parent / "catalog/structures.json").read_text())
 NODAL_DESCRIPTIVE_FIELDS = frozenset({
@@ -1423,15 +1425,25 @@ def finalize_results(job: Path, empty=()):
         raise ValueError("Result artifacts must be files inside the output directory")
     if sum(path.stat().st_size for path in artifacts) > MAX_RESULT_BYTES:
         raise ValueError("Result artifacts exceed the configured download size limit")
+    members = [(result.relative_to(output).as_posix(), result) for result in artifacts]
+    if empty:
+        members.append(("NO_STRUCTURES_FOUND.txt",
+                        ("These models ran to completion but found no structures in the selected series, "
+                         "so no RTSTRUCT was created for them:\n" + "".join(f"- {name}\n" for name in empty)).encode()))
+    if omissions:
+        members.append(("CONVERSION_NOTES.txt", ("\n".join(omissions) + "\n").encode()))
+    record = metadata(job)
+    manifest = result_manifest.build_manifest(
+        record, members, version=__version__, catalog=manifest_catalog(record.get("models", [])),
+        structure_catalog=STRUCTURE_CATALOG, empty_models=empty,
+        notes=list(record.get("postprocess_notes", [])) + omissions, created=time.time())
     with zipfile.ZipFile(job/"rtstruct-results.zip","w",zipfile.ZIP_DEFLATED) as z:
-        for result in artifacts:
-            z.write(result, result.relative_to(job / "output").as_posix())
-        if empty:
-            z.writestr("NO_STRUCTURES_FOUND.txt",
-                       "These models ran to completion but found no structures in the selected series, "
-                       "so no RTSTRUCT was created for them:\n" + "".join(f"- {name}\n" for name in empty))
-        if omissions:
-            z.writestr("CONVERSION_NOTES.txt", "\n".join(omissions) + "\n")
+        for name, source in members:
+            if isinstance(source, Path):
+                z.write(source, name)
+            else:
+                z.writestr(name, source)
+        z.writestr(result_manifest.MANIFEST_NAME, result_manifest.dumps(manifest))
     # Retain the selected input for the viewer until job retention or explicit deletion.
     for name in input_directories(metadata(job)):
         if name != 'input':
@@ -1452,6 +1464,14 @@ def finalize_results(job: Path, empty=()):
     if notes: detail += "; " + "; ".join(notes)
     save_metadata(job,status="complete",detail=detail,progress=100,no_structures_found=empty,
                   conversion_notes=omissions)
+
+def manifest_catalog(models) -> dict:
+    """Descriptive model fields for the result manifest, from static metadata and the cached catalog.
+
+    Finalization never rebuilds the catalog; a model absent from the cache keeps its static fields."""
+    cached = {item.get("name"): item for item in (catalog_state.get("value") or {}).get("tasks", [])}
+    return {name: {**model_details(name), **NODAL_MODEL_DETAILS.get(name, {}), **cached.get(name, {})}
+            for name in models}
 
 def validate_postprocess(value: str, models: list[str]) -> list[str]:
     if not value: return []
@@ -3160,10 +3180,25 @@ def retry_job(jid: str):
 @app.get("/api/jobs/{jid}/download")
 @app.get("/api/v1/jobs/{jid}/result", tags=["automation"])
 def download(jid: str):
+    if not re.fullmatch(r"[A-Za-z0-9-]+", jid): raise HTTPException(404)
     job=BASE/jid; data=metadata(job); result=job/"rtstruct-results.zip"
     if data["status"]!="complete" or not result.exists(): raise HTTPException(409,"Result is not ready")
     filename = f"{jid}-prostate-SBRT-crop.zip" if data.get("tool") else f"{jid}-RTSTRUCT.zip"
     return FileResponse(result,filename=filename,media_type="application/zip")
+
+@app.get("/api/v1/jobs/{jid}/manifest", tags=["automation"])
+def get_result_manifest(jid: str):
+    """The result manifest packaged in the job's ZIP (segmentation jobs only)."""
+    if not re.fullmatch(r"[A-Za-z0-9-]+", jid): raise HTTPException(404)
+    job = BASE / jid; data = metadata(job); result = job / "rtstruct-results.zip"
+    if data["status"] != "complete" or not result.exists(): raise HTTPException(409, "Result is not ready")
+    try:
+        with zipfile.ZipFile(result) as archive:
+            content = archive.read(result_manifest.MANIFEST_NAME)
+    except KeyError:
+        raise HTTPException(404, "This result package has no manifest")
+    return Response(content, media_type="application/json")
+
 
 def report_file(jid, extension):
     if not re.fullmatch(r"[A-Za-z0-9-]+", jid): raise HTTPException(404)

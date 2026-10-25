@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:rtsegmentator:schema:result-manifest:1.0",
+  "title": "RTsegmentator result manifest",
+  "description": "Packaged as rtsegmentator_manifest.json at the root of every segmentation result ZIP. Lists every other member with its size and SHA-256, the source image series and, per requested model, the outcome, exact RTSTRUCT ROI names, catalog label contract and licence text.",
+  "type": "object",
+  "required": ["schema", "schema_version", "generator", "created_utc", "job", "source_series", "models", "files", "notes"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "rtsegmentator.result-manifest"},
+    "schema_version": {"type": "string", "pattern": "^1\\.[0-9]+$"},
+    "generator": {
+      "type": "object",
+      "required": ["name", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"const": "RTsegmentator"},
+        "version": {"type": "string", "minLength": 1}
+      }
+    },
+    "created_utc": {"type": ["string", "null"], "format": "date-time"},
+    "job": {
+      "type": "object",
+      "required": ["id", "models"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Za-z0-9-]+$"},
+        "created_utc": {"type": ["string", "null"], "format": "date-time"},
+        "batch_id": {"type": ["string", "null"]},
+        "batch_index": {"type": ["integer", "null"], "minimum": 1},
+        "batch_size": {"type": ["integer", "null"], "minimum": 1},
+        "models": {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z0-9_]+$"}},
+        "postprocess": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "source_series": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "series_instance_uid": {"type": "string"},
+        "modality": {"enum": ["CT", "MR", "PT"]},
+        "slices": {"type": "integer", "minimum": 0},
+        "rows": {"type": "integer", "minimum": 0},
+        "columns": {"type": "integer", "minimum": 0},
+        "cbct": {"type": "boolean"}
+      }
+    },
+    "input_roles": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "series_instance_uid": {"type": "string"},
+          "selection_method": {"type": "string"},
+          "b_value": {"type": "number"}
+        }
+      }
+    },
+    "paired_ct_series_key": {"type": "string"},
+    "models": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "structure_kind", "catalog_structures", "outcome"],
+        "properties": {
+          "name": {"type": "string", "pattern": "^[A-Za-z0-9_]+$"},
+          "structure_kind": {"enum": ["fixed", "variable", "prompted", "report", "unresolved"]},
+          "catalog_structures": {"type": "array", "items": {"type": "string"}},
+          "outcome": {"enum": ["rtstruct", "no_structures_found", "report", "no_rtstruct"]},
+          "rtstruct": {
+            "type": "object",
+            "required": ["path", "roi_names", "roi_count", "frame_of_reference_uids", "referenced_series_instance_uids"],
+            "additionalProperties": false,
+            "properties": {
+              "path": {"type": "string"},
+              "sop_instance_uid": {"type": ["string", "null"]},
+              "roi_names": {"type": "array", "items": {"type": "string"}},
+              "roi_count": {"type": "integer", "minimum": 0},
+              "frame_of_reference_uids": {"type": "array", "items": {"type": "string"}},
+              "referenced_series_instance_uids": {"type": "array", "items": {"type": "string"}}
+            }
+          },
+          "sidecars": {"type": "array", "items": {"type": "string"}},
+          "requested": {"type": "boolean"},
+          "description": {"type": "string"},
+          "reference": {"type": "string"},
+          "license": {"type": ["string", "object"]},
+          "license_note": {"type": "string"},
+          "code_license": {"type": "string"},
+          "weights_license": {"type": "string"},
+          "noncommercial": {"type": "boolean"},
+          "licensed": {"type": "boolean"},
+          "limitations": {"type": "string"},
+          "output": {"type": "string"},
+          "modality": {"type": "string"}
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"outcome": {"const": "rtstruct"}}},
+            "then": {"required": ["rtstruct"]}
+          }
+        ]
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "size", "sha256"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "size": {"type": "integer", "minimum": 0},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    },
+    "notes": {"type": "array", "items": {"type": "string"}}
+  }
+}
