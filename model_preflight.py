@@ -460,7 +460,7 @@ REQUIREMENTS["totalsegmentator2d_projection_ct"] = [
     "validation/totalsegmentator2d_projection_ct.json"]
 
 
-REQUIREMENTS["nv_reason_ct_report"] = ["@run_nv_reason_ct.py", "@nv_reason_ct_report.py",
+REQUIREMENTS["nv_reason_ct_report"] = ["@run_nv_reason_ct.py", "@nv_reason_ct_report.py", "@ct_padding.py",
     "@labels/nv-reason-ct-organs.json", "envs/nv-reason-ct/bin/python",
     *[f"weights/nv-reason-ct/{NV_REASON_REVISION}/{name}" for name in (
         "model.safetensors", "model.py", "processor.py", "config.json", "tokenizer.json",
@@ -473,7 +473,7 @@ REQUIREMENTS["nv_reason_ct_report"] = ["@run_nv_reason_ct.py", "@nv_reason_ct_re
 NV_SEGMENT_MANIFEST = json.loads((APP_ROOT / "nv_segment_manifest.json").read_text())["modes"]
 for _task, _spec in NV_SEGMENT_MODES.items():
     REQUIREMENTS[_task] = [
-        "@run_nv_segment.py", "@nv_segment_bundle.py", "@nv_segment_logic.py",
+        "@run_nv_segment.py", "@nv_segment_bundle.py", "@nv_segment_logic.py", "@ct_padding.py",
         "@nv_segment_manifest.json", f"@labels/{_task}.json", "envs/lnq/bin/python",
         *[f"{_spec['source']}/{name}" for name in NV_SEGMENT_MANIFEST[_task]["source_files"]],
         f"weights/vista3d/{_spec['bundle']}/model.pt", f"validation/{_task}.json",
