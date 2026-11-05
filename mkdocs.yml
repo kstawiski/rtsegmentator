@@ -8,6 +8,7 @@ copyright: RTsegmentator contributors · Apache-2.0 (source code only; models ke
 
 theme:
   name: material
+  font: false
   palette:
     - scheme: default
       primary: teal
@@ -46,6 +47,12 @@ markdown_extensions:
 
 plugins:
   - search
+
+extra_css:
+  - stylesheets/radioonkolog.css
+
+extra_javascript:
+  - javascripts/a11y.js
 
 nav:
   - Home: index.md

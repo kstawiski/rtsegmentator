@@ -38,9 +38,14 @@ NV_CURAND_PIN = "nvidia-curand==" + ".".join(("10", "4", "0", "35"))
 
 
 # The bundled interface font (SIL Open Font License, static/fonts/OFL.txt) is the only binary source, pinned by content.
+# docs/assets/fonts/ carries byte-identical copies so the public Pages site can
+# serve Open Sans offline (docs/ is the only tree MkDocs publishes); no new
+# binary content is admitted by these entries.
 APPROVED_BINARIES = {
     "static/fonts/open-sans-latin-wght-normal.woff2": "d8e4fe0452aa2076429a9bb5d8757d00a994dd95986cf950e9a1a371b9a072a0",
     "static/fonts/open-sans-latin-ext-wght-normal.woff2": "d5bab8e28732fe3d10dcef4f77b9c248605bbb2a87d289a2539251ceafab536a",
+    "docs/assets/fonts/open-sans-latin-wght-normal.woff2": "d8e4fe0452aa2076429a9bb5d8757d00a994dd95986cf950e9a1a371b9a072a0",
+    "docs/assets/fonts/open-sans-latin-ext-wght-normal.woff2": "d5bab8e28732fe3d10dcef4f77b9c248605bbb2a87d289a2539251ceafab536a",
 }
 
 
@@ -111,7 +116,9 @@ def test_nv_sacral_label_exception_is_limited_to_exact_label_files():
 def test_binary_exception_is_limited_to_the_pinned_font_files():
     assert set(APPROVED_BINARIES) <= set(public_files())
     for name, digest in APPROVED_BINARIES.items():
-        assert name.startswith("static/fonts/") and name.endswith(".woff2")
+        assert name.split("/")[-1] in {
+            "open-sans-latin-wght-normal.woff2", "open-sans-latin-ext-wght-normal.woff2"}
+        assert name.startswith(("static/fonts/", "docs/assets/fonts/")) and name.endswith(".woff2")
         assert hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == digest
 
 
