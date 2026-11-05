@@ -62,6 +62,7 @@ nav:
     - GTRC-Net PET/CT: GTRC_NET.md
     - LNQ atlas adapter: LNQ_ATLAS_ADAPTER.md
     - HippUnfold: HIPPUNFOLD.md
+    - BiomedParse: BIOMEDPARSE.md
     - Choi label review: CHOI_LABEL_REVIEW.md
   - Deployment:
     - Deployment: DEPLOYMENT.md
