@@ -2,7 +2,8 @@
  * ("Radioonkolog" theme, v1). Intended to be copied verbatim by sibling
  * project documentation sites (rtPipeline) so both public Pages look alike.
  * Applies on top of MkDocs Material. No external requests: Open Sans is
- * served from ../assets/fonts (SIL OFL, see ../../../static/fonts/OFL.txt).
+ * served from ../assets/fonts (SIL OFL, full text bundled alongside the
+ * fonts at ../assets/fonts/OFL.txt; canonical source static/fonts/OFL.txt).
  *
  * Tokens (exact, from the reference stylesheet):
  *   --ro-teal-deep #00525C  primary: headings, links, buttons, header accents
