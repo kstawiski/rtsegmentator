@@ -215,10 +215,13 @@ def test_whole_job_ssh_forwards_remote_environment(portal, monkeypatch):
         def __init__(self, command, **kwargs): calls.append(command)
         def poll(self): return 0
     monkeypatch.setattr(portal.subprocess, 'Popen', Process)
+    resets = []
+    monkeypatch.setattr(portal.subprocess, 'run', lambda command, **kwargs: resets.append(command))
     for name in ['prepare_worker_job', 'retrieve_worker_results', 'remove_worker_job', 'finalize_results']:
         monkeypatch.setattr(portal, name, lambda *args: None)
     portal.process(job)
     assert len(calls) == 1
+    assert any('rm -rf --' in command[-1] for command in resets)
     args = shlex.split(calls[0][-1])
     assert all(f'{key}={value}' in args for key, value in expected.items())
 

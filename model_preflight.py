@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 import biomedparse
+from ct_padding import CT_PADDING_TASKS
 from choi_ontology import confirmed_labels
 from run_lnq_atlas import (lnq_python, total_python as lnq_total_python, total_weights_root as lnq_total_weights,
                            MODEL_RELATIVE as LNQ_MODEL, ATLAS_FILES as LNQ_ATLAS_FILES,
@@ -507,6 +508,10 @@ for task in GTRC_TASKS:
 
 
 REQUIREMENTS[biomedparse.TASK] = biomedparse.requirements()
+
+for _task in CT_PADDING_TASKS:
+    REQUIREMENTS[_task].append("@ct_padding.py")
+
 
 def audit(tasks=None) -> dict[str, dict]:
     report = {}

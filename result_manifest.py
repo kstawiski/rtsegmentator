@@ -144,13 +144,13 @@ def build_manifest(job: Mapping, members: Iterable[tuple[str, bytes | Path]], *,
             "catalog_structures": list(contract.get("names", details.get("structure_names", [])) or []),
             **{key: details[key] for key in MODEL_FIELDS if details.get(key) not in (None, "")},
         }
-        if name in rtstructs:
+        if name in empty:
+            entry["outcome"] = "no_structures_found"
+        elif name in rtstructs:
             entry["outcome"] = "rtstruct"
             entry["rtstruct"] = rtstructs[name]
         elif details.get("output") == "report":
             entry["outcome"] = "report"
-        elif name in empty:
-            entry["outcome"] = "no_structures_found"
         else:
             entry["outcome"] = "no_rtstruct"
         # Orientation evidence, lesion tables, provenance and spatial maps share the

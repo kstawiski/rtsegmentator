@@ -68,7 +68,8 @@ def test_transfer_and_task_scoped_retrieval_cleanup(portal, monkeypatch):
     tar = next(c for c in calls if c[0] == 'tar')
     assert tar[5:] == portal.worker_archive_members(job, [TASK])
     retrieval = next(i for i,c in enumerate(calls) if c[0] == 'scp')
-    cleanup = next(i for i,c in enumerate(calls) if c[0] == 'ssh' and 'rm -rf' in c[-1])
+    # The first rm -rf resets this task's output before the transfer; the last removes the worker job.
+    cleanup = max(i for i,c in enumerate(calls) if c[0] == 'ssh' and 'rm -rf' in c[-1])
     assert calls[retrieval][-2].endswith('/output/report')
     assert retrieval < cleanup
     assert contour.read_bytes() == b'keep me'
@@ -76,11 +77,12 @@ def test_transfer_and_task_scoped_retrieval_cleanup(portal, monkeypatch):
     assert not portal.metadata(job)['remote_results_retained']
     calls.clear()
     portal.retrieve_worker_results(job, '/jobs/test', 'body')
-    assert calls[0][-2].endswith('/output/body_RTSTRUCT.dcm*')
+    assert next(c for c in calls if c[0] == 'scp')[-2].endswith('/output/body_RTSTRUCT.dcm*')
 
 
 def test_failed_retrieval_retains_remote_directory(portal, monkeypatch):
     job = job_at(portal, [TASK]); (job / 'output/total_RTSTRUCT.dcm').write_bytes(b'keep')
+    monkeypatch.setattr(portal, 'reset_task_output', lambda *args: None)
     monkeypatch.setattr(portal, 'prepare_worker_job', lambda *args: None)
     monkeypatch.setattr(portal, 'run_worker_task', lambda *args: None)
     def fail(*args): raise RuntimeError('worker disconnected')
@@ -268,6 +270,7 @@ def test_remote_native_preflight_is_authoritative(portal,monkeypatch):
 def test_slow_worker_cleanup_after_retrieval_does_not_fail_task(portal, monkeypatch):
     job = job_at(portal, [TASK])
     monkeypatch.setattr(portal, 'prepare_worker_job', lambda *args: None)
+    monkeypatch.setattr(portal, 'reset_task_output', lambda *args: None)
     monkeypatch.setattr(portal, 'run_worker_task', lambda *args: None)
     retrieved = []
     monkeypatch.setattr(portal, 'retrieve_worker_results', lambda *args: retrieved.append(args))
@@ -335,6 +338,7 @@ def test_routed_gtrc_petct_empty_prediction_retrieves_prefixed_sidecars_and_reco
     job = job_at(portal, [task_name])
     monkeypatch.setattr(portal, 'REMOTE_GPU_TASKS', {task_name})
     monkeypatch.setattr(portal, 'prepare_worker_job', lambda *args: None)
+    monkeypatch.setattr(portal, 'reset_task_output', lambda *args: None)
     def run_empty(*args):
         raise RuntimeError(f'{task_name}: empty prediction: no RTSTRUCT created')
     monkeypatch.setattr(portal, 'run_worker_task', run_empty)

@@ -168,6 +168,8 @@ def test_result_allowlist_and_empty_zip(portal, tmp_path, monkeypatch):
     import zipfile
     with zipfile.ZipFile(job / 'rtstruct-results.zip') as archive:
         assert bp.artifact_names(bp.TASK)[0] in archive.namelist()
+        manifest = json.loads(archive.read('rtsegmentator_manifest.json'))
+        assert manifest['models'][0]['outcome'] == 'no_structures_found'
         assert 'NO_STRUCTURES_FOUND.txt' in archive.namelist()
         assert 'object not detected' in archive.read('CONVERSION_NOTES.txt').decode()
 

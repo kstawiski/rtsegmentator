@@ -108,6 +108,11 @@ def dispatch(tmp_path, monkeypatch, synthetic_ct, audit=False, marker=True, moda
     class Process:
         def __init__(self, command, **kwargs):
             calls.append((command, kwargs))
+            if command[1] == str(ROOT / 'dicom_series_to_nifti.py'):
+                # The dispatcher now reads the converted CT before starting inference.
+                with monkeypatch.context() as context:
+                    context.setattr(sys, 'argv', command[1:])
+                    runpy.run_path(command[1], run_name='__main__')
             if command[1] == str(ROOT / 'run_lnctvseg.py'):
                 prediction = Path(command[command.index('--output') + 1]) / 'case.nii.gz'
                 nib.save(nib.Nifti1Image(np.arange(8, dtype=np.uint8).reshape(2, 2, 2),
@@ -389,9 +394,10 @@ def test_routed_task_retrieves_omission_notes_with_rtstruct(tmp_path, portal, mo
     job = tmp_path / 'job'
     job.mkdir()
     calls = []
-    monkeypatch.setattr(portal.subprocess, 'run', lambda command, **kwargs: calls.append(command))
+    monkeypatch.setattr(portal.subprocess, 'run', lambda command, **kwargs:
+                        calls.append(command) or subprocess.CompletedProcess(command, 0))
     portal.retrieve_worker_results(job, '/jobs/synthetic', task=bundle.TASK)
-    assert calls == [['scp', '-q', '-r',
+    assert [command for command in calls if command[0] == 'scp'] == [['scp', '-q', '-r',
         f'{portal.WORKER}:/jobs/synthetic/output/{bundle.TASK}_RTSTRUCT.dcm*',
         f'{portal.WORKER}:/jobs/synthetic/output/{bundle.TASK}', str(job / 'output') + '/']]
 

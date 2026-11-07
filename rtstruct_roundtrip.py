@@ -133,6 +133,57 @@ def source_plane_geometry(source_slices):
             for k, ds in enumerate(source_slices)}
 
 
+def _in_plane_coordinates(delta, column, row, normal, dx, dy):
+    # Accepted direction cosines may be rounded or slightly non-orthogonal.
+    # Invert their actual basis rather than treating its transpose as inverse.
+    basis = np.column_stack((column * dx, row * dy, normal))
+    return np.linalg.solve(basis, delta.T).T[:, :2]
+
+
+def validate_contour_extent(xy, shape):
+    """Pixel centres span 0..N-1; physical voxel edges span -0.5..N-0.5.
+
+    Allow 0.0001 voxel for DS serialization and projection rounding, beyond
+    the half voxel needed for genuine edge-based contours at image borders.
+    """
+    tolerance = 1e-4
+    if (not np.isfinite(xy).all() or np.any(xy < -0.5 - tolerance)
+            or np.any(xy > np.asarray(shape[:2]) - 0.5 + tolerance)):
+        raise ValueError("contour vertex outside source image extent")
+
+
+def validate_rtstruct_extent(ds, source_slices):
+    """Check every saved vertex against its referenced image's voxel edges."""
+    geometry = source_plane_geometry(source_slices)
+    images = {str(image.SOPInstanceUID): image for image in source_slices}
+    for roi in getattr(ds, "ROIContourSequence", []):
+        for contour in getattr(roi, "ContourSequence", []):
+            refs = [str(image.ReferencedSOPInstanceUID)
+                    for image in getattr(contour, "ContourImageSequence", [])]
+            if len(refs) != 1 or refs[0] not in geometry:
+                raise ValueError("contour must reference exactly one source SOP Instance UID")
+            values = getattr(contour, "ContourData", None)
+            if not has_coordinates(values):
+                raise ValueError("empty contour coordinates")
+            points = np.asarray(values, dtype=float).reshape(-1, 3)
+            if not np.isfinite(points).all():
+                raise ValueError("invalid contour coordinates")
+            _, origin, column, row, normal, dx, dy, step = geometry[refs[0]]
+            image = images[refs[0]]
+            delta = points - origin
+            xy = _in_plane_coordinates(delta, column, row, normal, dx, dy)
+            validate_contour_extent(xy, (int(image.Columns), int(image.Rows)))
+            if not np.isfinite(step):
+                step = float(getattr(image, "SliceThickness", 0) or 0)
+            if not np.isfinite(step) or step < 0:
+                raise ValueError("invalid source image slice extent")
+            # A single image without a declared thickness defines a plane;
+            # retain a small absolute allowance for projected DS coordinates.
+            allowance = 0.5 * step + 1e-4 * (step if step > 0 else 1)
+            if np.any(np.abs(delta @ normal) > allowance):
+                raise ValueError("contour vertex outside source image slice extent")
+
+
 def validate_roi_roundtrip(roi_contour, mask_image, expected_mask,
                            minimum_dice: float = 0.95, *, source_slices=None,
                            source_geometry=None) -> dict:
@@ -187,7 +238,7 @@ def validate_roi_roundtrip(roi_contour, mask_image, expected_mask,
                 plane = by_uid[refs[0]]
             k, origin, column, row, normal, dx, dy, neighbor_step = plane
             delta = lps - origin
-            xy = np.column_stack((delta @ column / dx, delta @ row / dy))
+            xy = _in_plane_coordinates(delta, column, row, normal, dx, dy)
             # Large gaps must not relax the original plane tolerance.
             step = min(float(mask_image.header.get_zooms()[2]), neighbor_step)
             slice_positions = k + (delta @ normal) / step
@@ -196,6 +247,8 @@ def validate_roi_roundtrip(roi_contour, mask_image, expected_mask,
         if np.max(np.abs(slice_positions - k)) > 0.05:
             grid = "DICOM source" if by_uid is not None else "NIfTI"
             raise ValueError(f"contour is not planar on the {grid} voxel grid")
+        # Check before rounding or clipping: exterior fragments must not vanish.
+        validate_contour_extent(xy, shape)
         polygons_by_slice.setdefault(k, []).append(
             np.rint(xy).astype(np.int32)
         )

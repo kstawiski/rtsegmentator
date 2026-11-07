@@ -221,7 +221,7 @@ def test_converter_json_and_file_equal_frozen_3600f83(synthetic_ct, tmp_path, mo
     [[-5, 5], [45, 8], [20, 48]],
     [[35, 44], [40, 44], [40, 50], [35, 50]],
 ])
-def test_contours_outside_expected_box_and_grid_keep_dice(xy):
+def test_contours_outside_grid_are_refused_before_clipping(xy):
     mask = np.zeros((32, 40, 4), bool)
     mask[12:17, 15:20, 1] = True
     image = nib.Nifti1Image(mask.astype(np.uint8), np.diag([-1., -1., 1., 1.]))
@@ -232,12 +232,9 @@ def test_contours_outside_expected_box_and_grid_keep_dice(xy):
     roi = pydicom.dataset.Dataset(); roi.ContourSequence = [contour]
     box = mask_box(mask)
     expected = CroppedMask(mask[box], tuple(s.start for s in box), mask.shape)
-    assert validate_roi_roundtrip(roi, image, expected, 0) == full_volume_reference(roi, image, mask, 0)
-    with pytest.raises(ValueError) as before:
-        full_volume_reference(roi, image, mask)
-    with pytest.raises(ValueError) as after:
-        validate_roi_roundtrip(roi, image, expected)
-    assert str(after.value) == str(before.value)
+    for threshold in (0, .95):
+        with pytest.raises(ValueError, match='outside source image extent'):
+            validate_roi_roundtrip(roi, image, expected, threshold)
 
 
 @pytest.mark.parametrize('token', [b'1.2.3', b'1e+', b'+', b'1 2'])

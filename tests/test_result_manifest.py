@@ -307,8 +307,10 @@ def test_job_ids_from_the_portal_are_validated(job_id, tmp_path):
 
 
 def test_upload_refuses_a_file_that_shrinks(tmp_path):
-    chunk = 1 << 16  # larger than the read buffer, so each chunk is read from the file
     path = tmp_path / "slice.dcm"
+    path.touch()
+    # Python may use the filesystem block size for its read buffer.
+    chunk = max(1 << 16, path.stat().st_blksize)
     path.write_bytes(b"x" * (4 * chunk))
     client = rtseg_client.RTsegClient("http://portal.test")
 

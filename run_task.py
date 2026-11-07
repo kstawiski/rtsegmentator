@@ -45,6 +45,7 @@ from gtrc_models import TASKS as GTRC_TASKS, run_task as run_gtrc_task
 from structure_labels import spec_labels, repo_label_path, INLINE_LABELS, sct_matched_name
 from monai_bundle import compatible_config, bundle_command
 from task_progress import Progress, command_stage
+from ct_padding import CT_PADDING_TASKS, CT_AIR_HU, acquired_ct_model_input
 progress = Progress()
 
 job=Path(sys.argv[1]); task=sys.argv[2]
@@ -140,6 +141,22 @@ def run(cmd, env=None, cwd=None):
     child = None
     if code:
         raise SystemExit(code)
+    # All selected CT runners consume this job-local conversion, before any image-derived statistics.
+    if (task in CT_PADDING_TASKS and len(cmd) == 4
+            and cmd[1] == str(APP_ROOT / "dicom_series_to_nifti.py")):
+        from dicom_series import ordered_dicom_files
+        modalities = {str(pydicom.dcmread(path, stop_before_pixels=True,
+                                         specific_tags=["Modality"]).Modality)
+                      for path in ordered_dicom_files(cmd[2])}
+        if modalities == {"CT"}:
+            import nibabel as nib
+            replaced, residual = acquired_ct_model_input(nib.load(cmd[3]), cmd[3], slice_axis=2)
+            print(json.dumps({"task": task, "ct_padding_replaced_voxels": replaced,
+                              "ct_padding_residual_low_voxels": residual,
+                              "ct_padding_fill_hu": CT_AIR_HU}), flush=True)
+            if residual:
+                print(f"WARNING: ct_padding_residual_low_voxels={residual}: recognised exterior low values remain",
+                      file=sys.stderr, flush=True)
     if stage != "rtstruct_contours":
         progress.emit(stage, 1, 1, force=True)
 
@@ -197,7 +214,14 @@ def identify_rtstruct(path: Path, model_name: str):
     ds.StructureSetName = display
     ds.StructureSetDescription = f"RTsegmentator model {model_name}"[:64]
     ds.SeriesDescription = display
-    ds.save_as(path, enforce_file_format=True)
+    # Publish atomically: a kill during this rewrite must leave the validated file in place.
+    root = path.parent.parent
+    if not os.access(root, os.W_OK | os.X_OK) or root.stat().st_dev != path.parent.stat().st_dev:
+        root = path.parent
+    with tempfile.TemporaryDirectory(prefix=".rtstruct-partial-", dir=root) as work:
+        partial = Path(work) / "partial.dcm"
+        ds.save_as(partial, enforce_file_format=True)
+        os.replace(partial, path)
 
 signal.signal(signal.SIGTERM, stop_child)
 signal.signal(signal.SIGINT, stop_child)

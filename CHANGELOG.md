@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+- Prepare reconstruction-field fill for the 12 listed CT tasks on acquired slices
+  only. Replace each slice's most frequent exterior value with air, preserve other
+  low values, and log and warn about residual exterior low voxels. NV-Segment retains
+  its base head-foot-axis detection and replacement of every recognised exterior voxel.
+- Stage RTSTRUCTs outside result collection, validate them and write the export record
+  before atomic publication. Clear task output before reruns while preserving completed
+  results needed for report retry. Exclude empty models' RTSTRUCTs and orientation records
+  from packages, keep the tables and maps those runs wrote, and record empty outcomes before checking for files in the manifest.
+- Treat confirmed task-scoped remote file absence as empty retrieval while preserving
+  transport failures. Report named empty inputs that reach either converter in conversion
+  and manifest notes, one line per model, outside the job status line; earlier task exits
+  may supply only model-level empty reporting. Clear a task's remote output without relying
+  on the worker's login shell.
+- Check saved study, series, frame, image and SOP class references
+  and require every non-empty input structure. Validate contour borders using the accepted
+  source geometry, including rounded oblique direction cosines, with unchanged tolerances.
+- Require new acceptance markers for the two GTRC tasks and BiomedParse after source changes.
+
 ## 1.0.0 — 2026-10-25
 
 First public release.

@@ -953,6 +953,23 @@ def retrieve_worker_results(job, remote, task=None):
     sources = [f"{WORKER}:{remote}/{source}"]
     if task == "lnctvseg_nnunet_v1":
         sources.append(f"{WORKER}:{remote}/output/{task}")
+    if task is not None:
+        # A refused/empty export can leave no task files. Probe over SSH before scp;
+        # only the explicit no-match status is empty. Transport errors still fail.
+        available = []
+        for source in sources:
+            probe = subprocess.run(remote_command(
+                REMOTE_PYTHON, "-c",
+                "import glob, sys; sys.exit(0 if glob.glob(sys.argv[1]) else 3)",
+                source.split(":", 1)[1]), capture_output=True, text=True, timeout=30)
+            if probe.returncode == 3:
+                continue
+            if probe.returncode:
+                probe.check_returncode()
+            available.append(source)
+        if not available:
+            return
+        sources = available
     subprocess.run(["scp", "-q", "-r", *sources, str(job / "output") + "/"],
                    check=True, timeout=600)
 
@@ -984,11 +1001,13 @@ def recover_remote_results(job, remote, task=None):
 def run_remote_gpu_task(job, task, index, total):
     remote = f"{REMOTE_BASE}/{job.name}"
     prior = metadata(job)
-    if prior.get("remote_results_retained"):
+    # A retained result of this same task is stale: the rerun replaces it, so it is not fetched back.
+    if prior.get("remote_results_retained") and prior.get("remote_task_active") != task:
         recover_remote_results(job, remote, prior.get("remote_task_active"))
     save_metadata(job, remote_task_active=task, execution_backend="ssh_task")
     empty = None
     try:
+        reset_task_output(job, task, remote)
         prepare_worker_job(job, remote, [task])
         try:
             run_worker_task(job, remote, task, index, total)
@@ -1012,6 +1031,7 @@ def execute_job_task(job, task, index, total, remote=None):
     result = job / "output" / ("report/nv_reason_ct_report.json" if task == REPORT_TASK else f"{task}_RTSTRUCT.dcm")
     if task in data.get("completed_models", []) and result.is_file():
         return
+    reset_task_output(job, task, remote)
     if task == REPORT_TASK: save_metadata(job, report_status="running", report_reason="")
     if remote is not None:
         run_worker_task(job, remote, task, index, total)
@@ -1040,18 +1060,25 @@ def process_cpu_times(root):
 def reset_task_output(job, task, remote=None):
     """Discard only this task's partial results and work; keep completed models."""
     if not re.fullmatch(r"[A-Za-z0-9_]+", task): raise ValueError("Invalid task")
-    relative = [f"external/{task}", "output/report" if task == REPORT_TASK else f"output/{task}"]
-    relative.extend(p.relative_to(job).as_posix() for p in (job / "output").glob(f"{task}_RTSTRUCT.dcm*"))
-    for name in relative:
+    folders = [f"external/{task}", "output/report" if task == REPORT_TASK else f"output/{task}"]
+    if task == "total":  # the crop is derived from this task's structure set
+        folders.append("output/prostate_sbrt_crop")
+    files = [p.relative_to(job).as_posix() for p in (job / "output").glob(f"{task}_RTSTRUCT.dcm*")]
+    for name in folders + files:
         path = job / name
-        if path.is_dir(): shutil.rmtree(path)
+        # A runner's work folder can hold read-only files. It is never packaged, so it must not fail the task.
+        if path.is_dir(): shutil.rmtree(path, ignore_errors=name.startswith("external/"))
         else: path.unlink(missing_ok=True)
     if remote is not None:
-        # Shell expansion is restricted to a validated task identifier.
-        prefix = shlex.quote(f"{remote}/output/{task}_RTSTRUCT.dcm") + "*"
-        paths = [f"{remote}/external/{task}", f"{remote}/output/{'report' if task == REPORT_TASK else task}"]
-        command = "rm -rf -- " + " ".join(shlex.quote(path) for path in paths) + " " + prefix
-        subprocess.run(["ssh", WORKER, command], check=True, timeout=30)
+        # Every argument is quoted, so the worker's login shell expands nothing. find matches the prefix
+        # and, unlike a shell glob, fails when the folder cannot be listed. As locally, a work folder that
+        # cannot be removed does not fail the task.
+        script = ('output=$1; prefix=$2; work=$3; shift 3; rm -rf -- "$work"; rm -rf -- "$@" || exit; '
+                  '[ -e "$output" ] || [ -L "$output" ] || exit 0; '
+                  'find "$output/" -mindepth 1 -maxdepth 1 -name "$prefix*" -exec rm -rf -- {} +')
+        subprocess.run(remote_command("sh", "-c", script, "sh", f"{remote}/output", f"{task}_RTSTRUCT.dcm",
+                                      *[f"{remote}/{name}" for name in folders]),
+                       check=True, timeout=30)
 
 
 def run_monitored_task(job, task, index, total, command, *, environment=None, remote=None):
@@ -1393,9 +1420,13 @@ def is_empty_prediction(exc: Exception) -> bool:
     message = str(exc)
     return any(marker in message for marker in EMPTY_PREDICTION_MARKERS)
 
-def conversion_notes(job: Path) -> list[str]:
-    """Surface converter omissions from retained local/SSH/Colab worker logs."""
-    notes = []
+def conversion_notes(job: Path) -> tuple[list[str], list[str]]:
+    """Converter notes from retained local/SSH/Colab worker logs.
+
+    Returns structures dropped from a non-empty mask, then one line per model listing the structures
+    it did not predict. Only the first kind belongs in the job status line.
+    """
+    omitted, absent = [], {}
     for path in sorted(job.glob("*.log")):
         with path.open(errors="replace") as log:
             for line in log:
@@ -1405,22 +1436,33 @@ def conversion_notes(job: Path) -> list[str]:
                     record = json.loads(line.removeprefix("RTSTRUCT_CONVERSION_NOTE "))
                     model = record["output"].removesuffix("_RTSTRUCT.dcm")
                     for roi in record["omitted_rois"]:
-                        note = (f"{model}: omitted ROI {roi['name']} ({int(roi['voxels'])} voxels; "
-                                f"{roi['reason']}).")
-                        if note not in notes:
-                            notes.append(note)
+                        voxels, name = int(roi["voxels"]), str(roi["name"])
+                        if voxels == 0:
+                            names = absent.setdefault(model, [])
+                            if name not in names:
+                                names.append(name)
+                            continue
+                        note = f"{model}: omitted ROI {name} ({voxels} voxels; {roi['reason']})."
+                        if note not in omitted:
+                            omitted.append(note)
                 except (ValueError, KeyError, TypeError, AttributeError):
                     logger.warning("Could not parse an RTSTRUCT conversion note in %s", path.name)
-    return notes
+    return omitted, [f"{model}: not present in the prediction: {', '.join(names)}." for model, names in absent.items()]
 
 def finalize_results(job: Path, empty=()):
-    results = sorted((job / "output").glob("*.dcm"))
     empty = list(empty)
+    # Only the structure set and its export record go: an empty run's own lesion tables, maps and
+    # provenance are results, and reset_task_output already removed anything from an earlier run.
+    excluded = {name for task in empty for name in (f"{task}_RTSTRUCT.dcm", f"{task}_RTSTRUCT.dcm.orientation.json")}
+    def include(path):
+        staged = any(part.startswith(".rtstruct-partial-") for part in path.parts)
+        return not staged and path.name not in excluded
+    results = sorted(path for path in (job / "output").glob("*.dcm") if include(path))
     report_path = job / "output/report" / (REPORT_TASK + ".json")
     report = json.loads(report_path.read_text()) if report_path.is_file() else None
     if not results and not empty and report is None:
         raise RuntimeError("Worker completed without producing an RTSTRUCT file")
-    omissions = conversion_notes(job)
+    omissions, absent = conversion_notes(job)
     if "biomedparse_prompted" in empty:
         sidecar = job / "output" / biomedparse_artifact_names("biomedparse_prompted")[0]
         if sidecar.is_file():
@@ -1437,7 +1479,7 @@ def finalize_results(job: Path, empty=()):
     declared = [output / name for task in metadata(job).get("models", [])
                 for name in (*prostate_artifact_names(task), *gtrc_artifact_names(task), *biomedparse_artifact_names(task))
                 if (output / name).is_file()]
-    artifacts = sorted(set(results + sidecars + nested + declared))
+    artifacts = sorted(path for path in set(results + sidecars + nested + declared) if include(path))
     if any(path.is_symlink() or output.resolve() not in path.resolve().parents for path in artifacts):
         raise ValueError("Result artifacts must be files inside the output directory")
     if sum(path.stat().st_size for path in artifacts) > MAX_RESULT_BYTES:
@@ -1447,10 +1489,10 @@ def finalize_results(job: Path, empty=()):
         members.append(("NO_STRUCTURES_FOUND.txt",
                         ("These models ran to completion but found no structures in the selected series, "
                          "so no RTSTRUCT was created for them:\n" + "".join(f"- {name}\n" for name in empty)).encode()))
-    if omissions:
-        members.append(("CONVERSION_NOTES.txt", ("\n".join(omissions) + "\n").encode()))
+    if omissions or absent:
+        members.append(("CONVERSION_NOTES.txt", ("\n".join(omissions + absent) + "\n").encode()))
     record = metadata(job)
-    manifest_notes = list(record.get("postprocess_notes", [])) + omissions
+    manifest_notes = list(record.get("postprocess_notes", [])) + omissions + absent
     omitted_labels = output / "lnctvseg_nnunet_v1/OMITTED_LABELS.txt"
     if omitted_labels.is_file():
         manifest_notes.append(omitted_labels.read_text().strip())
@@ -1484,7 +1526,7 @@ def finalize_results(job: Path, empty=()):
     notes = metadata(job).get("postprocess_notes", []) + omissions
     if notes: detail += "; " + "; ".join(notes)
     save_metadata(job,status="complete",detail=detail,progress=100,no_structures_found=empty,
-                  conversion_notes=omissions)
+                  conversion_notes=omissions + absent)
 
 def manifest_catalog(models) -> dict:
     """Descriptive model fields for the result manifest, from static metadata and the cached catalog.
@@ -1510,6 +1552,7 @@ def note_prostate_not_cropped(job: Path, reason: str):
 
 def postprocess_prostate_crop(job: Path):
     save_metadata(job, detail="Cropping total CT + RTSTRUCT to prostate ±15 cm", progress=None)
+    shutil.rmtree(job / "output" / "prostate_sbrt_crop", ignore_errors=True)  # a retry reruns the crop
     ct_files, _ = discover_dicom(job / "input")
     try:
         crop_ct_rtstruct(ct_files, [job / "output" / "total_RTSTRUCT.dcm"],

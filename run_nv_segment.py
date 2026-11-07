@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 from nv_segment_logic import MODES, check_modality, generate
+from ct_padding import CT_AIR_HU, axial_axis, ct_model_input
 
 CHILD=None
 
@@ -99,61 +100,6 @@ def prepare_bundle(source, checkpoint, work, input_path, mode, device, manifest)
     fills[0]['func']='$lambda x: torch.nan_to_num(x, nan=0, posinf=0, neginf=0)'
     p.write_text(json.dumps(cfg,indent=2)+'\n')
     return cfg
-
-CT_AIR_HU = -1024
-
-
-def axial_axis(affine) -> int:
-    """Array axis whose direction is closest to the patient's head-foot axis (axial slices are taken across it)."""
-    import numpy as np
-    m = np.asarray(affine, dtype=float)[:3, :3]
-    return int(np.argmax(np.abs(m[2]) / np.linalg.norm(m, axis=0)))
-
-
-def ct_model_input(image, path):
-    """Write the CT model input with reconstruction-field padding replaced by air; return how many voxels changed.
-
-    The CTMR bundle crops to voxels above 0 HU and rescales each image by its own 1st-99th percentiles. Padding left
-    in the data outside the reconstruction circle (-8192 on SOMATOM go.Sim, which sets no PixelPaddingValue) stays
-    inside that crop, moves the 1st percentile from air to the padding value and squeezes soft tissue into ~0.95-0.97
-    of the input range. On clinical go.Sim CTs this produced left/right swaps and failed organs; with the padding
-    replaced the same CTs agree with TotalSegmentator (clinical go.Sim CTs, 2026-10-29). Only voxels that ct_padding identifies
-    as the exterior of the reconstruction circle on axial slices change (the slice axis comes from the affine, so a
-    reordered NIfTI is handled alike); every other value is kept exactly. The copy keeps the image class, grid,
-    affine and header; the caller's image is not modified; nothing is written when no padding is found."""
-    import nibabel as nib
-    import numpy as np
-    from ct_padding import PADDING_BELOW_HU, exterior_padding
-    data = np.asanyarray(image.dataobj)
-    low = data < PADDING_BELOW_HU
-    if not low.any():
-        return 0
-    padding = exterior_padding(low, slice_axis=axial_axis(image.affine))[0]
-    del low
-    count = int(np.count_nonzero(padding))
-    if not count:
-        return 0
-    if data.dtype.kind in 'iu':  # the narrowest signed integer type that holds every value (the fill is negative)
-        lo, hi = int(data.min()), int(data.max())
-        dtype = next((t for t in (np.int16, np.int32, np.int64) if np.iinfo(t).min <= lo and hi <= np.iinfo(t).max), None)
-        if dtype is None:
-            raise ValueError(f'CT values {lo}..{hi} do not fit a signed integer NIfTI')
-    else:
-        dtype = np.float64 if data.dtype == np.float64 or not np.array_equal(data, data.astype(np.float32)) else np.float32
-    # a private array: proxy-backed data was read from disk already, array-backed data belongs to the caller
-    shared = not nib.is_proxy(image.dataobj) or isinstance(data, np.memmap) or not data.flags.writeable
-    data = data.astype(dtype, copy=shared or data.dtype != dtype)
-    data[padding] = CT_AIR_HU
-    del padding
-    # one file for the bundle: a .hdr/.img pair is written as its single-file NIfTI counterpart
-    single = nib.Nifti2Image if isinstance(image, (nib.Nifti2Image, nib.Nifti2Pair)) else nib.Nifti1Image
-    header = image.header.copy(); header.set_data_dtype(dtype); header.set_slope_inter(1, 0)
-    nib.save(single(data, image.affine, header), path)
-    saved = nib.load(path)
-    if (type(saved) is not single or saved.shape != image.shape
-            or not np.array_equal(saved.affine, image.affine)):
-        raise ValueError('CT model input lost the native grid')
-    return count
 
 
 def patch_brain_revert_text(text):

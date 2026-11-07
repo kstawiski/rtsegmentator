@@ -389,7 +389,8 @@ def test_ssh_report_crash_retrieves_existing_results(tmp_path, monkeypatch):
     assert mod.metadata(job)['status'] == 'failed'
     assert mod.metadata(job)['completed_models'] == ['total']
     retrieval = next(i for i,c in enumerate(commands) if c[0] == 'scp')
-    deletion = next(i for i,c in enumerate(commands) if c[0] == 'ssh' and 'rm -rf' in c[-1])
+    deletion = next(i for i,c in enumerate(commands) if c[0] == 'ssh' and 'rm -rf' in c[-1]
+                    and c[-1].endswith('/remote-crash'))
     assert retrieval < deletion and '/output/.' in commands[retrieval][-2]
 
 

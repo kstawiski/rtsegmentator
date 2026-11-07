@@ -216,7 +216,7 @@ An empty candidate-detection mask is reported as “no candidates detected”; c
 
 Both RTSTRUCT converters now position polygons on each referenced DICOM slice using its own position, orientation and row/column spacing, in the inference reader's GDCM order. This corrects rt-utils' unequal-spacing swap and uniform-stack assumption. The tested non-square outputs previously failed the physical geometry gate. A square-pixel gapped fixture passed the old affine-based gate despite a 1.600000 mm source-plane error; the new gate checks the acquired planes directly. The Dice, plane-distance and bounding-box thresholds remain unchanged. TotalSegmentator uses the same converter. Synthetic orientation and overlap tests cover this change; they do not assess model accuracy.
 
-Nonempty labels with no valid polygon are omitted with the ROI name and voxel count in job and download notes. SCT empty masks complete through the standard no-structures path. HD-CTBET's writable directory mirror keeps training logs outside its read-only bundle. SegVol rejects combined point and box prompts through its catalog contract and shared HTTP validation.
+The two shared converters report nonempty labels with no valid polygon by ROI name and voxel count. A mixed export missing such a label is refused; when no contourable structures remain, the portal reports a model-level empty result. SCT empty masks complete through the standard no-structures path. HD-CTBET's writable directory mirror keeps training logs outside its read-only bundle. SegVol rejects combined point and box prompts through its catalog contract and shared HTTP validation.
 # Additional catalog integrations (2026-08-10)
 
 - The nine CADS `cads-model-open_v1.0.0` checkpoints (tasks 551–559) are
@@ -704,6 +704,57 @@ The six enabled pipelines invert interpolated multi-channel predictions on the o
 
 The container also installs Ubuntu Jammy `libxrender1`, which supplies the `libXrender.so.1` required by OpenCV in the CERR prostate runtime. This library addition requires an image rebuild.
 
-BiomedParse v2 (`biomedparse_prompted`) uses the pinned upstream 3D inference method at `e02096c03af0d79c6994ffc2d60a49eeb0361e1f`. A single CT, MR or PET series and one documented target produce a prompt-named ROI and `.dcm.biomedparse.json` with slice existence scores, decisions and voxel count. No detected object is a valid empty result. Supported targets are recorded in `catalog/biomedparse-prompts.json`, derived from the v2 README and verbatim 3D example prompts; the v1 `target_dist.json` is not used. Unsupported targets and multiple `[SEP]` prompts are rejected.
+BiomedParse v2 (`biomedparse_prompted`) uses the pinned upstream 3D inference method at `e02096c03af0d79c6994ffc2d60a49eeb0361e1f`. For a detected object, a single CT, MR or PET series and one documented target produce a prompt-named ROI and `.dcm.biomedparse.json` with slice existence scores, decisions and voxel count. No detected object is a valid empty result; the result package includes the explanatory note and excludes the model's prefixed sidecars. Supported targets are recorded in `catalog/biomedparse-prompts.json`, derived from the v2 README and verbatim 3D example prompts; the v1 `target_dist.json` is not used. Unsupported targets and multiple `[SEP]` prompts are rejected.
 
 Code: Apache-2.0. Weights: CC BY-NC-SA 4.0, for research and development only, not clinical decisions. Owner accepted these terms on 2026-10-22. This task selects one target; it does not define an elective nodal atlas. Published v1 and BoltzFormer benchmark results are distinguished from the released v2 volumetric checkpoint in the catalogue card. See [the upstream v2 README](https://github.com/microsoft/BiomedParse/blob/e02096c03af0d79c6994ffc2d60a49eeb0361e1f/README.md), [Nature Methods](https://doi.org/10.1038/s41592-024-02499-w) and [BoltzFormer](https://arxiv.org/html/2503.02841v2). GPU memory use and model agreement remain unmeasured locally.
+
+
+## CT input preparation
+
+The following CT tasks share reconstruction-field fill preparation before their runners read the converted
+job-local NIfTI. Source-series headers must all identify CT; MR and PET inputs to the same prompted task IDs
+bypass preparation. Border-connected values below −1500 HU must match a reconstruction-circle exterior.
+The detector uses acquired slices only, array axis 2 under the orientation contract, including oblique
+series. In each slice, only exterior voxels equal to that slice's most frequent exterior value become
+−1024 HU; different low values and interior low regions remain. An input without recognised exterior fill is left byte-identical, with no NIfTI
+write. The grid, affine, orientation sidecar, acquired DICOM series and export references remain unchanged.
+The job log records the replaced voxel count, residual exterior voxels below −1500 HU and replacement value; a positive residual count emits a warning. `ct_padding.py` is required by preflight for
+each task. The declared task set is `CT_PADDING_TASKS` in that module.
+
+| Task | Input consumer | Image-derived statistics reached after preparation |
+| --- | --- | --- |
+| `bamf_liver_lesions_ct` | `run_nnunet_v2.py`, `case_0000.nii.gz` | Unmasked mean and standard deviation after nonzero crop. |
+| `lnctvseg_nnunet_v1` | `run_lnctvseg.py`, `case_0000.nii.gz` | `nonCT` mean and standard deviation after crop and resampling. |
+| `medical_sam3_3d_prompted` | `run_medical_sam3.py`, `input.nii.gz` | Per-frame finite-pixel percentiles. |
+| `medsam_vit_b_box_2d` | `run_medsam.py`, `input.nii.gz` | Boxed-slice finite-pixel percentiles. |
+| `monai_whole_body_ct` | `monai.bundle run`, `input.nii.gz` | Nonzero-voxel mean and standard deviation, then image min/max. |
+| `myeloma_spine_verse20_early_ct` | `run_nnunet_v2.py`, `case_0000.nii.gz` | Unmasked mean and standard deviation after nonzero crop. |
+| `myeloma_spine_verse20_mm_ct` | `run_nnunet_v2.py`, `case_0000.nii.gz` | Unmasked mean and standard deviation after nonzero crop. |
+| `myeloma_spine_verse20_stable_ct` | `run_nnunet_v2.py`, `case_0000.nii.gz` | Unmasked mean and standard deviation after nonzero crop. |
+| `nninteractive_v1_prompted` | `run_nninteractive.py`, `input.nii.gz` | Mean and standard deviation within a nonzero-projection bounding box. |
+| `sam_med2d_prompted` | `run_sam_med2d.py`, `input.nii.gz` | Prompted-slice finite-pixel percentiles. |
+| `segvol_prompted_ct` | `run_segvol.py`, `input.nii.gz` | Whole-image mean used to select foreground before selected-voxel statistics. |
+| `voxtell_v1_1_text_prompted` | `run_voxtell.py`, `input.nii.gz` | Unmasked z-score after nonzero crop. |
+
+Other CT tasks and all MR and PET tasks bypass this extension. The existing NV-Segment CT preparation
+retains its base head-foot-axis detection and replacement of every recognised exterior voxel, with shared writing code. `pam_prompted` and `sam_med3d_turbo_prompted` remain
+outside the declared set: PAM's window statistics depend on the guiding mask, while SAM-Med3D uses
+positive-intensity crop voxels unless none exist. Neither conditional path guarantees exclusion of fill
+for every supported input or prompt.
+
+Segmentation tasks have no separate refusal for a mostly padded volume. Fully padded slices and unexplained
+interior low values are not repaired. The separate NV-Reason-CT report HU refusal rules are unchanged.
+
+Both shared RTSTRUCT writers check the saved frame, study, series, image instances and SOP classes against
+the selected sources, require the top-level study to belong to the source series, require every non-empty structure to be represented, and check every contour vertex
+against the acquired image extent using the accepted in-plane basis. Image SOP classes may match either
+the source dataset or its file meta. Empty named inputs are reported in conversion notes and manifest notes,
+including when every input reaching a converter is empty and no RTSTRUCT is created. Earlier task exits
+may supply only model-level empty reporting. Stale final files and export sidecars are removed before
+conversion. Writers stage outside the output directory on the same filesystem, validate the saved file,
+write the export record and atomically publish the RTSTRUCT. Handled failures remove staging files and
+sidecars. Task reruns clear their own output while preserving skipped completed tasks. Empty models'
+RTSTRUCTs and orientation records are excluded from result packages, the tables and maps those runs wrote are kept, and the models are recorded as empty in the manifest.
+
+These checks establish input handling only. GPU inference and technical acceptance for the changed release
+remain required. Both GTRC tasks and BiomedParse require new acceptance markers because their source hashes change. These checks do not establish clinical performance.

@@ -46,6 +46,7 @@ def test_review_m1_empty_completion_all_backends(portal, monkeypatch, tmp_path, 
     remote_output.mkdir()
     events = []
     monkeypatch.setattr(portal, 'WORKER_MODE', mode)
+    monkeypatch.setattr(portal.subprocess, 'run', lambda command, **kwargs: SimpleNamespace(returncode=0))
     monkeypatch.setattr(portal, 'REMOTE_GPU_TASKS', set(tasks) if routed else set())
     def inference(job, task, *args):
         events.append('runner:' + task)
@@ -87,6 +88,7 @@ def test_review_m1_empty_completion_all_backends(portal, monkeypatch, tmp_path, 
 def test_review_m1_empty_retrieval_failure_retains_remote(portal, monkeypatch, mode, routed):
     job = job_at(portal, [TASK])
     monkeypatch.setattr(portal, 'WORKER_MODE', mode)
+    monkeypatch.setattr(portal.subprocess, 'run', lambda command, **kwargs: SimpleNamespace(returncode=0))
     monkeypatch.setattr(portal, 'REMOTE_GPU_TASKS', {TASK} if routed else set())
     monkeypatch.setattr(portal, 'prepare_worker_job', lambda *a: None)
     def empty(*a): raise RuntimeError('empty prediction: no RTSTRUCT created')

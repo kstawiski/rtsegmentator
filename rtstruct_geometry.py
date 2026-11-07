@@ -4,9 +4,13 @@ rt-utils supplies the DICOM container. OpenCV uses its existing contour
 convention (pixel centres, RETR_TREE, CHAIN_APPROX_SIMPLE). Patient coordinates
 and SOP references come from the particular source image, in GDCM array order.
 """
+from contextlib import contextmanager
 import json
+import os
 from pathlib import Path
 import sys
+import tempfile
+import warnings
 
 import cv2
 import numpy as np
@@ -94,6 +98,105 @@ def create_rtstruct(source, model_input):
     return rt
 
 
+RTSTRUCT_STAGING_PREFIX = ".rtstruct-partial-"
+
+
+@contextmanager
+def staged_rtstruct(output):
+    """Stage beside output's directory, outside result walks, on the publication filesystem.
+
+    rt-utils appends .dcm, so the private directory contains an explicit .dcm filename.
+    A killed writer can leave this directory; neither packaging nor report readers visit it.
+    When the job folder is unusable (a mount point, an unwritable parent) staging falls back
+    to a hidden folder inside the output directory, which packaging also skips.
+    """
+    parent = Path(output).resolve().parent
+    parent.mkdir(parents=True, exist_ok=True)
+    root = parent.parent
+    if not os.access(root, os.W_OK | os.X_OK) or root.stat().st_dev != parent.stat().st_dev:
+        root = parent
+    with tempfile.TemporaryDirectory(prefix=RTSTRUCT_STAGING_PREFIX, dir=root) as work:
+        yield Path(work) / "partial.dcm"
+
+
+def validate_image_reference(reference, source_images):
+    """Require a selected source image and either of its recorded SOP classes."""
+    uid = str(getattr(reference, "ReferencedSOPInstanceUID", ""))
+    if uid not in source_images:
+        raise ValueError("RTSTRUCT references missing or foreign source images")
+    image = source_images[uid]
+    classes = {str(value) for value in (
+        getattr(image, "SOPClassUID", ""),
+        getattr(getattr(image, "file_meta", None), "MediaStorageSOPClassUID", "")) if value}
+    if str(getattr(reference, "ReferencedSOPClassUID", "")) not in classes:
+        raise ValueError("RTSTRUCT referenced image SOP class mismatch")
+    return uid
+
+
+def validate_reference_identity(ds, source_slices):
+    """Check saved frame, study, series and image references against selected sources."""
+    frames = {str(image.FrameOfReferenceUID) for image in source_slices}
+    series = {str(image.SeriesInstanceUID) for image in source_slices}
+    studies = {str(image.StudyInstanceUID) for image in source_slices}
+    # Patient text is not compared. rt-utils always writes ISO_IR 100, so a name outside Latin-1
+    # (Polish names, for example) is saved with replacement characters and could never match.
+    if str(getattr(ds, "StudyInstanceUID", "") or "") not in studies:
+        raise ValueError("RTSTRUCT top-level StudyInstanceUID identity mismatch")
+    images = {str(image.SOPInstanceUID): image for image in source_slices}
+    if len(frames) != 1 or len(series) != 1 or len(studies) != 1:
+        raise ValueError("Inconsistent DICOM source frame, study or series identity")
+    frame, = frames
+    series_uid, = series
+    study_uid, = studies
+    hierarchy_images = set()
+    # RT Structure Set IOD stores the required frame identity in its sequences;
+    # rt-utils does not write the optional top-level FrameOfReferenceUID.
+    if hasattr(ds, "FrameOfReferenceUID") and str(ds.FrameOfReferenceUID) != frame:
+        raise ValueError("RTSTRUCT frame identity mismatch")
+    references = getattr(ds, "ReferencedFrameOfReferenceSequence", [])
+    if not references:
+        raise ValueError("RTSTRUCT missing frame references")
+    for reference in references:
+        if str(getattr(reference, "FrameOfReferenceUID", "")) != frame:
+            raise ValueError("RTSTRUCT referenced frame identity mismatch")
+        studies = getattr(reference, "RTReferencedStudySequence", [])
+        if not studies:
+            raise ValueError("RTSTRUCT missing referenced study")
+        for study in studies:
+            if str(getattr(study, "ReferencedSOPInstanceUID", "")) != study_uid:
+                raise ValueError("RTSTRUCT referenced study identity mismatch")
+            entries = getattr(study, "RTReferencedSeriesSequence", [])
+            if not entries:
+                raise ValueError("RTSTRUCT missing series references")
+            for entry in entries:
+                if str(getattr(entry, "SeriesInstanceUID", "")) != series_uid:
+                    raise ValueError("RTSTRUCT referenced series identity mismatch")
+                image_refs = getattr(entry, "ContourImageSequence", [])
+                if not image_refs:
+                    raise ValueError("RTSTRUCT missing hierarchy image references")
+                for image_ref in image_refs:
+                    hierarchy_images.add(validate_image_reference(image_ref, images))
+    for roi in getattr(ds, "ROIContourSequence", []):
+        for contour in getattr(roi, "ContourSequence", []):
+            for image_ref in getattr(contour, "ContourImageSequence", []):
+                uid = validate_image_reference(image_ref, images)
+                if uid not in hierarchy_images:
+                    raise ValueError("RTSTRUCT contour image missing from series hierarchy")
+    for roi in getattr(ds, "StructureSetROISequence", []):
+        if str(getattr(roi, "ReferencedFrameOfReferenceUID", "")) != frame:
+            raise ValueError("RTSTRUCT ROI frame identity mismatch")
+
+
+def validate_roi_completeness(rois, contours, expected_names):
+    """Require exactly one saved ROI and contour set per expected structure."""
+    names = {int(roi.ROINumber): str(roi.ROIName) for roi in rois}
+    numbers = [int(roi.ReferencedROINumber) for roi in contours]
+    if (len(rois) != len(expected_names) or len(contours) != len(expected_names)
+            or len(names) != len(rois) or set(names.values()) != set(expected_names)
+            or len(set(numbers)) != len(numbers) or set(numbers) != set(names)):
+        raise ValueError("RTSTRUCT ROI count or identity does not match non-empty inputs")
+
+
 
 def add_roi(rt, mask, name, color, *, offset=(0, 0, 0), bounds_out=None, plane_geometry=None):
     """Add a [column,row,slice] box at its source offset; False if no contour exists."""
@@ -179,3 +282,7 @@ def report_omissions(output, omitted):
         # publishes these structured notes in metadata and the result ZIP.
         print("RTSTRUCT_CONVERSION_NOTE " + json.dumps({
             "output": Path(output).name, "omitted_rois": omitted}), file=sys.stderr, flush=True)
+        for roi in omitted:
+            if roi["voxels"] == 0:
+                warnings.warn(f"RTSTRUCT empty structure: {roi['name']} (0 voxels)",
+                              UserWarning, stacklevel=2)
